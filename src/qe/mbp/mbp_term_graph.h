@@ -48,7 +48,7 @@ namespace mbp {
         struct term_eq { bool operator()(term const* a, term const* b) const; };
         ast_manager &     m;
         ptr_vector<term>  m_terms;
-        expr_ref_vector    m_lits; // NSB: expr_ref_vector?
+        expr_ref_vector   m_lits; // NSB: expr_ref_vector?
         u_map<term* >     m_app2term;
         ast_ref_vector    m_pinned;
         projector*        m_projector;
@@ -63,6 +63,7 @@ namespace mbp {
 
         term *mk_term(expr *t);
         term *get_term(expr *t);
+        term *get_term(func_decl *f);
 
         term *internalize_term(expr *t);
         void internalize_eq(expr *a1, expr *a2);
@@ -86,8 +87,12 @@ namespace mbp {
         void display(std::ostream &out);
 
         bool is_pure_def(expr* atom, expr *& v);
-        
-    public:
+
+        // variables (or terms?) to eliminate
+        // useful to not pick roots that are in this vector if possible
+        ptr_vector<term> m_elim;
+
+      public:
         term_graph(ast_manager &m);
         ~term_graph();
 
@@ -102,8 +107,9 @@ namespace mbp {
         void reset();
 
         // deprecate?
-        void to_lits(expr_ref_vector &lits, bool all_equalities = false);
-        expr_ref to_expr();
+        void to_lits(expr_ref_vector &lits, bool all_equalities = false,
+                     bool repick_roots = true);
+        expr_ref to_expr(bool repick_roots = true);
 
         /**
          * Return literals obtained by projecting added literals
@@ -114,13 +120,18 @@ namespace mbp {
         expr_ref_vector solve();
         expr_ref_vector project(model &mdl);
 
-        /**
-         * Return disequalities to ensure that disequalities between 
-         * excluded functions are preserved.
-         * For example if f(a) = b, f(c) = d, and b and d are not 
-         * congruent, then produce the disequality a != c.
-         */
-        expr_ref_vector get_ackerman_disequalities();
+        // QE lite
+        void try_elim_roots(func_decl_ref_vector &vars);
+        bool pick_root_filter_vars(term &t, func_decl_ref_vector &vars,
+                              expr_ref_vector &solved,
+                              expr_ref_vector &solved_no_vars);
+      /**
+       * Return disequalities to ensure that disequalities between
+       * excluded functions are preserved.
+       * For example if f(a) = b, f(c) = d, and b and d are not
+       * congruent, then produce the disequality a != c.
+       */
+      expr_ref_vector get_ackerman_disequalities();
 
         /**
          * Produce model-based disequality 
@@ -151,6 +162,7 @@ namespace mbp {
         void  add_model_based_terms(model& mdl, expr_ref_vector const& terms);
         expr* rep_of(expr* e);
 
+        void mark_elim_terms(func_decl_ref_vector &vars);
+        expr_ref_vector non_efree_terms();
     };
-
 }

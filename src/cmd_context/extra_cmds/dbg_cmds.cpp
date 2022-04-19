@@ -555,6 +555,131 @@ public:
 
 };
 
+class tg_qe_lite_cmd : public cmd {
+    unsigned              m_arg_index;
+    ptr_vector<expr>      m_lits;
+    ptr_vector<func_decl> m_vars;
+public:
+  tg_qe_lite_cmd() : cmd("qe-lite") {}
+  char const *get_usage() const override { return "(exprs) (vars)"; }
+  char const *get_descr(cmd_context &ctx) const override {
+    return "QE lite based on term graphs"; }
+    unsigned get_arity() const override { return 2; }
+    cmd_arg_kind next_arg_kind(cmd_context& ctx) const override {
+        if (m_arg_index == 0) return CPK_EXPR_LIST;
+        return CPK_FUNC_DECL_LIST;
+    }
+    void set_next_arg(cmd_context& ctx, unsigned num, expr * const* args) override {
+        m_lits.append(num, args);
+        m_arg_index = 1;
+    }
+    void set_next_arg(cmd_context & ctx, unsigned num, func_decl * const * ts) override {
+        m_vars.append(num, ts);
+    }
+    void prepare(cmd_context & ctx) override { m_arg_index = 0; m_lits.reset(); m_vars.reset(); }
+    void execute(cmd_context & ctx) override {
+      ast_manager &m = ctx.m();
+      func_decl_ref_vector vars(m);
+      expr_ref_vector lits(m);
+      for (func_decl *v : m_vars){
+        vars.push_back(v);
+        ctx.regular_stream() << v->get_name() << std::endl;
+      }
+
+      for (expr *e : m_lits)
+        lits.push_back(e);
+
+      mbp::term_graph tg(m);
+      for( expr *l : lits){
+        if(m.is_eq(l)){
+          app * eq = to_app(l);
+          tg.add_eq(eq->get_arg(0), eq->get_arg(1));
+        }
+        else
+          tg.add_lit(l);
+      }
+
+      tg.try_elim_roots(vars);
+
+      ctx.regular_stream() << "After tg: " << tg.to_expr() << std::endl;
+    }
+
+};
+
+class tg_mb_cover_cmd : public cmd {
+    unsigned              m_arg_index;
+    ptr_vector<expr>      m_lits;
+    ptr_vector<func_decl> m_vars;
+public:
+  tg_mb_cover_cmd() : cmd("mb-cover") {};
+  char const *get_usage() const override { return "(exprs) (vars)"; }
+  char const *get_descr(cmd_context &ctx) const override {
+    return "Model-based cover on e-graphs"; }
+    unsigned get_arity() const override { return 2; }
+    cmd_arg_kind next_arg_kind(cmd_context& ctx) const override {
+        if (m_arg_index == 0) return CPK_EXPR_LIST;
+        return CPK_FUNC_DECL_LIST;
+    }
+    void set_next_arg(cmd_context& ctx, unsigned num, expr * const* args) override {
+        m_lits.append(num, args);
+        m_arg_index = 1;
+    }
+    void set_next_arg(cmd_context & ctx, unsigned num, func_decl * const * ts) override {
+        m_vars.append(num, ts);
+    }
+    void prepare(cmd_context & ctx) override { m_arg_index = 0; m_lits.reset(); m_vars.reset(); }
+    void execute(cmd_context & ctx) override {
+      ast_manager &m = ctx.m();
+      func_decl_ref_vector vars(m);
+      expr_ref_vector lits(m);
+
+      ctx.regular_stream() << "------------------------------ To elim:" << std::endl;
+      for (func_decl *v : m_vars) {
+        vars.push_back(v);
+        ctx.regular_stream() << v->get_name() << " ";
+      }
+      ctx.regular_stream() << std::endl;
+
+      for (expr *e : m_lits) lits.push_back(e);
+
+      solver_factory &sf = ctx.get_solver_factory();
+      params_ref pa;
+      // TODO: get the model before or after ccc?
+      solver_ref s = sf(m, pa, false, true, true, symbol::null);
+      s->assert_expr(lits);
+      lbool r = s->check_sat();
+      if (r != l_true) {
+        ctx.regular_stream() << "sat check " << r << "\n";
+        return;
+      }
+      model_ref mdl;
+      s->get_model(mdl); // use this model for MB cover
+
+      mbp::term_graph tg(m);
+      for( expr *l : lits){
+        if(m.is_eq(l)){
+          app * eq = to_app(l);
+          tg.add_eq(eq->get_arg(0), eq->get_arg(1));
+        }
+        else
+          tg.add_lit(l);
+      }
+
+      // ctx.regular_stream() << "model: " << *mdl << std::endl;
+      ctx.regular_stream() << "Before mark elim: " << tg.to_expr() << std::endl;
+      tg.mark_elim_terms(vars);
+      ctx.regular_stream() << "Not e-free: " << std::endl;
+      expr_ref_vector nef = tg.non_efree_terms();
+      for (expr * e : nef){
+        expr_ref er(e,m);
+        std::cout << er << std::endl;
+      }
+
+      ctx.regular_stream() << "After mark elim: " << tg.to_expr(false) << std::endl;
+    }
+
+};
+
 
 void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(print_dimacs_cmd));
@@ -584,4 +709,6 @@ void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(mbi_cmd));
     ctx.insert(alloc(euf_project_cmd));
     ctx.insert(alloc(eufi_cmd));
+    ctx.insert(alloc(tg_qe_lite_cmd));
+    ctx.insert(alloc(tg_mb_cover_cmd));
 }
