@@ -86,6 +86,9 @@ namespace mbp {
         // -- is an interpreted constant
         unsigned m_interpreted:1;
 
+        // -- the term can be rewritten to be efree
+        bool m_efree;
+
         // -- terms that contain this term as a child
         ptr_vector<term> m_parents;
 
@@ -159,6 +162,9 @@ namespace mbp {
         void set_mark(bool v){m_mark = v;}
         bool is_marked2() const {return m_mark2;} // NSB: where is this used?
         void set_mark2(bool v){m_mark2 = v;}      // NSB: where is this used?
+
+        bool is_efree() {return m_efree;}
+        void set_efree(bool v) {m_efree = v;}
 
         bool is_interpreted() const {return m_interpreted;}
         bool is_theory() const { return !is_app(m_expr) || to_app(m_expr)->get_family_id() != null_family_id; }
@@ -402,20 +408,21 @@ namespace mbp {
         // merge equivalence classes
         a->merge_eq_class(*b);
 
-        // Insert parents of b's old equilvalence class into the cg table
-        for (term* p : term::parents(b)) {
-            if (p->is_marked()) {
-                term* p_old = m_cg_table.insert_if_not_there(p);
-                p->set_mark(false);
-                a->add_parent(p);
-                // propagate new equalities.
-                if (p->get_root().get_id() != p_old->get_root().get_id()) {
-                    m_merge.push_back(std::make_pair(p, p_old));
-                }
+        // Insert parents of b's old equivalence class into the cg table
+        // bottom-up merge of parents
+        for (term *p : term::parents(b)) {
+          if (p->is_marked()) {
+            term* p_old = m_cg_table.insert_if_not_there(p);
+            p->set_mark(false);
+            a->add_parent(p);
+            // propagate new equalities.
+            if (p->get_root().get_id() != p_old->get_root().get_id()) {
+              m_merge.push_back(std::make_pair(p, p_old));
             }
+          }
         }
         SASSERT(marks_are_clear());
-    }
+        }
 
     expr* term_graph::mk_app_core (expr *e) {
         if (is_app(e)) {
@@ -538,14 +545,63 @@ namespace mbp {
         reset_marks();
     }
 
+    bool term_graph::pick_root_filter_vars(term &t, func_decl_ref_vector &vars,
+                                           expr_ref_vector &solved,
+                                           expr_ref_vector &solved_no_vars) {
+      // term *r = &t;
+      // expr *v = t.get_expr(); // v cannot appear in the new representative
+      // bool not_vars = false;
+      // for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
+      //   it->set_mark(true);
+      //   // expr *eit = m_term2app[it];
+      //   expr *eit = nullptr;
+      //   if (!occurs(v, eit)) {
+      //     r = it; // candidate without v but it could contain other vars
+      //     solved.push_back(eit);
+      //     bool no_vars = true;
+      //     //  for(func_decl &restv : vars){
+      //     //   if(restv != v)
+      //     //     if(occurs(v, it))
+      //     //       no_vars = false;
+      //     // }
+      //     // if(no_vars){ // root candidate with no vars found, stop search
+      //     //   solved_no_vars.push_back(it);
+      //     //   r = it;
+      //     // }
+      //   }
+      // }
+
+      // // -- if found something better, make it the new root
+      // if (r != &t) {
+      //   r->mk_root();
+      //   return true;
+      // }
+      return false;
+    }
+
+  // assuming that roots are already picked. To eliminate nodes we just need to
+  // find other nodes to be the representative
+    void term_graph::try_elim_roots(func_decl_ref_vector &vars) {
+      SASSERT(marks_are_clear());
+      for (func_decl *v : vars) {
+        term *tv = get_term(::to_expr(v)); // find v (assume a term exists)
+        SASSERT(tv);
+        // if(tv->is_root())
+        //   pick_root_filter_vars(*tv,vars);
+      }
+      reset_marks();
+    }
+
     void term_graph::display(std::ostream &out) {
         for (term * t : m_terms) {
             out << *t;
         }
     }
 
-    void term_graph::to_lits (expr_ref_vector &lits, bool all_equalities) {
-        pick_roots();
+  void term_graph::to_lits(expr_ref_vector & lits, bool all_equalities,
+                               bool repick_roots) {
+        if (repick_roots)
+          pick_roots();
 
         for (expr * a : m_lits) {
             if (is_internalized(a)) {
@@ -563,10 +619,10 @@ namespace mbp {
         }
     }
 
-    expr_ref term_graph::to_expr() {
-        expr_ref_vector lits(m);
-        to_lits(lits);
-        return mk_and(lits);
+    expr_ref term_graph::to_expr(bool repick_roots) {
+      expr_ref_vector lits(m);
+      to_lits(lits, false, repick_roots);
+      return mk_and(lits);
     }
 
     void term_graph::reset() {
@@ -1299,4 +1355,72 @@ namespace mbp {
         return result;
     }
 
-}
+  void term_graph::mark_elim_terms(func_decl_ref_vector &vars) {
+
+    m_elim.reset();
+    ptr_vector<term> to_propagate;
+    func_decl_ref_vector to_elim(vars);
+
+    for (auto &t : m_terms) {
+      t->set_efree(true);
+      expr *te = t->get_expr();
+      if (!is_app(te)) continue;
+
+      func_decl *fd_del = nullptr;
+      for (auto fd : to_elim) {
+        if (t->get_decl_id() == fd->get_id()) {
+          t->set_efree(false);
+          m_elim.push_back(t);
+          to_propagate.push_back(t);
+          fd_del = fd;
+          break;
+        }
+      }
+      // once found the variable will not be found again
+      if(fd_del)
+        // TODO: move inside the loop? no iteration after erasing the element
+        to_elim.erase(fd_del);
+    }
+
+    reset_marks();
+
+    // invariant: once a class is marked it will not be processed again
+    while(to_propagate.size() > 0) {
+      term *t = to_propagate.back();
+      to_propagate.pop_back();
+      if(t->is_efree()) continue;
+
+      term * root = nullptr; // TODO: make it an term_ref_vector and choose later
+      // not marked = the class has not been processed
+      if(!t->is_marked()){
+        // find a representative that is efree
+        for (term *it = &t->get_next(); it != t; it = &it->get_next()) {
+          t->set_mark(true);
+          if(it->is_efree())
+            root = it; // TODO: how to pick among efree ones?
+        }
+      }
+      if(root && root != &t->get_root()){ // efree node found, set it as root
+        root->mk_root();
+      }
+
+      // efree node in class not found, mark parents as not efree
+      for(auto &p : term::parents(t)){
+        if(!p->is_marked()){
+          to_propagate.push_back(p);
+          p->set_efree(false);
+        }
+      }
+    }
+    reset_marks();
+  }
+
+  expr_ref_vector term_graph::non_efree_terms() {
+    expr_ref_vector res(m);
+    for (auto &t : m_terms)
+      if(!t->is_efree())
+         res.push_back(t->get_expr());
+
+    return res;
+  }
+    }
