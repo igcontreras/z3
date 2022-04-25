@@ -680,6 +680,114 @@ public:
 
 };
 
+// Let I = implicant(A,M), S := mb-cover(I,M,v), check-sat(S,B)
+// Instead of computing the implicant we assume that it is computed in this
+// debugging command (m_ia).
+// This command computes an interpolant of I and B avoiding to compute S.
+// Input: Ia, B, v (vars to be eliminated from Ia)
+// Ouput: Itp(Ia,B,v)
+class abs_euf_itp_cmd : public cmd {
+    unsigned m_arg_index;
+    expr * const* m_ia; // cube (implicant of A )
+    expr * const* m_b; // cube
+    ptr_vector<func_decl> m_vars;
+public:
+  abs_euf_itp_cmd() : cmd("abs-euf-itp") {};
+  char const *get_usage() const override { return "(expr) (expr) (vars)"; }
+  char const *get_descr(cmd_context &ctx) const override {
+    return "Model-based cover on e-graphs"; }
+    unsigned get_arity() const override { return 2; }
+    cmd_arg_kind next_arg_kind(cmd_context& ctx) const override {
+        if (m_arg_index == 0) return CPK_EXPR_LIST;
+        return CPK_FUNC_DECL_LIST;
+    }
+    void set_next_arg(cmd_context& ctx, unsigned num, expr * const* args) override {
+      if(!m_ia)
+        m_ia = args;
+      else
+        m_b = args;
+    }
+    void set_next_arg(cmd_context & ctx, unsigned num, func_decl * const * ts) override {
+        m_vars.append(num, ts);
+    }
+    void prepare(cmd_context & ctx) override {
+      m_arg_index = 0;
+      m_ia = nullptr;
+      m_b = nullptr;
+      m_vars.reset();
+    }
+    void execute(cmd_context & ctx) override {
+      ast_manager &m = ctx.m();
+      func_decl_ref_vector vars(m);
+      expr_ref a(m);
+      expr_ref b(m);
+
+      b = *m_b;
+      a = *m_ia;
+      expr_ref_vector ia_lits(m);
+      SASSERT(m.is_and(a));
+      app *andlits = to_app(a);
+      for (auto &lit : *andlits)
+        ia_lits.push_back(lit);
+
+      for (func_decl *v : m_vars)
+        vars.push_back(v);
+
+      solver_factory &sf = ctx.get_solver_factory();
+      params_ref pa;
+      solver_ref s = sf(m, pa, false, true, true, symbol::null);
+      s->assert_expr(a);
+      lbool r = s->check_sat();
+      if (r != l_true) {
+        ctx.regular_stream() << "sat check " << r << "\n";
+        return;
+      }
+      model_ref mdl;
+      s->get_model(mdl); // use this model for MB cover used for interpolation
+
+      mbp::term_graph tgIa(m);
+      // initialize term graph with a
+      // tgIa.add_lits(ia_lits); // does not add equalities interpreted
+      for (expr *l : ia_lits) {
+        if (m.is_eq(l)) {
+          app *eq = to_app(l);
+          tgIa.add_eq(eq->get_arg(0), eq->get_arg(1));
+        } else
+          tgIa.add_lit(l);
+      }
+
+      bool done = false;
+      lbool unsat;
+      expr_ref_vector tglits(m); // monotonically increasing, could be
+                                 // maintained incrementally
+      // potential splits
+      while (!done) {
+        tgIa.mark_elim_terms(vars); // TODO: integrate in merge
+        done = tgIa.apply_one_eq(mdl);
+        // does the solver need to be reset?
+
+        if (!done) {
+          tglits.reset();
+          tgIa.to_lits(tglits, false, false);
+          // TODO: reset solver?
+          s->assert_expr(m.mk_and(tglits));
+          s->assert_expr(b);
+          unsat = s->check_sat();
+          if (unsat) {
+           done = true;
+          }
+          // 2 options here: try to extend the model that we got to see if it is
+          // a model of ia too or continue merging.
+        }
+      }
+
+      // we are done adding the equalities from the model of a and still got sat
+      // now we use the inequalities from the model of b to find more
+      // incompatible equalities.
+      // if(!unsat){
+      // }
+    }
+};
 
 void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(print_dimacs_cmd));
@@ -711,4 +819,5 @@ void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(eufi_cmd));
     ctx.insert(alloc(tg_qe_lite_cmd));
     ctx.insert(alloc(tg_mb_cover_cmd));
+    ctx.insert(alloc(abs_euf_itp_cmd));
 }

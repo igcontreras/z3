@@ -86,7 +86,7 @@ namespace mbp {
         unsigned m_interpreted:1;
 
         // -- the term can be rewritten to be efree
-        bool m_efree;
+        unsigned m_efree:1;
 
         // -- terms that contain this term as a child
         ptr_vector<term> m_parents;
@@ -164,6 +164,26 @@ namespace mbp {
 
         bool is_efree() {return m_efree;}
         void set_efree(bool v) {m_efree = v;}
+        void set_mark_terms_class(bool v) {
+          if (is_marked())
+            return;
+
+          term *curr = this;
+          do {
+            curr->set_mark(v);
+            curr = &curr->get_next();
+          } while (curr != this);
+        }
+        void set_mark2_terms_class(bool v) {
+          if (is_marked2())
+            return;
+
+          term *curr = this;
+          do {
+            curr->set_mark2(v);
+            curr = &curr->get_next();
+          } while (curr != this);
+        }
 
         bool is_interpreted() const {return m_interpreted;}
         bool is_theory() const { return !is_app(m_expr) || to_app(m_expr)->get_family_id() != null_family_id; }
@@ -422,7 +442,7 @@ namespace mbp {
           }
         }
         SASSERT(marks_are_clear());
-        }
+    }
 
     expr* term_graph::mk_app_core (expr *e) {
         if (is_app(e)) {
@@ -1417,4 +1437,82 @@ namespace mbp {
 
     return res;
   }
+
+  bool term_graph::apply_one_eq(model_ref mdl){
+    bool done = true;
+    reset_marks(); // TODO: marks could be kept to avoid traversing all terms
+                   // every time one equality is applied but they need to be
+                   // maintained after merge
+    for (auto &t : m_terms) {
+      if(t->is_efree()) continue; // no split point
+
+      // mark is used to avoid reprocessing equivalence classes
+      for (auto &t2 : m_terms) {
+        if (t2->is_marked() || t2->is_marked2()) continue;
+
+        // mark as processed (all the elements in the equivalence class)
+        t2->set_mark2(true);
+
+        if (mdl->are_equal(t->get_expr(), t2->get_expr())){
+          // they are equal in the model but not in the graph -> merge any of
+          // the potential splits
+          if (merge_split_if_applicable(mdl,t,t2)){
+            done = false;
+            break;
+          }
+        }
+      }
     }
+    // done: all terms are marked --> no more splits
+    return done;
+  }
+
+  // TODO: update marks after merge: not necessary for soundness, but it could
+  // be good for optimization
+
+  //    - option1: only check the mark of the representative! -- but how can we
+  //         ensure that it is up-to-date...
+  bool term_graph::merge_split_if_applicable(const model_ref mdl, term *t1,
+                                             term *t2) {
+    bool merged = false;
+
+    for(auto &p1 : term::parents(t1)){
+      for (auto &p2 : term::parents(t2)){
+        app *a1 = to_app(p1->get_expr()); // if it is a parent it must be an app
+        app *a2 = to_app(p2->get_expr());
+        if (!(a1->get_decl() == a2->get_decl())) continue; // not compatible
+
+        bool mergeable = true;
+        auto it1 = a1->begin();
+        auto it2 = a2->begin();
+        // check if the arguments are compatible. Because of how models are
+        // generated, equalities are only added if necessary. Progress is
+        // ensured, i.e., we are merging something, because at least t1 and t2
+        // were not in the same equivalence class as before.
+        for (; it1 != a1->end(); it1++, it2++) {
+          // mergeable == all equal in the model (abusing how models are
+          // generated)
+          if (!mdl->are_equal(*it1,*it2)) {
+            mergeable = false;
+            break;
+          }
+        }
+        if (mergeable) {
+          auto it1 = a1->begin();
+          auto it2 = a2->begin();
+          // OPTION: merging all the arguments in the split, we could merge only
+          // t1 and t2
+          for (; it1 != a1->end(); it1++, it2++)
+            m_merge.push_back(std::make_pair(get_term(*it1),get_term(*it2)));
+
+          m_merge.push_back(std::make_pair(p1, p2));
+          merge_flush();
+          merged = true;
+          break; // merging one of the splits of t1, t2. There could be more!
+        }
+      }
+    }
+    return merged;
+  }
+}
+
