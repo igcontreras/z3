@@ -667,9 +667,13 @@ public:
 
       // ctx.regular_stream() << "model: " << *mdl << std::endl;
       ctx.regular_stream() << "Before mark elim: " << tg.to_expr() << std::endl;
+      // --- flag should be called ground/not ground (does not have quantified
+      // variables)
+      // --- pick roots with a different lt (do not pick variables)
+      // --- mark equivalence classes
       tg.mark_elim_terms(vars);
-      ctx.regular_stream() << "Not e-free: " << std::endl;
-      expr_ref_vector nef = tg.non_efree_terms();
+      ctx.regular_stream() << "Not ground: " << std::endl;
+      expr_ref_vector nef = tg.non_ground_terms();
       for (expr * e : nef){
         expr_ref er(e,m);
         std::cout << er << std::endl;
@@ -774,7 +778,7 @@ public:
           s->assert_expr(b);
           unsat = s->check_sat();
           if (unsat) {
-           done = true;
+            done = true;
           }
           // 2 options here: try to extend the model that we got to see if it is
           // a model of ia too or continue merging.

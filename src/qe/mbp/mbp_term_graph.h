@@ -163,8 +163,8 @@ namespace mbp {
         expr* rep_of(expr* e);
 
         void mark_elim_terms(func_decl_ref_vector &vars);
-        expr_ref_vector non_efree_terms();
+        expr_ref_vector non_ground_terms();
         bool apply_one_eq(model_ref mdl);
-      bool merge_split_if_applicable(const model_ref mdl, term *t1, term *t2);
+        bool merge_split_if_applicable(const model_ref mdl, term *t1, term *t2);
     };
 }
