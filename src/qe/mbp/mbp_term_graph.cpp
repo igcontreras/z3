@@ -86,8 +86,8 @@ namespace mbp {
         // -- is an interpreted constant
         unsigned m_interpreted:1;
 
-        // -- the term can be rewritten to be efree
-        unsigned m_efree:1;
+        // -- the term can be rewritten to be ground
+        unsigned m_ground:1;
 
         // -- terms that contain this term as a child
         ptr_vector<term> m_parents;
@@ -163,8 +163,8 @@ namespace mbp {
         bool is_marked2() const {return m_mark2;} // NSB: where is this used?
         void set_mark2(bool v){m_mark2 = v;}      // NSB: where is this used?
 
-        bool is_efree() {return m_efree;}
-        void set_efree(bool v) {m_efree = v;}
+        bool is_ground() {return m_ground;}
+        void set_ground(bool v) {m_ground = v;}
         void set_mark_terms_class(bool v) {
           if (is_marked())
             return;
@@ -1382,14 +1382,14 @@ namespace mbp {
     func_decl_ref_vector to_elim(vars);
 
     for (auto &t : m_terms) {
-      t->set_efree(true);
+      t->set_ground(true);
       expr *te = t->get_expr();
       if (!is_app(te)) continue;
 
       func_decl *fd_del = nullptr;
       for (auto fd : to_elim) {
         if (t->get_decl_id() == fd->get_id()) {
-          t->set_efree(false);
+          t->set_ground(false);
           m_elim.push_back(t);
           to_propagate.push_back(t);
           fd_del = fd;
@@ -1408,37 +1408,37 @@ namespace mbp {
     while(to_propagate.size() > 0) {
       term *t = to_propagate.back();
       to_propagate.pop_back();
-      if(t->is_efree()) continue;
+      if(t->is_ground()) continue; // cannot happen?
 
       term * root = nullptr; // TODO: make it an term_ref_vector and choose later
       // not marked = the class has not been processed
       if(!t->is_marked()){
-        // find a representative that is efree
+        // find a representative that is ground
         for (term *it = &t->get_next(); it != t; it = &it->get_next()) {
           t->set_mark(true);
-          if(it->is_efree())
-            root = it; // TODO: how to pick among efree ones?
+          if(it->is_ground())
+            root = it; // TODO: how to pick among ground ones?
         }
       }
-      if(root && root != &t->get_root()){ // efree node found, set it as root
+      if(root && root != &t->get_root()){ // ground node found, set it as root
         root->mk_root();
       }
 
-      // efree node in class not found, mark parents as not efree
+      // ground node in class not found, mark parents as not ground
       for(auto &p : term::parents(t)){
         if(!p->is_marked()){
           to_propagate.push_back(p);
-          p->set_efree(false);
+          p->set_ground(false);
         }
       }
     }
     reset_marks();
   }
 
-  expr_ref_vector term_graph::non_efree_terms() {
+  expr_ref_vector term_graph::non_ground_terms() {
     expr_ref_vector res(m);
     for (auto &t : m_terms)
-      if(!t->is_efree())
+      if(!t->is_ground())
          res.push_back(t->get_expr());
 
     return res;
@@ -1450,15 +1450,21 @@ namespace mbp {
                    // every time one equality is applied but they need to be
                    // maintained after merge
     for (auto &t : m_terms) {
-      if(t->is_efree()) continue; // no split point
-
+      if(t->is_ground()) continue; // no split point
+      t->set_mark_terms_class(true);
       // mark is used to avoid reprocessing equivalence classes
       for (auto &t2 : m_terms) {
         if (t2->is_marked() || t2->is_marked2()) continue;
 
+        // check first parents
+
         // mark as processed (all the elements in the equivalence class)
         t2->set_mark2(true);
 
+        // check the roots directly
+        // cached model_evaluator
+        // check if the evaluator is caching
+        // record evaluations in the model
         if (mdl->are_equal(t->get_expr(), t2->get_expr())){
           // they are equal in the model but not in the graph -> merge any of
           // the potential splits
