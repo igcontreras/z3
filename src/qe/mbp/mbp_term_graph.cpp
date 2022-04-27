@@ -95,7 +95,9 @@ namespace mbp {
         // arguments of term.
         ptr_vector<term> m_children;
 
-    public:
+        ptr_vector<term> m_ineq;
+
+      public:
         term(expr_ref const& v, u_map<term*>& app2term) :
             m_expr(v),
             m_root(this),
@@ -130,7 +132,7 @@ namespace mbp {
             children(term const* _t):t(*_t) {}
             ptr_vector<term>::const_iterator begin() const { return t.m_children.begin(); }
             ptr_vector<term>::const_iterator end() const { return t.m_children.end(); }
-        };        
+        };
 
         // Congruence table hash function is based on
         // roots of children and function declaration.
@@ -163,7 +165,7 @@ namespace mbp {
         bool is_marked2() const {return m_mark2;} // NSB: where is this used?
         void set_mark2(bool v){m_mark2 = v;}      // NSB: where is this used?
 
-        bool is_ground() {return m_ground;}
+        bool is_ground() const {return m_ground;}
         void set_ground(bool v) {m_ground = v;}
         void set_mark_terms_class(bool v) {
           if (is_marked())
@@ -197,6 +199,8 @@ namespace mbp {
         void set_root(term &r) {m_root = &r;}
         term &get_next() const {return *m_next;}
         void add_parent(term* p) { m_parents.push_back(p); }
+
+        void add_ineq(term * t) { m_ineq.push_back(t); }
 
         unsigned get_class_size() const {return m_class_size;}
 
@@ -385,7 +389,7 @@ namespace mbp {
             internalize_term(lit);
         }
         if (is_pure_def(lit, v)) {
-            m_is_var.mark_solved(v);
+          m_is_var.mark_solved(v);
         }
     }
 
@@ -508,6 +512,72 @@ namespace mbp {
         }
     }
 
+  // -- is_ground() function is for the equivalence class, not the term
+    static bool is_ground_app_term(term *t) {
+
+      for (auto &it : term::children(t))
+        if (!it->get_root().is_ground())
+          return false;
+
+      return true;
+    }
+
+    void term_graph::mk_ground_equalities(term const &t, expr_ref_vector &out) {
+      SASSERT(t.is_root());
+      expr_ref rep(m);
+
+      for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
+        expr *e = it->get_expr();
+        bool is_ground = true;
+        expr_ref to_print_e(e,m);
+        std::cerr << "processing " << to_print_e << "\n";
+        if (is_app(e)){
+          app *a1 = to_app(e);
+          if (a1->get_decl()->get_arity() == 0) {
+            std::cerr << "constant found\n";
+            if (!it->is_ground()){
+              // SASSERT(m_elim.contains(it));
+              // SASSERT(m_is_var(e)); HERE!!!!
+              std::cerr << "not ground\n";
+              is_ground = false;
+            }
+          } else {
+            std::cerr << "term found\n";
+            if (!is_ground_app_term(it)){
+              is_ground = false;
+            }
+          }
+        }
+        else {
+          std::cerr << "no app\n";
+        }
+
+        if (is_ground) {
+            if (!rep) // make the term if there is another ground term in the
+              // equiv. class
+              rep = mk_app(t);
+            expr *mem = mk_app_core(e);
+            out.push_back(m.mk_eq(rep, mem));
+          }
+      }
+    }
+
+    void term_graph::mk_all_ground_equalities(term const &t, expr_ref_vector &out) {
+      mk_ground_equalities(t, out);
+
+      for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
+        if (!m_is_var(it->get_expr()) || is_ground_app_term(it))
+          continue;
+        expr *a1 = mk_app_core(it->get_expr());
+        for (term *it2 = &it->get_next(); it2 != &t; it2 = &it2->get_next()) {
+          if (!m_is_var(it->get_expr()) || is_ground_app_term(it))
+            continue;
+          expr *a2 = mk_app_core(it2->get_expr());
+          out.push_back(m.mk_eq(a1, a2));
+        }
+      }
+    }
+
     void term_graph::reset_marks() {
         for (term * t : m_terms) {
             t->set_mark(false);
@@ -565,40 +635,6 @@ namespace mbp {
         reset_marks();
     }
 
-    bool term_graph::pick_root_filter_vars(term &t, func_decl_ref_vector &vars,
-                                           expr_ref_vector &solved,
-                                           expr_ref_vector &solved_no_vars) {
-      // term *r = &t;
-      // expr *v = t.get_expr(); // v cannot appear in the new representative
-      // bool not_vars = false;
-      // for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-      //   it->set_mark(true);
-      //   // expr *eit = m_term2app[it];
-      //   expr *eit = nullptr;
-      //   if (!occurs(v, eit)) {
-      //     r = it; // candidate without v but it could contain other vars
-      //     solved.push_back(eit);
-      //     bool no_vars = true;
-      //     //  for(func_decl &restv : vars){
-      //     //   if(restv != v)
-      //     //     if(occurs(v, it))
-      //     //       no_vars = false;
-      //     // }
-      //     // if(no_vars){ // root candidate with no vars found, stop search
-      //     //   solved_no_vars.push_back(it);
-      //     //   r = it;
-      //     // }
-      //   }
-      // }
-
-      // // -- if found something better, make it the new root
-      // if (r != &t) {
-      //   r->mk_root();
-      //   return true;
-      // }
-      return false;
-    }
-
   // assuming that roots are already picked. To eliminate nodes we just need to
   // find other nodes to be the representative
     void term_graph::try_elim_roots(func_decl_ref_vector &vars) {
@@ -639,9 +675,47 @@ namespace mbp {
         }
     }
 
+  // assumes that ground terms have been computed
+    void term_graph::ground_terms_to_lits(expr_ref_vector &lits, bool all_equalities) {
+
+      for (expr *a : m_lits) {
+        if (is_internalized(a)) {
+          term *t = get_term(a);
+          expr_ref to_print_e(a, m);
+          std::cerr << "processing lit " << to_print_e;
+
+          if (is_ground_app_term(t)){
+            lits.push_back(::to_app(mk_app(a))); // rewrites to representatives?
+            std::cerr << " is ground";
+          }
+          else{
+            std::cerr << " not ground";
+          }
+        }
+      }
+
+      for (term *t : m_terms) {
+        if (!t->is_root())
+          continue;
+        else if(!t->is_ground()) // a root that is not ground; nothing to do
+          continue;
+        else if (all_equalities)
+          mk_all_ground_equalities(*t, lits);
+        else{
+          mk_ground_equalities(*t, lits);
+        }
+      }
+    }
+
     expr_ref term_graph::to_expr(bool repick_roots) {
       expr_ref_vector lits(m);
       to_lits(lits, false, repick_roots);
+      return mk_and(lits);
+    }
+
+    expr_ref term_graph::to_ground_expr() {
+      expr_ref_vector lits(m);
+      ground_terms_to_lits(lits, false);
       return mk_and(lits);
     }
 
@@ -1397,9 +1471,10 @@ namespace mbp {
         }
       }
       // once found the variable will not be found again
-      if(fd_del)
+      if(fd_del) {
         // TODO: move inside the loop? no iteration after erasing the element
         to_elim.erase(fd_del);
+      }
     }
 
     reset_marks();
@@ -1475,7 +1550,7 @@ namespace mbp {
         }
       }
     }
-    // done: all terms are marked --> no more splits
+    // done: all terms are marked --> no more equality splits
     return done;
   }
 
@@ -1490,9 +1565,14 @@ namespace mbp {
 
     for(auto &p1 : term::parents(t1)){
       for (auto &p2 : term::parents(t2)){
+        // the parents are not in the same equivalence class
+        if(&p1->get_root() == &p2->get_root()) continue;
+
         app *a1 = to_app(p1->get_expr()); // if it is a parent it must be an app
         app *a2 = to_app(p2->get_expr());
-        if (!(a1->get_decl() == a2->get_decl())) continue; // not compatible
+        if (a1->get_decl() != a2->get_decl() ||
+            a1->get_num_parameters() != a1->get_num_parameters())
+          continue; // not compatible
 
         bool mergeable = true;
         auto it1 = a1->begin();
@@ -1526,5 +1606,33 @@ namespace mbp {
     }
     return merged;
   }
-}
 
+  // TODO: expand to have an equivalent of distinct/n
+  bool term_graph::add_ineq(expr *a, expr *b) {
+    term * rta = &internalize_term(a)->get_root();
+    term * rtb = &internalize_term(b)->get_root();
+
+    rta->add_ineq(rtb);
+    rtb->add_ineq(rta);
+
+    if (rta == rtb)
+      return false;
+
+    return true;
+  }
+
+  bool term_graph::merge_ineqs(term *a, term *b) {
+    SASSERT(a->is_root());
+    // TODO: continue here!
+
+    return true;
+  }
+
+  void term_graph::merge_groundness(term *a, term *b) {
+    SASSERT(a->is_root());
+    if(b->is_ground()){
+      a->set_ground(true);
+      b->set_ground(false);
+    }
+  }
+}

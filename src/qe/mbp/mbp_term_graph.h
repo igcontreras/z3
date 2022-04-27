@@ -122,9 +122,6 @@ namespace mbp {
 
         // QE lite
         void try_elim_roots(func_decl_ref_vector &vars);
-        bool pick_root_filter_vars(term &t, func_decl_ref_vector &vars,
-                              expr_ref_vector &solved,
-                              expr_ref_vector &solved_no_vars);
       /**
        * Return disequalities to ensure that disequalities between
        * excluded functions are preserved.
@@ -141,7 +138,7 @@ namespace mbp {
          * disequalities, true under mdl, such that the literals
          * can be satisfied when non-shared symbols are projected.
          */
-        expr_ref_vector dcert(model& mdl, expr_ref_vector const& lits);
+      expr_ref_vector dcert(model& mdl, expr_ref_vector const& lits);
 
         /**
          * Produce a model-based partition.
@@ -162,9 +159,22 @@ namespace mbp {
         void  add_model_based_terms(model& mdl, expr_ref_vector const& terms);
         expr* rep_of(expr* e);
 
+      // new methods by IG
         void mark_elim_terms(func_decl_ref_vector &vars);
         expr_ref_vector non_ground_terms();
         bool apply_one_eq(model_ref mdl);
         bool merge_split_if_applicable(const model_ref mdl, term *t1, term *t2);
+        void ground_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
+        void mk_ground_equalities(term const &t, expr_ref_vector &out);
+        void mk_all_ground_equalities(term const &t, expr_ref_vector &out);
+        expr_ref to_ground_expr();
+        // -- returns false if the formula becomes unsat after adding (`a` != `b`)
+        bool add_ineq(expr *a, expr *b);
+        // -- merges the inequalities of 2 equivalence classes to be merged.
+        // -- `a` is required to be the root of the resulting equivalence class
+        bool merge_ineqs(term *a, term *b);
+        // -- merges the groundness property of 2 equivalence classes to be merged.
+        // -- `a` is required to be the root of the resulting equivalence class
+        void merge_groundness(term *a, term *b);
     };
 }
