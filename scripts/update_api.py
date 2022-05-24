@@ -42,6 +42,7 @@ IN_ARRAY    = 3
 OUT_ARRAY   = 4
 INOUT_ARRAY = 5
 OUT_MANAGED_ARRAY  = 6
+FN_PTR = 7
 
 # Primitive Types
 VOID       = 0
@@ -61,10 +62,15 @@ FLOAT      = 13
 CHAR       = 14
 CHAR_PTR   = 15
 
+FIRST_FN_ID = 50
+
 FIRST_OBJ_ID = 100
 
 def is_obj(ty):
     return ty >= FIRST_OBJ_ID
+
+def is_fn(ty):
+    return FIRST_FN_ID <= ty and ty < FIRST_OBJ_ID
 
 Type2Str = { VOID : 'void', VOID_PTR : 'void*', INT : 'int', UINT : 'unsigned', INT64 : 'int64_t', UINT64 : 'uint64_t', DOUBLE : 'double',
              FLOAT : 'float', STRING : 'Z3_string', STRING_PTR : 'Z3_string_ptr', BOOL : 'bool', SYMBOL : 'Z3_symbol',
@@ -84,13 +90,16 @@ Type2Dotnet = { VOID : 'void', VOID_PTR : 'IntPtr', INT : 'int', UINT : 'uint', 
 
 
 # Mapping to ML types
-Type2ML = { VOID : 'unit', VOID_PTR : 'VOIDP', INT : 'int', UINT : 'int', INT64 : 'int', UINT64 : 'int', DOUBLE : 'float',
+Type2ML = { VOID : 'unit', VOID_PTR : 'ptr', INT : 'int', UINT : 'int', INT64 : 'int', UINT64 : 'int', DOUBLE : 'float',
             FLOAT : 'float', STRING : 'string', STRING_PTR : 'char**',
             BOOL : 'bool', SYMBOL : 'z3_symbol', PRINT_MODE : 'int', ERROR_CODE : 'int', CHAR : 'char', CHAR_PTR : 'string' }
+
+Closures = []
 
 class APITypes:
     def __init__(self):
         self.next_type_id = FIRST_OBJ_ID
+        self.next_fntype_id = FIRST_FN_ID
 
     def def_Type(self, var, c_type, py_type):
         """Process type definitions of the form def_Type(var, c_type, py_type)
@@ -103,23 +112,41 @@ class APITypes:
         Type2Str[id] = c_type
         Type2PyStr[id] = py_type
         self.next_type_id += 1
+
         
     def def_Types(self, api_files):
+        global Closures
         pat1 = re.compile(" *def_Type\(\'(.*)\',[^\']*\'(.*)\',[^\']*\'(.*)\'\)[ \t]*")
+        pat2 = re.compile("Z3_DECLARE_CLOSURE\((.*),(.*), \((.*)\)\)")
         for api_file in api_files:
             with open(api_file, 'r') as api:
                 for line in api:
                     m = pat1.match(line)
                     if m:
                         self.def_Type(m.group(1), m.group(2), m.group(3))
+                        continue
+                    m = pat2.match(line)
+                    if m:
+                        self.fun_Type(m.group(1))
+                        Closures += [(m.group(1), m.group(2), m.group(3))]
+                        continue
         #
         # Populate object type entries in dotnet and ML bindings.
         # 
         for k in Type2Str:
             v = Type2Str[k]
-            if is_obj(k):
+            if is_obj(k) or is_fn(k):
                 Type2Dotnet[k] = v
                 Type2ML[k] = v.lower()
+
+    def fun_Type(self, var):
+        """Process function type definitions"""
+        id = self.next_fntype_id
+        exec('%s = %s' % (var, id), globals())
+        Type2Str[id] = var
+        Type2PyStr[id] = var
+        self.next_fntype_id += 1
+
 
 def type2str(ty):
     global Type2Str
@@ -146,6 +173,9 @@ def _in(ty):
 
 def _in_array(sz, ty):
     return (IN_ARRAY, ty, sz)
+
+def _fnptr(ty):
+    return (FN_PTR, ty)
 
 def _out(ty):
     return (OUT, ty)
@@ -179,11 +209,13 @@ def param_array_size_pos(p):
 
 def param2str(p):
     if param_kind(p) == IN_ARRAY:
-        return "%s const *" % type2str(param_type(p))
+        return "%s const *" % (type2str(param_type(p)))
     elif param_kind(p) == OUT_ARRAY or param_kind(p) == IN_ARRAY or param_kind(p) == INOUT_ARRAY:
-        return "%s*" % type2str(param_type(p))
+        return "%s*" % (type2str(param_type(p))) 
     elif param_kind(p) == OUT:
-        return "%s*" % type2str(param_type(p))
+        return "%s*" % (type2str(param_type(p))) 
+    elif param_kind(p) == FN_PTR:
+        return "%s*" % (type2str(param_type(p))) 
     else:
         return type2str(param_type(p))
 
@@ -276,6 +308,13 @@ def display_args_to_z3(params):
 
 NULLWrapped = [ 'Z3_mk_context', 'Z3_mk_context_rc' ]
 Unwrapped = [ 'Z3_del_context', 'Z3_get_error_code' ]
+Unchecked = frozenset([ 'Z3_dec_ref', 'Z3_params_dec_ref', 'Z3_model_dec_ref',
+                        'Z3_func_interp_dec_ref', 'Z3_func_entry_dec_ref',
+                        'Z3_goal_dec_ref', 'Z3_tactic_dec_ref', 'Z3_probe_dec_ref',
+                        'Z3_fixedpoint_dec_ref', 'Z3_param_descrs_dec_ref',
+                        'Z3_ast_vector_dec_ref', 'Z3_ast_map_dec_ref', 
+                        'Z3_apply_result_dec_ref', 'Z3_solver_dec_ref',
+                        'Z3_stats_dec_ref', 'Z3_optimize_dec_ref'])
 
 def mk_py_wrappers():
     core_py.write("""
@@ -345,7 +384,7 @@ def mk_py_wrapper_single(sig, decode_string=True):
     core_py.write("  %s_elems.f(" % lval)
     display_args_to_z3(params)
     core_py.write(")\n")
-    if len(params) > 0 and param_type(params[0]) == CONTEXT and not name in Unwrapped:
+    if len(params) > 0 and param_type(params[0]) == CONTEXT and not name in Unwrapped and not name in Unchecked:
         core_py.write("  _elems.Check(a0)\n")
     if result == STRING and decode_string:
         core_py.write("  return _to_pystr(r)\n")
@@ -374,11 +413,21 @@ def mk_dotnet(dotnet):
         v = Type2Str[k]
         if is_obj(k):
             dotnet.write('    using %s = System.IntPtr;\n' % v)
+
+    dotnet.write('       using voidp = System.IntPtr;\n')
     dotnet.write('\n')
     dotnet.write('    public class Native\n')
     dotnet.write('    {\n\n')
-    dotnet.write('        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]\n')
-    dotnet.write('        public delegate void Z3_error_handler(Z3_context c, Z3_error_code e);\n\n')
+
+    for name, ret, sig in Closures:
+        sig = sig.replace("void*","voidp").replace("unsigned","uint")
+        sig = sig.replace("Z3_ast*","ref IntPtr").replace("uint*","ref uint").replace("Z3_lbool*","ref int")
+        ret = ret.replace("void*","voidp").replace("unsigned","uint")
+        if "*" in sig or "*" in ret:
+            continue
+        dotnet.write('        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]\n')
+        dotnet.write('        public delegate %s %s(%s);\n' % (ret,name,sig))
+    
     dotnet.write('        public class LIB\n')
     dotnet.write('        {\n')
     dotnet.write('            const string Z3_DLL_NAME = \"libz3\";\n'
@@ -456,7 +505,7 @@ def mk_dotnet_wrappers(dotnet):
                 dotnet.write("            if (r == IntPtr.Zero)\n")
                 dotnet.write("                throw new Z3Exception(\"Object allocation failed.\");\n")
             else:
-                if len(params) > 0 and param_type(params[0]) == CONTEXT:
+                if len(params) > 0 and param_type(params[0]) == CONTEXT and name not in Unchecked:
                     dotnet.write("            Z3_error_code err = (Z3_error_code)LIB.Z3_get_error_code(a0);\n")
                     dotnet.write("            if (err != Z3_error_code.Z3_OK)\n")
                     dotnet.write("                throw new Z3Exception(Marshal.PtrToStringAnsi(LIB.Z3_get_error_msg(a0, (uint)err)));\n")
@@ -481,14 +530,14 @@ Type2JavaW = { VOID : 'void', VOID_PTR : 'jlong', INT : 'jint', UINT : 'jint', I
 
 def type2java(ty):
     global Type2Java
-    if (ty >= FIRST_OBJ_ID):
+    if (ty >= FIRST_FN_ID):
         return 'long'
     else:
         return Type2Java[ty]
 
 def type2javaw(ty):
     global Type2JavaW
-    if (ty >= FIRST_OBJ_ID):
+    if (ty >= FIRST_FN_ID):
         return 'jlong'
     else:
         return Type2JavaW[ty]
@@ -513,6 +562,8 @@ def param2java(p):
             return "UIntArrayPtr"
         else:
             return "ObjArrayPtr"
+    elif k == FN_PTR:
+        return "LongPtr"
     else:
         return type2java(param_type(p))
 
@@ -627,7 +678,7 @@ def mk_java(java_dir, package_name):
                 java_native.write("      if (res == 0)\n")
                 java_native.write("          throw new Z3Exception(\"Object allocation failed.\");\n")
             else:
-                if len(params) > 0 and param_type(params[0]) == CONTEXT:
+                if len(params) > 0 and param_type(params[0]) == CONTEXT and name not in Unchecked:
                     java_native.write('      Z3_error_code err = Z3_error_code.fromInt(INTERNALgetErrorCode(a0));\n')
                     java_native.write('      if (err != Z3_error_code.Z3_OK)\n')
                     java_native.write('          throw new Z3Exception(INTERNALgetErrorMsg(a0, err.toInt()));\n')
@@ -1070,6 +1121,9 @@ def def_API(name, result, params):
             log_c.write(" }\n")
             log_c.write("  Ap(%s);\n" % sz_e)
             exe_c.write("reinterpret_cast<%s**>(in.get_obj_array(%s))" % (tstr, i))
+        elif kind == FN_PTR:
+            log_c.write("//  P(a%s);\n" % i)
+            exe_c.write("reinterpret_cast<%s>(in.get_obj(%s))" % (param2str(p), i))
         else:
             error ("unsupported parameter for %s, %s" % (name, p))
         i = i + 1
@@ -1286,6 +1340,27 @@ def ml_alloc_and_store(t, lhs, rhs):
         alloc_str = '%s = caml_alloc_custom(&%s, sizeof(%s), 0, 1); ' % (lhs, pops, pts)
         return alloc_str + ml_set_wrap(t, lhs, rhs)
 
+
+z3_long_funs = frozenset([
+    'Z3_solver_check',
+    'Z3_solver_check_assumptions',
+    'Z3_simplify',
+    'Z3_simplify_ex',
+    ])
+
+z3_ml_overrides = frozenset([
+    'Z3_mk_config'])
+
+z3_ml_callbacks = frozenset([
+    'Z3_solver_propagate_init',
+    'Z3_solver_propagate_fixed',
+    'Z3_solver_propagate_final',
+    'Z3_solver_propagate_eq',
+    'Z3_solver_propagate_diseq',
+    'Z3_solver_propagate_created',
+    'Z3_solver_propagate_decide'
+    ])
+
 def mk_ml(ml_src_dir, ml_output_dir):
     global Type2Str
     ml_nativef  = os.path.join(ml_output_dir, 'z3native.ml')
@@ -1299,6 +1374,8 @@ def mk_ml(ml_src_dir, ml_output_dir):
 
     ml_native.write('\n')
     for name, result, params in _dotnet_decls:
+        if name in z3_ml_callbacks:
+            continue
         ml_native.write('external %s : ' % ml_method_name(name))
         ip = inparams(params)
         op = outparams(params)
@@ -1343,17 +1420,6 @@ def mk_ml(ml_src_dir, ml_output_dir):
 
     mk_z3native_stubs_c(ml_src_dir, ml_output_dir)
 
-z3_long_funs = frozenset([
-    'Z3_solver_check',
-    'Z3_solver_check_assumptions',
-    'Z3_simplify',
-    'Z3_simplify_ex',
-    ])
-
-z3_ml_overrides = frozenset([
-    'Z3_mk_config'
-    ])
-
 def mk_z3native_stubs_c(ml_src_dir, ml_output_dir): # C interface
     ml_wrapperf = os.path.join(ml_output_dir, 'z3native_stubs.c')
     ml_wrapper = open(ml_wrapperf, 'w')
@@ -1367,6 +1433,8 @@ def mk_z3native_stubs_c(ml_src_dir, ml_output_dir): # C interface
     for name, result, params in _dotnet_decls:
 
         if name in z3_ml_overrides:
+            continue
+        if name in z3_ml_callbacks:
             continue
 
         ip = inparams(params)
@@ -1433,7 +1501,7 @@ def mk_z3native_stubs_c(ml_src_dir, ml_output_dir): # C interface
         # determine if the function has a context as parameter.
         have_context = (len(params) > 0) and (param_type(params[0]) == CONTEXT)
 
-        if have_context and name not in Unwrapped:
+        if have_context and name not in Unwrapped and name not in Unchecked:
             ml_wrapper.write('  Z3_error_code ec;\n')
 
         if result != VOID:
@@ -1559,7 +1627,7 @@ def mk_z3native_stubs_c(ml_src_dir, ml_output_dir): # C interface
         if release_caml_gc:
             ml_wrapper.write('\n  caml_acquire_runtime_system();\n')
 
-        if have_context and name not in Unwrapped:
+        if have_context and name not in Unwrapped and name not in Unchecked:
             ml_wrapper.write('  ec = Z3_get_error_code(ctx_p->ctx);\n')
             ml_wrapper.write('  if (ec != Z3_OK) {\n')
             ml_wrapper.write('    const char * msg = Z3_get_error_msg(ctx_p->ctx, ec);\n')
@@ -1820,28 +1888,22 @@ _error_handler_type  = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint)
 _lib.Z3_set_error_handler.restype  = None
 _lib.Z3_set_error_handler.argtypes = [ContextObj, _error_handler_type]
 
-push_eh_type  = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
-pop_eh_type   = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint)
-fresh_eh_type = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+Z3_push_eh  = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
+Z3_pop_eh   = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint)
+Z3_fresh_eh = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
 
-fixed_eh_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
-final_eh_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
-eq_eh_type    = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+Z3_fixed_eh = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+Z3_final_eh = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
+Z3_eq_eh    = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+
+Z3_created_eh = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+Z3_decide_eh = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
 
 _lib.Z3_solver_propagate_init.restype = None
-_lib.Z3_solver_propagate_init.argtypes = [ContextObj, SolverObj, ctypes.c_void_p, push_eh_type, pop_eh_type, fresh_eh_type]
-
 _lib.Z3_solver_propagate_final.restype = None
-_lib.Z3_solver_propagate_final.argtypes = [ContextObj, SolverObj, final_eh_type]
-
 _lib.Z3_solver_propagate_fixed.restype = None
-_lib.Z3_solver_propagate_fixed.argtypes = [ContextObj, SolverObj, fixed_eh_type]
-
 _lib.Z3_solver_propagate_eq.restype = None
-_lib.Z3_solver_propagate_eq.argtypes = [ContextObj, SolverObj, eq_eh_type]
-
 _lib.Z3_solver_propagate_diseq.restype = None
-_lib.Z3_solver_propagate_diseq.argtypes = [ContextObj, SolverObj, eq_eh_type]
 
 on_model_eh_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 _lib.Z3_optimize_register_model_eh.restype = None

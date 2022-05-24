@@ -1359,6 +1359,7 @@ namespace z3 {
 
         friend expr operator~(expr const & a);
         expr extract(unsigned hi, unsigned lo) const { Z3_ast r = Z3_mk_extract(ctx(), hi, lo, *this); ctx().check_error(); return expr(ctx(), r); }
+        expr bit2bool(unsigned i) const { Z3_ast r = Z3_mk_bit2bool(ctx(), i, *this); ctx().check_error(); return expr(ctx(), r); }
         unsigned lo() const { assert (is_app() && Z3_get_decl_num_parameters(ctx(), decl()) == 2); return static_cast<unsigned>(Z3_get_decl_int_parameter(ctx(), decl(), 1)); }
         unsigned hi() const { assert (is_app() && Z3_get_decl_num_parameters(ctx(), decl()) == 2); return static_cast<unsigned>(Z3_get_decl_int_parameter(ctx(), decl(), 0)); }
 
@@ -3943,11 +3944,13 @@ namespace z3 {
         typedef std::function<void(void)> final_eh_t;
         typedef std::function<void(expr const&, expr const&)> eq_eh_t;
         typedef std::function<void(expr const&)> created_eh_t;
+        typedef std::function<void(expr&, unsigned&, Z3_lbool&)> decide_eh_t;
 
         final_eh_t m_final_eh;
         eq_eh_t    m_eq_eh;
         fixed_eh_t m_fixed_eh;
         created_eh_t m_created_eh;
+        decide_eh_t m_decide_eh;
         solver*    s;
         context*   c;
         std::vector<z3::context*> subcontexts;
@@ -3964,18 +3967,23 @@ namespace z3 {
             }
         };
 
-        static void push_eh(void* p) {
+        static void push_eh(void* _p, Z3_solver_callback cb) {
+            user_propagator_base* p = static_cast<user_propagator_base*>(_p);
+            scoped_cb _cb(p, cb);
             static_cast<user_propagator_base*>(p)->push();
         }
 
-        static void pop_eh(void* p, unsigned num_scopes) {
-            static_cast<user_propagator_base*>(p)->pop(num_scopes);
+        static void pop_eh(void* _p, Z3_solver_callback cb, unsigned num_scopes) {
+            user_propagator_base* p = static_cast<user_propagator_base*>(_p);
+            scoped_cb _cb(p, cb);
+            static_cast<user_propagator_base*>(_p)->pop(num_scopes);
         }
 
-        static void* fresh_eh(void* p, Z3_context ctx) {
+        static void* fresh_eh(void* _p, Z3_context ctx) {
+            user_propagator_base* p = static_cast<user_propagator_base*>(_p);
             context* c = new context(ctx);
-            static_cast<user_propagator_base*>(p)->subcontexts.push_back(c);
-            return static_cast<user_propagator_base*>(p)->fresh(*c);
+            p->subcontexts.push_back(c);
+            return p->fresh(*c);
         }
 
         static void fixed_eh(void* _p, Z3_solver_callback cb, Z3_ast _var, Z3_ast _value) {
@@ -4004,8 +4012,16 @@ namespace z3 {
             expr e(p->ctx(), _e);
             p->m_created_eh(e);
         }
-
-
+        
+        static void decide_eh(void* _p, Z3_solver_callback cb, Z3_ast* _val, unsigned* bit, Z3_lbool* is_pos) {
+            user_propagator_base* p = static_cast<user_propagator_base*>(_p);
+            scoped_cb _cb(p, cb);
+            expr val(p->ctx(), *_val);
+            p->m_decide_eh(val, *bit, *is_pos);
+            // TBD: life time of val is within the scope of this callback.
+            *_val = val;
+        }
+        
     public:
         user_propagator_base(context& c) : s(nullptr), c(&c) {}
         
@@ -4114,6 +4130,22 @@ namespace z3 {
                 Z3_solver_propagate_created(ctx(), *s, created_eh);
             }
         }
+        
+        void register_decide(decide_eh_t& c) {
+            m_decide_eh = c;
+            if (s) {
+                Z3_solver_propagate_decide(ctx(), *s, decide_eh);
+            }
+        }
+
+        void register_decide() {
+            m_decide_eh = [this](expr& val, unsigned& bit, Z3_lbool& is_pos) {
+                decide(val, bit, is_pos);
+            };
+            if (s) {
+                Z3_solver_propagate_decide(ctx(), *s, decide_eh);
+            }
+        }
 
         virtual void fixed(expr const& /*id*/, expr const& /*e*/) { }
 
@@ -4122,6 +4154,8 @@ namespace z3 {
         virtual void final() { }
 
         virtual void created(expr const& /*e*/) {}
+        
+        virtual void decide(expr& /*val*/, unsigned& /*bit*/, Z3_lbool& /*is_pos*/) {}
 
         /**
            \brief tracks \c e by a unique identifier that is returned by the call.

@@ -44,17 +44,18 @@ let optTypes = {
 
 // parse type declarations
 let types = {
-  __proto__: null,
+    __proto__: null,
 
-  // these are function types I can't be bothered to parse
-  Z3_error_handler: 'Z3_error_handler',
-  Z3_push_eh: 'Z3_push_eh',
-  Z3_pop_eh: 'Z3_pop_eh',
-  Z3_fresh_eh: 'Z3_fresh_eh',
-  Z3_fixed_eh: 'Z3_fixed_eh',
-  Z3_eq_eh: 'Z3_eq_eh',
-  Z3_final_eh: 'Z3_final_eh',
-  Z3_created_eh: 'Z3_created_eh',
+    // these are function types I can't be bothered to parse
+    Z3_error_handler: 'Z3_error_handler',
+    Z3_push_eh: 'Z3_push_eh',
+    Z3_pop_eh: 'Z3_pop_eh',
+    Z3_fresh_eh: 'Z3_fresh_eh',
+    Z3_fixed_eh: 'Z3_fixed_eh',
+    Z3_eq_eh: 'Z3_eq_eh',
+    Z3_final_eh: 'Z3_final_eh',
+    Z3_created_eh: 'Z3_created_eh',
+    Z3_decide_eh: 'Z3_decide_eh'
 };
 
 let defApis = Object.create(null);
@@ -82,11 +83,17 @@ for (let file of files) {
     pytypes[groups.name] = groups.cname;
   }
 
+  // we don't have to pre-populate the types map with closure types
+  // use the Z3_DECLARE_CLOSURE to identify closure types
+  // for (let match of contents.matchAll(/Z3_DECLARE_CLOSURE\((?<type>[A-Za-z0-9_]+),/g)) {
+  //   types[match.groups.type] = match.groups.type
+  // }
+
   // we filter first to ensure our regex isn't too strict
   let apiLines = contents.split('\n').filter(l => /def_API|extra_API/.test(l));
   for (let line of apiLines) {
     let match = line.match(
-      /^\s*(?<def>def_API|extra_API) *\(\s*'(?<name>[A-Za-z0-9_]+)'\s*,\s*(?<ret>[A-Za-z0-9_]+)\s*,\s*\((?<params>((_in|_out|_in_array|_out_array|_inout_array)\([^)]+\)\s*,?\s*)*)\)\s*\)\s*$/,
+			   /^\s*(?<def>def_API|extra_API) *\(\s*'(?<name>[A-Za-z0-9_]+)'\s*,\s*(?<ret>[A-Za-z0-9_]+)\s*,\s*\((?<params>((_in|_out|_in_array|_out_array|_fnptr|_inout_array)\([^)]+\)\s*,?\s*)*)\)\s*\)\s*$/,
     );
     if (match == null) {
       throw new Error(`failed to match def_API call ${JSON.stringify(line)}`);
@@ -97,13 +104,13 @@ for (let file of files) {
     let parsedParams = [];
     while (true) {
       text = eatWs(text);
-      ({ text, match } = eat(text, /^_(?<kind>in|out|in_array|out_array|inout_array)\(/));
+      ({ text, match } = eat(text, /^_(?<kind>in|out|in_array|out_array|inout_array|fnptr)\(/));
       if (match == null) {
         break;
       }
       let kind = match.groups.kind;
       if (kind === 'inout_array') kind = 'in_array'; // https://github.com/Z3Prover/z3/discussions/5761
-      if (kind === 'in' || kind === 'out') {
+      if (kind === 'in' || kind === 'out' || kind == 'fnptr') {
         ({ text, match } = expect(text, /^[A-Za-z0-9_]+/));
         parsedParams.push({ kind, type: match[0] });
       } else {
@@ -121,7 +128,6 @@ for (let file of files) {
       throw new Error(`extra text in parameter list ${JSON.stringify(text)}`);
     }
 
-      
     if (name in defApis) {
       throw new Error(`multiple defApi calls for ${name}`);
     }
@@ -132,11 +138,6 @@ for (let file of files) {
     types[match.groups.type] = match.groups.type;
   }
 
-    // we don't have to pre-populate the types map with closure types
-    // use the Z3_DECLARE_CLOSURE to identify closure types
-    // for (let match of contents.matchAll(/Z3_DECLARE_CLOSURE\((?<type>[A-Za-z0-9_]+),/g)) {
-    //   types[match.groups.type] = match.groups.type
-    // }
 
   // parse enum declarations
   for (let idx = 0; idx < contents.length; ) {
