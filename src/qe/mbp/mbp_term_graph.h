@@ -42,6 +42,9 @@ namespace mbp {
             void mark_solved(const expr *e);
             void reset_solved() {m_solved.reset();}
             void reset() {m_decls.reset(); m_solved.reset(); m_exclude = true;}
+            bool contains(func_decl *f) {
+              return m_decls.contains(f) == m_exclude;
+            }
         };
 
         struct term_hash { unsigned operator()(term const* t) const; };
@@ -58,6 +61,7 @@ namespace mbp {
         vector<std::pair<term*,term*>> m_merge;
 
         term_graph::is_variable_proc m_is_var;
+
         void merge(term &t1, term &t2);
         void merge_flush();
 
@@ -68,6 +72,8 @@ namespace mbp {
         term *internalize_term(expr *t);
         void internalize_eq(expr *a1, expr *a2);
         void internalize_lit(expr *lit);
+        void internalize_distinct(expr *d);
+        void internalize_ineq(expr *a1, expr *a2);
 
         bool is_internalized(expr *a);
 
@@ -120,8 +126,6 @@ namespace mbp {
         expr_ref_vector solve();
         expr_ref_vector project(model &mdl);
 
-        // QE lite
-        void try_elim_roots(func_decl_ref_vector &vars);
       /**
        * Return disequalities to ensure that disequalities between
        * excluded functions are preserved.
@@ -143,7 +147,7 @@ namespace mbp {
         /**
          * Produce a model-based partition.
          */
-        vector<expr_ref_vector> get_partition(model& mdl);
+      vector<expr_ref_vector> get_partition(model& mdl); // IG: modifies the graph?
 
         /**
          * Extract shared occurrences of terms whose sort are 
@@ -160,21 +164,43 @@ namespace mbp {
         expr* rep_of(expr* e);
 
       // new methods by IG
+        using tg_ineq_int = uint64_t;
+        using tg_ineqs = vector<tg_ineq_int>;
+        struct add_ineq_proc {
+          uint64_t m_ineq_cnt =
+              0; // TODO: how can I declare a type for a very big number?
+                 //       is this a bad idea?
+          void operator()(term *t1, term *t2);
+          void operator()(ptr_vector<term> &ts);
+        };
+
+        // -- inequalities added during MB-cover (for output)
+        vector<std::pair<term*,term*>> m_ineq_pairs;
+        // -- these are not added as a result of MB cover, maybe they are not
+        // necessary since they are in the original formula. (for output)
+        vector<ptr_vector<term>> m_ineq_distinct;
+
         void mark_elim_terms(func_decl_ref_vector &vars);
         expr_ref_vector non_ground_terms();
-        bool apply_one_eq(model_ref mdl);
-        bool merge_split_if_applicable(const model_ref mdl, term *t1, term *t2);
+        bool merge_split_if_applicable(const model_ref& mdl, term *t1, term *t2);
         void ground_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
         void mk_ground_equalities(term const &t, expr_ref_vector &out);
         void mk_all_ground_equalities(term const &t, expr_ref_vector &out);
         expr_ref to_ground_expr();
-        // -- returns false if the formula becomes unsat after adding (`a` != `b`)
-        bool add_ineq(expr *a, expr *b);
-        // -- merges the inequalities of 2 equivalence classes to be merged.
-        // -- `a` is required to be the root of the resulting equivalence class
-        bool merge_ineqs(term *a, term *b);
         // -- merges the groundness property of 2 equivalence classes to be merged.
         // -- `a` is required to be the root of the resulting equivalence class
-        void merge_groundness(term *a, term *b);
+        void merge_groundness(term& a, term& b);
+        // -- checks if two compatible terms (e.g. f(x,y) f(x,z)) form a split
+        // point. If so, returns the arguments that are not currently equal in
+        // the term graph.
+        // TODO: make it a template to not store the arguments if not needed
+        bool is_split(const term &t1, const term &t2,
+                      vector<std::pair<term *, term *>> &diff_args);
+        void mb_cover(model& mdl);
+        void add_ineq_terms(term *t1, term *t2);
+        void add_ineq_terms(ptr_vector<term> &ts);
+
+      private:
+        add_ineq_proc m_add_ineq;
     };
 }
