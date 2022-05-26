@@ -40,7 +40,7 @@ namespace mbp {
     }
 
     namespace {
-        struct sort_lt_proc {
+      struct sort_lt_proc { // for representatives in model_complete
             bool operator()(const expr* a, const expr *b) const {
                 return a->get_sort()->get_id() < b->get_sort()->get_id();
             }
@@ -82,6 +82,8 @@ namespace mbp {
         unsigned m_mark:1;
         // -- general purpose second mark
         unsigned m_mark2:1;
+        // -- general purpose class mark
+        unsigned m_class_mark : 1;
         // -- is an interpreted constant
         unsigned m_interpreted:1;
 
@@ -94,23 +96,20 @@ namespace mbp {
         // arguments of term.
         ptr_vector<term> m_children;
 
-        ptr_vector<term> m_ineq;
+        // -- inequality computation representation
+        vector<uint64_t> m_ineqs;
 
       public:
-        term(expr_ref const& v, u_map<term*>& app2term) :
-            m_expr(v),
-            m_root(this),
-            m_next(this),
-            m_class_size(1),
-            m_mark(false),
-            m_mark2(false),
-            m_interpreted(false) {
-            if (!is_app(m_expr)) return;
-            for (expr* e : *to_app(m_expr)) {
-                term* t = app2term[e->get_id()];
-                t->get_root().m_parents.push_back(this);
-                m_children.push_back(t);
-            }
+        term(expr_ref const &v, u_map<term *> &app2term)
+            : m_expr(v), m_root(this), m_next(this), m_class_size(1),
+              m_mark(false), m_mark2(false), m_interpreted(false) {
+          if (!is_app(m_expr))
+            return;
+          for (expr *e : *to_app(m_expr)) {
+            term *t = app2term[e->get_id()];
+            t->get_root().m_parents.push_back(this);
+            m_children.push_back(t);
+          }
         }
 
         ~term() {}
@@ -163,20 +162,77 @@ namespace mbp {
         void set_mark(bool v){m_mark = v;}
         bool is_marked2() const {return m_mark2;} // NSB: where is this used?
         void set_mark2(bool v){m_mark2 = v;}      // NSB: where is this used?
+        bool is_marked_class() const { return m_root->m_class_mark; }
+        void set_mark_class(bool v) const {
+          // XXX assert(is_root()); ?
+          m_root->m_class_mark = v;
+        }
 
         bool is_ground() const {return m_ground;}
         void set_ground(bool v) {m_ground = v;}
-        void set_mark_terms_class(bool v) {
-          if (is_marked())
+
+        // merges the inequalities in is2 into is1
+        static void merge_ineqs(term_graph::tg_ineqs &is1,
+                                term_graph::tg_ineqs &is2) {
+          if (is1.size() == 0 && is2.size() == 0)
             return;
 
-          term *curr = this;
-          do {
-            curr->set_mark(v);
-            curr = &curr->get_next();
-          } while (curr != this);
+          auto it1 = is1.begin();
+          auto it2 = is2.begin();
+          for (; it1 != is1.end() && it2 != is2.end(); it1++, it2++) {
+            *it1 |= *it2; // optional: check & to find unsat
+          }
+
+          if (it2 != is2.end()) {
+            // --- TODO: insert all at once (I could not find a way to use
+            // insert),
+            // --- I wanted to do:
+            // is1.insert(is1.end(), it2, it2.end());
+            for (; it2 != is2.end(); it2++) {
+              is1.push_back(*it2);
+            }
+          }
         }
-        void set_mark2_terms_class(bool v) {
+
+        static bool are_ineq(const term &t1, const term &t2) {
+          term_graph::tg_ineqs &is1 = t1.get_root().get_ineqs();
+          term_graph::tg_ineqs &is2 = t2.get_root().get_ineqs();
+
+          if (is1.size() == 0 || is2.size() == 0)
+            return false;
+
+          // assumes is1.size() <= is2.size() && is1.size() > 1
+          auto are_ineq = [](term_graph::tg_ineqs &is1,
+                             term_graph::tg_ineqs &is2) {
+            for (int i = 0; i < is1.size(); i++) {
+              if (is2.size() == i)
+                return false;
+              else if ((is1[i] & is2[i]) != 0)
+                // if the bitwise AND is different from 0 it means that they
+                // share an inequality class
+                return true;
+            } // no need to check the remaining elements in is2 because they
+              // are not shared
+            return false;
+          };
+
+          if (is1.size() <= is2.size())
+            return are_ineq(is1, is2);
+          else
+            return are_ineq(is2, is1);
+        }
+
+        static void set_bit(term *t, unsigned idx,
+                            term_graph::tg_ineq_int pos) {
+          term_graph::tg_ineqs &is = t->get_root().get_ineqs();
+
+          for (int i = is.size(); i <= idx; i++) { // add missing sets
+            is.push_back(0);
+          }
+          is.back() |= 0 & (1 << pos);
+        }
+
+      void set_mark2_terms_class(bool v) { // TODO: remove
           if (is_marked2())
             return;
 
@@ -199,15 +255,16 @@ namespace mbp {
         term &get_next() const {return *m_next;}
         void add_parent(term* p) { m_parents.push_back(p); }
 
-        void add_ineq(term * t) { m_ineq.push_back(t); }
-
         unsigned get_class_size() const {return m_class_size;}
 
         void merge_eq_class(term &b) {
-            std::swap(this->m_next, b.m_next);
-            m_class_size += b.get_class_size();
-            // -- reset (useful for debugging)
-            b.m_class_size = 0;
+          merge_ineqs(this->m_ineqs, b.m_ineqs); // TODO: ask
+          set_mark_class(is_marked_class() || b.is_marked_class());
+          std::swap(this->m_next, b.m_next);
+          m_class_size += b.get_class_size();
+          // -- reset (useful for debugging)
+          b.m_class_size = 0;
+          b.m_ineqs.clear();
         }
 
         // -- make this term the root of its equivalence class
@@ -239,10 +296,30 @@ namespace mbp {
             out << "\n";
             return out;
         }
+        vector<uint64_t> &get_ineqs() { return m_ineqs; }
     };
 
     static std::ostream& operator<<(std::ostream& out, term const& t) {
         return t.display(out);
+    }
+
+    // t1 != t2
+    void term_graph::add_ineq_proc::operator()(term *t1, term *t2) {
+      ptr_vector<term> ts(2);
+      ts[0] = t1;
+      ts[1] = t2;
+      (*this)(ts);
+    }
+
+    // distinct(ts)
+    void term_graph::add_ineq_proc::operator()(ptr_vector<term> &ts) {
+      unsigned idx = m_ineq_cnt / sizeof(tg_ineq_int);
+      tg_ineq_int bit_pos = m_ineq_cnt % sizeof(tg_ineq_int);
+
+      for (auto t : ts) {
+        term::set_bit(t, idx, bit_pos);
+      }
+      m_ineq_cnt++;
     }
 
     bool term_graph::is_variable_proc::operator()(const expr * e) const {
@@ -380,20 +457,50 @@ namespace mbp {
         SASSERT(m_merge.empty());
     }
 
-    void term_graph::internalize_lit(expr* lit) {
-        expr *e1 = nullptr, *e2 = nullptr, *v = nullptr;
-        if (m.is_eq (lit, e1, e2)) {
-            internalize_eq (e1, e2);
-        }
-        else {
-            internalize_term(lit);
+    void term_graph::internalize_distinct(expr *d) {
+      app *a = to_app(d);
+      ptr_vector<term> ts(a->get_decl()->get_arity());
+      auto tsit = ts.begin();
+      for (auto arg : *a) {
+        ++*tsit = internalize_term(arg);
+      }
+      m_add_ineq(ts); // TODO: review here!
+    }
+
+    void term_graph::internalize_ineq(expr *a1, expr *a2) {
+      add_ineq_terms(internalize_term(a1), internalize_term(a2));
+    }
+
+    void term_graph::add_ineq_terms(term *t1, term *t2) {
+      m_add_ineq(t1, t2);
+      m_ineq_pairs.push_back({t1, t2}); // for output
+    }
+
+    void term_graph::add_ineq_terms(ptr_vector<term>& ts) {
+      m_add_ineq(ts);
+      m_ineq_distinct.push_back(ts);
+    }
+
+  void term_graph::internalize_lit(expr * lit) {
+        expr *e1 = nullptr, *e2 = nullptr, *ne = nullptr, *v = nullptr;
+        if (m.is_eq(lit, e1, e2)) { // internalize equality
+          internalize_eq(e1, e2);
+        } else if (m.is_distinct(lit)) {
+          internalize_distinct(lit);
+        } else if (m.is_not(lit, ne) &&
+                   m.is_eq(ne, e1,
+                           e2)) { // TODO: what about disequalities of ground
+                                  // interpreted terms? (e.g. 1 != 2)
+          internalize_ineq(e1, e2);
+        } else {
+          internalize_term(lit);
         }
         if (is_pure_def(lit, v)) {
           m_is_var.mark_solved(v);
         }
-    }
+      }
 
-    void term_graph::merge_flush() {
+      void term_graph::merge_flush() {
         while (!m_merge.empty()) {
             term* t1 = m_merge.back().first;
             term* t2 = m_merge.back().second;
@@ -529,27 +636,18 @@ namespace mbp {
       for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
         expr *e = it->get_expr();
         bool is_ground = true;
-        expr_ref to_print_e(e,m);
-        std::cerr << "processing " << to_print_e << "\n";
         if (is_app(e)){
           app *a1 = to_app(e);
           if (a1->get_decl()->get_arity() == 0) {
-            std::cerr << "constant found\n";
             if (!it->is_ground()){
-              // SASSERT(m_elim.contains(it));
-              // SASSERT(m_is_var(e)); HERE!!!!
-              std::cerr << "not ground\n";
+              // SASSERT(m_is_var.contains(a1->get_decl()));
               is_ground = false;
             }
           } else {
-            std::cerr << "term found\n";
             if (!is_ground_app_term(it)){
               is_ground = false;
             }
           }
-        }
-        else {
-          std::cerr << "no app\n";
         }
 
         if (is_ground) {
@@ -584,9 +682,16 @@ namespace mbp {
         }
     }
 
+    // TODO: not necessary?
+    // void term_graph::reset_class_marks() {
+    //   for (term *t : m_terms) {
+    //     t->set_class_mark(false);
+    //   }
+    // }
+
     bool term_graph::marks_are_clear() {
         for (term * t : m_terms) {
-            if (t->is_marked()) return false;
+          if (t->is_marked()) return false; // missing mark2!
         }
         return true;
     }
@@ -633,19 +738,6 @@ namespace mbp {
                 pick_root(*t);
         }
         reset_marks();
-    }
-
-  // assuming that roots are already picked. To eliminate nodes we just need to
-  // find other nodes to be the representative
-    void term_graph::try_elim_roots(func_decl_ref_vector &vars) {
-      SASSERT(marks_are_clear());
-      for (func_decl *v : vars) {
-        term *tv = get_term(::to_expr(v)); // find v (assume a term exists)
-        SASSERT(tv);
-        // if(tv->is_root())
-        //   pick_root_filter_vars(*tv,vars);
-      }
-      reset_marks();
     }
 
     void term_graph::display(std::ostream &out) {
@@ -705,6 +797,11 @@ namespace mbp {
           mk_ground_equalities(*t, lits);
         }
       }
+
+      for (auto p : m_ineq_pairs) {
+        lits.push_back(m.mk_not(m.mk_eq(mk_app_core(p.first->get_expr()), mk_app_core(p.second->get_expr()))));
+      }
+      // TODO: do for m_ineq_distinct?
     }
 
     expr_ref term_graph::to_expr(bool repick_roots) {
@@ -1033,7 +1130,7 @@ namespace mbp {
 
         /// Add equalities and disequalities for all pure representatives
         /// based on their equivalence in the model
-        void model_complete(expr_ref_vector &res) {
+        void model_complete(expr_ref_vector &res) { // IG: this is what we call the diagram?
             if (!m_model) return;
             obj_map<expr,expr*> val2rep;
             model_evaluator mev(*m_model);
@@ -1186,7 +1283,7 @@ namespace mbp {
                     result.push_back(expr_ref_vector(m));
                 }
                 result[p].push_back(a);
-            }            
+            }
             return result;
         }
 
@@ -1372,12 +1469,11 @@ namespace mbp {
             if (m.is_not(e, ne) && m.is_eq(ne, a, b) && (is_uninterp(a) || is_uninterp(b))) {
                 diseqs.insert(pair_t(a, b));
             }
-            else if (is_uninterp(e)) {
+            else if (is_uninterp(e)) { // IG: TOASK
                 diseqs.insert(pair_t(e, m.mk_false()));
+            } else if (m.is_not(e, ne) && is_uninterp(ne)) { // IG: TOASK
+              diseqs.insert(pair_t(ne, m.mk_true()));
             }
-            else if (m.is_not(e, ne) && is_uninterp(ne)) {
-                diseqs.insert(pair_t(ne, m.mk_true()));
-            }           
         }
         for (auto& p : diseqs) todo.push_back(p);
 
@@ -1513,120 +1609,143 @@ namespace mbp {
     return res;
   }
 
-  bool term_graph::apply_one_eq(model_ref mdl){
-    bool done = true;
-    reset_marks(); // TODO: marks could be kept to avoid traversing all terms
-                   // every time one equality is applied but they need to be
-                   // maintained after merge
-    for (auto &t : m_terms) {
-      if(t->is_ground()) continue; // no split point
-      t->set_mark_terms_class(true);
-      // mark is used to avoid reprocessing equivalence classes
-      for (auto &t2 : m_terms) {
-        if (t2->is_marked() || t2->is_marked2()) continue;
+  static bool related(const term &t1, const term &t2) {
+    return (&t1.get_root() == &t2.get_root()) || term::are_ineq(t1, t2);
+  }
 
-        // check first parents
+  bool term_graph::is_split(const term &t1, const term &t2,
+                            vector<std::pair<term *, term *>> &diff_args) {
+    bool split = true;
 
-        // mark as processed (all the elements in the equivalence class)
-        t2->set_mark2(true);
+    auto ch1 = term::children(t1);
+    auto ch2 = term::children(t2);
 
-        // check the roots directly
-        // cached model_evaluator
-        // check if the evaluator is caching
-        // record evaluations in the model
-        if (mdl->are_equal(t->get_expr(), t2->get_expr())){
-          // they are equal in the model but not in the graph -> merge any of
-          // the potential splits
-          if (merge_split_if_applicable(mdl,t,t2)){
-            done = false;
-            break;
+    for (auto it1 = ch1.begin(), it2 = ch2.begin(); it1 != ch1.end(); it1++, it2++) {
+      if (&(*it1)->get_root() == &(*it2)->get_root()) {
+        continue;
+      } else if ((*it1)->is_ground() && (*it2)->is_ground() &&
+               !term::are_ineq(**it1, **it2)) {
+        diff_args.push_back({*it1, *it2});
+      } else {
+        split = false;
+        break;
+      }
+    }
+
+    if (split == false)
+      diff_args.reset();
+
+    return split;
+  }
+
+  static bool same_func(const expr * e1, const expr * e2) {
+    const app *a1 = to_app(e1);
+    const app *a2 = to_app(e2);
+    return (a1->get_decl() == a2->get_decl()) &&
+           (a1->get_num_parameters() == a2->get_num_parameters());
+  }
+
+  static bool ground_or_const(const term& t) {
+    return t.is_ground() || to_app(t.get_expr())->get_num_args() == 0;
+  }
+
+  void term_graph::mb_cover(model & mdl) {
+      // include equalities from the model
+      vector<expr_ref_vector> partitions = get_partition(mdl);
+      // TODO: change partition to return terms?
+      vector<std::pair<term *, term *>> splits; // potential splits
+
+      if (m_terms.size() < 2)
+        return;
+
+      vector<std::pair<term *, term *>> diff_args;
+      // first include equalities if relevant
+      for (auto &part : partitions) {
+        term *t1, *t2;
+        if (part.size() == 1)
+          continue;
+        for (auto it = part.begin(); it != part.end() - 1; it++) {
+          t1 = get_term(*it);
+          if (ground_or_const(*t1))
+            continue;
+
+          // std::cout << "Processing " << expr_ref(t1->get_expr(), m) << "\n";
+          for (auto it2 = it + 1; it2 != part.end(); it2++) {
+            t2 = get_term(*it2);
+            if (ground_or_const(*t2))
+              continue;
+
+            // std::cout << "     " << expr_ref(t2->get_expr(), m) << "\n";
+            if (same_func(*it, *it2) && !related(*t1, *t2)) {
+              if (is_split(*t1, *t2, diff_args)) {
+                merge(*t1, *t2);
+                diff_args.reset(); // TODO: remove
+                merge_flush();
+                // TODO: cc now or later? if cc more terms become compatible but
+                // there is a cost
+                std::cout << "merged " << expr_ref(t1->get_expr(), m)
+                          << " " << expr_ref(t2->get_expr(), m) << "\n";
+              } else {
+                // add to potential splits to re-check after merges
+                std::cout << "potential split " << expr_ref(t1->get_expr(), m)
+                          << " " << expr_ref(t2->get_expr(), m) << "\n";
+                splits.push_back({t1, t2});
+              }
+            }
+          }
+        }
+      }
+
+      bool merged = true;
+      while (merged && !splits.empty()) {
+        merged = false;
+        for (auto p : splits) {
+          if (is_split(*p.first, *p.second, diff_args)) {
+            merge(*p.first, *p.second);
+            merged = true;
+            splits.erase(p);
+            diff_args.reset(); // TODO: remove
+          }
+        }
+        merge_flush(); // TODO: cc after every merge?
+      }
+
+      // now add inequalities.
+      // -- TODO: dcert could be reused here but I do not see how yet.
+      model_evaluator mev(mdl);
+      for (auto it = m_terms.begin(); it != m_terms.end() - 1; it++) {
+        if (ground_or_const(**it))
+          continue;
+
+        for (auto it2 = it + 1; it2 != m_terms.end(); it2++) {
+          if (ground_or_const(**it2))
+            continue;
+          if (same_func((*it)->get_expr(), (*it2)->get_expr()) &&
+              !related(**it, **it2) && is_split(**it, **it2, diff_args)) {
+            // make not equal one pair of terms of `diff_args` that is
+            // consistent with the model
+            // std::cout << "Split found" << expr_ref((*it)->get_expr(), m) << " "
+            //          << expr_ref((*it2)->get_expr(), m) << "\n";
+            for (auto p : diff_args) {
+              if (!mev.are_equal(p.first->get_expr(), p.second->get_expr())) {
+                // std::cout << "Add ineq" << expr_ref(p.first->get_expr(), m)
+                //           << " " << expr_ref(p.second->get_expr(), m) << "\n";
+                add_ineq_terms(p.first, p.second);
+                // TODO: making equal the first possible argument found
+                break;
+              }
+            }
+            diff_args.reset();
           }
         }
       }
     }
-    // done: all terms are marked --> no more equality splits
-    return done;
-  }
 
-  // TODO: update marks after merge: not necessary for soundness, but it could
-  // be good for optimization
-
-  //    - option1: only check the mark of the representative! -- but how can we
-  //         ensure that it is up-to-date...
-  bool term_graph::merge_split_if_applicable(const model_ref mdl, term *t1,
-                                             term *t2) {
-    bool merged = false;
-
-    for(auto &p1 : term::parents(t1)){
-      for (auto &p2 : term::parents(t2)){
-        // the parents are not in the same equivalence class
-        if(&p1->get_root() == &p2->get_root()) continue;
-
-        app *a1 = to_app(p1->get_expr()); // if it is a parent it must be an app
-        app *a2 = to_app(p2->get_expr());
-        if (a1->get_decl() != a2->get_decl() ||
-            a1->get_num_parameters() != a1->get_num_parameters())
-          continue; // not compatible
-
-        bool mergeable = true;
-        auto it1 = a1->begin();
-        auto it2 = a2->begin();
-        // check if the arguments are compatible. Because of how models are
-        // generated, equalities are only added if necessary. Progress is
-        // ensured, i.e., we are merging something, because at least t1 and t2
-        // were not in the same equivalence class as before.
-        for (; it1 != a1->end(); it1++, it2++) {
-          // mergeable == all equal in the model (abusing how models are
-          // generated)
-          if (!mdl->are_equal(*it1,*it2)) {
-            mergeable = false;
-            break;
-          }
-        }
-        if (mergeable) {
-          auto it1 = a1->begin();
-          auto it2 = a2->begin();
-          // OPTION: merging all the arguments in the split, we could merge only
-          // t1 and t2
-          for (; it1 != a1->end(); it1++, it2++)
-            m_merge.push_back(std::make_pair(get_term(*it1),get_term(*it2)));
-
-          m_merge.push_back(std::make_pair(p1, p2));
-          merge_flush();
-          merged = true;
-          break; // merging one of the splits of t1, t2. There could be more!
-        }
+    void term_graph::merge_groundness(term & a, term & b) {
+      SASSERT(a.is_root());
+      if (b.is_ground()) {
+        a.set_ground(true);
+        b.set_ground(false);
       }
     }
-    return merged;
-  }
-
-  // TODO: expand to have an equivalent of distinct/n
-  bool term_graph::add_ineq(expr *a, expr *b) {
-    term * rta = &internalize_term(a)->get_root();
-    term * rtb = &internalize_term(b)->get_root();
-
-    rta->add_ineq(rtb);
-    rtb->add_ineq(rta);
-
-    if (rta == rtb)
-      return false;
-
-    return true;
-  }
-
-  bool term_graph::merge_ineqs(term *a, term *b) {
-    SASSERT(a->is_root());
-    // TODO: continue here!
-
-    return true;
-  }
-
-  void term_graph::merge_groundness(term *a, term *b) {
-    SASSERT(a->is_root());
-    if(b->is_ground()){
-      a->set_ground(true);
-      b->set_ground(false);
     }
-  }
-}

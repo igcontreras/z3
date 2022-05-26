@@ -598,50 +598,131 @@ public:
       }
       ctx.regular_stream() << std::endl;
 
-      // --- pick roots with a different lt (do not pick variables)
-      // --- mark equivalence classes
       tg.mark_elim_terms(vars);
-      ctx.regular_stream() << "Not ground: ";
-      expr_ref_vector nef = tg.non_ground_terms();
-      for (expr * e : nef){
-        expr_ref er(e,m);
-        ctx.regular_stream() << er << " ";
-      }
-      ctx.regular_stream() << std::endl;
 
-      ctx.regular_stream() << "Output: " << tg.to_ground_expr() << std::endl;
-
-      return; // XXX -- TODO: remove to test MBC
+      ctx.regular_stream() << "Ground terms before decisions: " << tg.to_ground_expr() << std::endl;
 
       solver_factory &sf = ctx.get_solver_factory();
       params_ref pa;
       solver_ref s = sf(m, pa, false, true, true, symbol::null);
-      s->assert_expr(lits);
-      lbool r = s->check_sat();
-      if (r != l_true) {
-        ctx.regular_stream() << "sat check " << r << "\n";
-        return;
-      }
-      model_ref mdl;
-      s->get_model(mdl);
 
-      bool done = false;
-      expr_ref_vector tglits(m); // monotonically increasing, could be
-                                 // maintained incrementally
-      while (!done) {
-        tg.mark_elim_terms(vars); // TODO: integrate in merge
-        done = tg.apply_one_eq(mdl); // done == there may be splits
-        // does the solver need to be reset?
-        if (!done) {
-          tglits.reset();
-          tg.ground_terms_to_lits(tglits, false);
-          // print the literals to see how the decisions are taken
+      // TODO: copy term graph before cover?
+      expr_ref_vector orig_lits(lits);
+      while(true) {
+        ctx.regular_stream() << "-------------" << std::endl;
+        s->assert_expr(lits);
+        lbool r = s->check_sat();
+        if (r != l_true) {
+          // ctx.regular_stream() << "sat check " << r << "\n";
+          break;
         }
-      }
-      tg.ground_terms_to_lits(tglits, false);
-    }
+        model_ref mdl;
+        s->get_model(mdl);
+        // ctx.regular_stream() << "Model: " << *mdl << "\n";
 
+        mbp::term_graph tg2(m);
+        tg2.set_vars(vars, true);
+        tg2.add_lits(orig_lits);
+        tg2.mark_elim_terms(vars);
+        tg2.mb_cover(*mdl);
+        expr_ref_vector tglits(m);
+        tg2.ground_terms_to_lits(tglits, false);
+        lits.push_back(m.mk_not(m.mk_and(tglits))); // get next disjunct
+
+        ctx.regular_stream() << "Ground terms after decisions: ";
+        ctx.regular_stream() << tg2.to_ground_expr() << std::endl;
+        ctx.regular_stream() << "Graph after decisions: " << tg2.to_expr() << std::endl;
+      }
+    }
 };
+
+// class tg_mb_cover_extra_cmd : public cmd {
+//     unsigned              m_arg_index;
+//     expr *                m_lit_extra;
+//     ptr_vector<expr>      m_lits;
+//     ptr_vector<func_decl> m_vars;
+// public:
+//   tg_mb_cover_extra_cmd() : cmd("mb-cover-extra") {};
+//   char const *get_usage() const override { return "(expr) (exprs) (vars)"; }
+//   char const *get_descr(cmd_context &ctx) const override {
+//     return "Model-based cover on e-graphs"; }
+//     unsigned get_arity() const override { return 3; }
+//     cmd_arg_kind next_arg_kind(cmd_context& ctx) const override {
+//       if (m_lit_extra == nullptr)
+//         return CPK_EXPR;
+//       if (m_arg_index == 1)
+//         return CPK_EXPR_LIST;
+//       return CPK_FUNC_DECL_LIST;
+//     }
+//     void set_next_arg(cmd_context &ctx, expr *arg) override {
+//       m_lit_extra = arg;
+//     }
+//     void set_next_arg(cmd_context & ctx, unsigned num, expr *const *args) override {
+//       m_lits.append(num, args);
+//       m_arg_index = 1;
+//     }
+//     void set_next_arg(cmd_context & ctx, unsigned num, func_decl * const * ts) override {
+//         m_vars.append(num, ts);
+//     }
+//     void prepare(cmd_context & ctx) override { m_arg_index = 0; m_lits.reset(); m_vars.reset(); }
+//     void execute(cmd_context & ctx) override {
+//       ast_manager &m = ctx.m();
+//       func_decl_ref_vector vars(m);
+//       expr_ref_vector lits(m);
+
+//       for (func_decl *v : m_vars) vars.push_back(v);
+//       for (expr *e : m_lits) lits.push_back(e);
+
+//       mbp::term_graph tg(m);
+//       tg.set_vars(vars, true /*exclude*/);
+//       // (exclude = true): these are the variables to eliminate
+//       tg.add_lits(lits);
+
+//       ctx.regular_stream() << "------------------------------ " << std::endl;
+//       ctx.regular_stream() << "Input: " << tg.to_expr() << std::endl;
+//       ctx.regular_stream() << "To elim: ";
+//       for (func_decl *v : m_vars) {
+//         ctx.regular_stream() << v->get_name() << " ";
+//       }
+//       ctx.regular_stream() << std::endl;
+
+//       tg.mark_elim_terms(vars);
+//       ctx.regular_stream() << "Not ground: ";
+//       expr_ref_vector nef = tg.non_ground_terms();
+//       for (expr * e : nef)
+//         ctx.regular_stream() << expr_ref(e, m) << " ";
+
+//       ctx.regular_stream() << std::endl;
+
+//       ctx.regular_stream() << "Ground terms before decisions: " << tg.to_ground_expr() << std::endl;
+
+//       solver_factory &sf = ctx.get_solver_factory();
+//       params_ref pa;
+//       solver_ref s = sf(m, pa, false, true, true, symbol::null);
+//       s->assert_expr(lits);
+//       lbool r = s->check_sat();
+//       if (r != l_true) {
+//         ctx.regular_stream() << "sat check " << r << "\n";
+//         return;
+//       }
+//       model_ref mdl;
+//       s->get_model(mdl);
+
+//       ctx.regular_stream() << "Model: " << *mdl << "\n";
+
+//       tg.mb_cover(mdl);
+
+//       expr_ref_vector tglits(m);
+//       tg.ground_terms_to_lits(tglits, false);
+
+//       ctx.regular_stream() << "Ground terms after eq decisions: ";
+//       for (expr *e : tglits) {
+//         ctx.regular_stream() << expr_ref(e, m) << " ";
+//       }
+//       ctx.regular_stream() << std::endl;
+//     }
+// };
+
 
 // Let I = implicant(A,M), S := mb-cover(I,M,v), check-sat(S,B)
 // Instead of computing the implicant we assume that it is computed in this
@@ -707,51 +788,6 @@ public:
       }
       model_ref mdl;
       s->get_model(mdl); // use this model for MB cover used for interpolation
-
-      mbp::term_graph tgIa(m);
-      // initialize term graph with a
-      // tgIa.add_lits(ia_lits); // does not add equalities interpreted
-      for (expr *l : ia_lits) {
-        if (m.is_eq(l)) {
-          app *eq = to_app(l);
-          tgIa.add_eq(eq->get_arg(0), eq->get_arg(1));
-        } else
-          tgIa.add_lit(l);
-      }
-
-      bool done = false;
-      lbool unsat;
-      expr_ref_vector tglits(m); // monotonically increasing, could be
-                                 // maintained incrementally
-
-      // potential splits
-      while (!done) {
-        tgIa.mark_elim_terms(vars); // TODO: integrate in merge
-        done = tgIa.apply_one_eq(mdl);
-        // does the solver need to be reset?
-
-        if (!done) {
-          tglits.reset();
-          tgIa.to_lits(tglits, false, false);
-          // TODO: reset solver?
-          s->assert_expr(m.mk_and(tglits));
-          s->assert_expr(b);
-          unsat = s->check_sat();
-          if (unsat) {
-            done = true;
-          }
-          // 2 options here: try to extend the model that we got to see if it is
-          // a model of ia too or continue merging.
-        }
-      }
-
-      // we are done adding the equalities from the model of a and still got sat
-      // now we use the inequalities from the model of b to find more
-      // incompatible equalities.
-      // if(!unsat){
-      // }
-
-      // pair-wise inequalities/distinct
 
     }
 };
