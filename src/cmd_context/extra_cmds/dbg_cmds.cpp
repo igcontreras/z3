@@ -591,7 +591,8 @@ public:
       tg.add_lits(lits);
 
       ctx.regular_stream() << "------------------------------ " << std::endl;
-      ctx.regular_stream() << "Input: " << tg.to_expr() << std::endl;
+      // ctx.regular_stream() << "Input: " << expr_ref(m.mk_and(lits),m) << std::endl;
+      ctx.regular_stream() << "Orig tg: " << tg.to_expr() << std::endl;
       ctx.regular_stream() << "To elim: ";
       for (func_decl *v : m_vars) {
         ctx.regular_stream() << v->get_name() << " ";
@@ -613,7 +614,6 @@ public:
         s->assert_expr(lits);
         lbool r = s->check_sat();
         if (r != l_true) {
-          // ctx.regular_stream() << "sat check " << r << "\n";
           break;
         }
         model_ref mdl;
@@ -625,13 +625,31 @@ public:
         tg2.add_lits(orig_lits);
         tg2.mark_elim_terms(vars);
         tg2.mb_cover(*mdl);
+        tg2.mark_elim_terms(vars);
         expr_ref_vector tglits(m);
         tg2.ground_terms_to_lits(tglits, false);
         lits.push_back(m.mk_not(m.mk_and(tglits))); // get next disjunct
 
         ctx.regular_stream() << "Ground terms after decisions: ";
         ctx.regular_stream() << tg2.to_ground_expr() << std::endl;
-        ctx.regular_stream() << "Graph after decisions: " << tg2.to_expr() << std::endl;
+        // ctx.regular_stream() << "Graph after decisions: " << tg2.to_expr() << std::endl;
+
+        // ctx.regular_stream() << "dcert: ";
+        // mbp::term_graph tg4(m);
+        // tg4.set_vars(vars, true);
+        // expr_ref_vector dcert = tg4.dcert(*mdl, orig_lits);
+        // // TODO: the result is not as expected, is this the correct way of using it?
+        // ctx.regular_stream() << expr_ref(m.mk_and(dcert), m) << "\n";
+
+        // ctx.regular_stream() << "Existing mb-projection: ";
+        // mbp::term_graph tg3(m);
+        // tg3.set_vars(vars, true);
+        // tg3.add_lits(orig_lits);
+        // expr_ref_vector proj = tg3.project(*mdl);
+        // for (expr *e : proj) {
+        //   ctx.regular_stream() << expr_ref(e, m) << " ";
+        // }
+        // ctx.regular_stream() << std::endl;
       }
     }
 };

@@ -26,6 +26,7 @@ Notes:
 #include "ast/occurs.h"
 #include "model/model_evaluator.h"
 #include "qe/mbp/mbp_term_graph.h"
+#include "util/bit_vector.h"
 
 namespace mbp {
 
@@ -96,8 +97,8 @@ namespace mbp {
         // arguments of term.
         ptr_vector<term> m_children;
 
-        // -- inequality computation representation
-        vector<uint64_t> m_ineqs;
+        // -- dequality computation representation
+        term_graph::deqs m_deqs;
 
       public:
         term(expr_ref const &v, u_map<term *> &app2term)
@@ -171,66 +172,20 @@ namespace mbp {
         bool is_ground() const {return m_ground;}
         void set_ground(bool v) {m_ground = v;}
 
-        // merges the inequalities in is2 into is1
-        static void merge_ineqs(term_graph::tg_ineqs &is1,
-                                term_graph::tg_ineqs &is2) {
-          if (is1.size() == 0 && is2.size() == 0)
-            return;
+        static bool are_deq(const term &t1, const term &t2) {
+          term_graph::deqs const &ds1 = t1.get_root().get_deqs();
+          term_graph::deqs const &ds2 = t2.get_root().get_deqs();
 
-          auto it1 = is1.begin();
-          auto it2 = is2.begin();
-          for (; it1 != is1.end() && it2 != is2.end(); it1++, it2++) {
-            *it1 |= *it2; // optional: check & to find unsat
-          }
+          term_graph::deqs tmp(ds1); // copy
 
-          if (it2 != is2.end()) {
-            // --- TODO: insert all at once (I could not find a way to use
-            // insert),
-            // --- I wanted to do:
-            // is1.insert(is1.end(), it2, it2.end());
-            for (; it2 != is2.end(); it2++) {
-              is1.push_back(*it2);
-            }
-          }
+          tmp &= ds2;
+          return tmp != 0;
         }
 
-        static bool are_ineq(const term &t1, const term &t2) {
-          term_graph::tg_ineqs &is1 = t1.get_root().get_ineqs();
-          term_graph::tg_ineqs &is2 = t2.get_root().get_ineqs();
-
-          if (is1.size() == 0 || is2.size() == 0)
-            return false;
-
-          // assumes is1.size() <= is2.size() && is1.size() > 1
-          auto are_ineq = [](term_graph::tg_ineqs &is1,
-                             term_graph::tg_ineqs &is2) {
-            for (int i = 0; i < is1.size(); i++) {
-              if (is2.size() == i)
-                return false;
-              else if ((is1[i] & is2[i]) != 0)
-                // if the bitwise AND is different from 0 it means that they
-                // share an inequality class
-                return true;
-            } // no need to check the remaining elements in is2 because they
-              // are not shared
-            return false;
-          };
-
-          if (is1.size() <= is2.size())
-            return are_ineq(is1, is2);
-          else
-            return are_ineq(is2, is1);
-        }
-
-        static void set_bit(term *t, unsigned idx,
-                            term_graph::tg_ineq_int pos) {
-          term_graph::tg_ineqs &is = t->get_root().get_ineqs();
-
-          for (int i = is.size(); i <= idx; i++) { // add missing sets
-            is.push_back(0);
-          }
-          is.back() |= 0 & (1 << pos);
-        }
+      static void set_deq(term_graph::deqs& ds, unsigned idx) {
+        ds.resize(idx+1);
+        ds.set(idx);
+      }
 
       void set_mark2_terms_class(bool v) { // TODO: remove
           if (is_marked2())
@@ -258,13 +213,13 @@ namespace mbp {
         unsigned get_class_size() const {return m_class_size;}
 
         void merge_eq_class(term &b) {
-          merge_ineqs(this->m_ineqs, b.m_ineqs); // TODO: ask
+          this->m_deqs |= b.m_deqs;
           set_mark_class(is_marked_class() || b.is_marked_class());
           std::swap(this->m_next, b.m_next);
           m_class_size += b.get_class_size();
           // -- reset (useful for debugging)
           b.m_class_size = 0;
-          b.m_ineqs.clear();
+          b.m_deqs.reset();
         }
 
         // -- make this term the root of its equivalence class
@@ -296,7 +251,7 @@ namespace mbp {
             out << "\n";
             return out;
         }
-        vector<uint64_t> &get_ineqs() { return m_ineqs; }
+      term_graph::deqs &get_deqs() { return m_deqs; }
     };
 
     static std::ostream& operator<<(std::ostream& out, term const& t) {
@@ -304,7 +259,7 @@ namespace mbp {
     }
 
     // t1 != t2
-    void term_graph::add_ineq_proc::operator()(term *t1, term *t2) {
+    void term_graph::add_deq_proc::operator()(term *t1, term *t2) {
       ptr_vector<term> ts(2);
       ts[0] = t1;
       ts[1] = t2;
@@ -312,14 +267,12 @@ namespace mbp {
     }
 
     // distinct(ts)
-    void term_graph::add_ineq_proc::operator()(ptr_vector<term> &ts) {
-      unsigned idx = m_ineq_cnt / sizeof(tg_ineq_int);
-      tg_ineq_int bit_pos = m_ineq_cnt % sizeof(tg_ineq_int);
+    void term_graph::add_deq_proc::operator()(ptr_vector<term> &ts) {
 
       for (auto t : ts) {
-        term::set_bit(t, idx, bit_pos);
+        term::set_deq(t->get_root().get_deqs(), m_deq_cnt);
       }
-      m_ineq_cnt++;
+      m_deq_cnt++;
     }
 
     bool term_graph::is_variable_proc::operator()(const expr * e) const {
@@ -351,13 +304,16 @@ namespace mbp {
 
     bool term_graph::term_eq::operator()(term const* a, term const* b) const { return term::cg_eq(a, b); }
 
-    term_graph::term_graph(ast_manager &man) : m(man), m_lits(m), m_pinned(m), m_projector(nullptr) {
-        m_plugins.register_plugin(mbp::mk_basic_solve_plugin(m, m_is_var));
-        m_plugins.register_plugin(mbp::mk_arith_solve_plugin(m, m_is_var));
+    term_graph::term_graph(ast_manager &man)
+        : m(man), m_lits(m), m_pinned(m), m_projector(nullptr),
+          m_cover(nullptr) {
+      m_plugins.register_plugin(mbp::mk_basic_solve_plugin(m, m_is_var));
+      m_plugins.register_plugin(mbp::mk_arith_solve_plugin(m, m_is_var));
     }
 
     term_graph::~term_graph() {
         dealloc(m_projector);
+        dealloc(m_cover);
         reset();
     }
 
@@ -464,21 +420,21 @@ namespace mbp {
       for (auto arg : *a) {
         ++*tsit = internalize_term(arg);
       }
-      m_add_ineq(ts); // TODO: review here!
+      m_add_deq(ts);
     }
 
-    void term_graph::internalize_ineq(expr *a1, expr *a2) {
-      add_ineq_terms(internalize_term(a1), internalize_term(a2));
+    void term_graph::internalize_deq(expr *a1, expr *a2) {
+      add_deq_terms(internalize_term(a1), internalize_term(a2));
     }
 
-    void term_graph::add_ineq_terms(term *t1, term *t2) {
-      m_add_ineq(t1, t2);
-      m_ineq_pairs.push_back({t1, t2}); // for output
+    void term_graph::add_deq_terms(term *t1, term *t2) {
+      m_add_deq(t1, t2);
+      m_deq_pairs.push_back({t1, t2}); // for output
     }
 
-    void term_graph::add_ineq_terms(ptr_vector<term>& ts) {
-      m_add_ineq(ts);
-      m_ineq_distinct.push_back(ts);
+    void term_graph::add_deq_terms(ptr_vector<term>& ts) {
+      m_add_deq(ts);
+      m_deq_distinct.push_back(ts);
     }
 
   void term_graph::internalize_lit(expr * lit) {
@@ -491,7 +447,7 @@ namespace mbp {
                    m.is_eq(ne, e1,
                            e2)) { // TODO: what about disequalities of ground
                                   // interpreted terms? (e.g. 1 != 2)
-          internalize_ineq(e1, e2);
+          internalize_deq(e1, e2);
         } else {
           internalize_term(lit);
         }
@@ -765,6 +721,10 @@ namespace mbp {
             else
                 mk_equalities(*t, lits);
         }
+
+        for (auto p : m_deq_pairs) {
+          lits.push_back(m.mk_not(m.mk_eq(::to_app(mk_app(p.first->get_expr())), ::to_app(mk_app(p.second->get_expr())))));
+        }
     }
 
   // assumes that ground terms have been computed
@@ -774,15 +734,9 @@ namespace mbp {
         if (is_internalized(a)) {
           term *t = get_term(a);
           expr_ref to_print_e(a, m);
-          std::cerr << "processing lit " << to_print_e;
 
-          if (is_ground_app_term(t)){
+          if (is_ground_app_term(t))
             lits.push_back(::to_app(mk_app(a))); // rewrites to representatives?
-            std::cerr << " is ground";
-          }
-          else{
-            std::cerr << " not ground";
-          }
         }
       }
 
@@ -798,10 +752,15 @@ namespace mbp {
         }
       }
 
-      for (auto p : m_ineq_pairs) {
-        lits.push_back(m.mk_not(m.mk_eq(mk_app_core(p.first->get_expr()), mk_app_core(p.second->get_expr()))));
+      for (auto p : m_deq_pairs) {
+        term &t1 = p.first->get_root();
+        term &t2 = p.second->get_root();
+        if(t1.is_ground() && t2.is_ground())
+          lits.push_back(
+                         m.mk_not(m.mk_eq(mk_app_core(t1.get_expr()),
+                                          mk_app_core(t2.get_expr()))));
       }
-      // TODO: do for m_ineq_distinct?
+      // TODO: do for m_deq_distinct?
     }
 
     expr_ref term_graph::to_expr(bool repick_roots) {
@@ -1362,7 +1321,163 @@ namespace mbp {
 
     };
 
-    void term_graph::set_vars(func_decl_ref_vector const& decls, bool exclude) {
+    class term_graph::cover {
+
+      term_graph &m_tg;
+      ast_manager &m;
+
+      model_ref m_model;
+      expr_ref_vector m_pinned; // TODO: not sure if this is necessary
+
+      vector<std::pair<term *, term *>> m_may_be_splits;
+
+      static bool are_related(const term &t1, const term &t2) {
+        return (&t1.get_root() == &t2.get_root()) || term::are_deq(t1, t2);
+      }
+
+      static bool are_equal(const term &t1, const term &t2) {
+        return &t1.get_root() == &t2.get_root();
+      }
+
+      static bool have_same_top_operand(const expr *e1, const expr *e2) {
+        const app *a1 = to_app(e1);
+        const app *a2 = to_app(e2);
+        return (a1->get_decl() == a2->get_decl()) &&
+               (a1->get_num_parameters() == a2->get_num_parameters());
+      }
+
+      static bool is_ground_or_const(const term &t) {
+        return t.is_ground() || to_app(t.get_expr())->get_num_args() == 0;
+      }
+
+      template <bool store_args>
+      bool is_split(const term &t1, const term &t2,
+                                vector<std::pair<term *, term *>> &diff_args) {
+        bool is_split = true;
+        bool may_be_split = true;
+
+        auto ch1 = term::children(t1);
+        auto ch2 = term::children(t2);
+
+        for (auto it1 = ch1.begin(), it2 = ch2.begin(); it1 != ch1.end();
+             it1++, it2++) {
+          if (&(*it1)->get_root() == &(*it2)->get_root()) {
+            continue;
+          } else if (term::are_deq(**it1, **it2)) {
+            may_be_split = false;
+            is_split = false;
+          } else if ((*it1)->is_ground() && (*it2)->is_ground()) {
+            if (store_args) {
+              diff_args.push_back({*it1, *it2});
+            }
+          } else {
+            is_split = false;
+            break;
+          }
+        }
+
+        if (store_args && is_split == false)
+          diff_args.reset();
+        // if (may_be_split)
+        //   m_may_be_splits.push_back({&t1, &t2});
+
+        return is_split;
+      }
+
+    public:
+      cover(term_graph &tg) : m_tg(tg), m(m_tg.m), m_pinned(m) {}
+
+      void set_model(model &mdl) { m_model = &mdl; }
+
+      void mb_cover() {
+        SASSERT(m_model);
+
+        if (m_tg.m_terms.size() < 2)
+          return;
+
+        // get equalities from the model
+        vector<expr_ref_vector> partitions = m_tg.get_partition(*m_model);
+        // TODO: change partition to return terms?
+        vector<std::pair<term *, term *>> splits; // potential splits
+        vector<std::pair<term *, term *>> diff_args;
+
+        // first include equalities if relevant
+        for (auto &part : partitions) {
+          term *t1, *t2;
+          if (part.size() == 1)
+            continue;
+          for (auto it = part.begin(); it != part.end() - 1; it++) {
+            t1 = m_tg.get_term(*it);
+            if (is_ground_or_const(*t1))
+              continue;
+
+            for (auto it2 = it + 1; it2 != part.end(); it2++) {
+              t2 = m_tg.get_term(*it2);
+              if (is_ground_or_const(*t2))
+                continue;
+
+              if (have_same_top_operand(*it, *it2) && !are_related(*t1, *t2)) {
+                if (is_split<false>(*t1, *t2, diff_args)) {
+                  m_tg.merge(*t1, *t2);
+                  m_tg.merge_flush();
+                  // TODO: cc now or later? if cc more terms become compatible but
+                  // there is a cost
+                } else {
+                  // add to potential splits to re-check after merges
+                  std::cout << "potential split " << expr_ref(t1->get_expr(), m)
+                            << " " << expr_ref(t2->get_expr(), m) << "\n";
+                  splits.push_back({t1, t2});
+                }
+              }
+            }
+          }
+        }
+
+        bool merged = true;
+        while (merged && !splits.empty()) {
+          merged = false;
+          for (int i = 0 ; i < splits.size() ; i++) {
+            auto p = splits[i];
+            if (is_split<false>(*p.first, *p.second, diff_args)) {
+              m_tg.merge(*p.first, *p.second);
+              merged = true;
+              splits[i] = splits.back();
+              splits.pop_back();
+              i--;
+            }
+          }
+          m_tg.merge_flush(); // TODO: cc after every merge?
+        }
+
+        // now add disequalities
+        for (auto it = m_tg.m_terms.begin(); it != m_tg.m_terms.end() - 1; it++) {
+          if (is_ground_or_const(**it))
+            continue;
+
+          for (auto it2 = it + 1; it2 != m_tg.m_terms.end(); it2++) {
+            if (is_ground_or_const(**it2))
+              continue;
+            if (have_same_top_operand((*it)->get_expr(), (*it2)->get_expr()) &&
+                !are_equal(**it, **it2) && is_split<true>(**it, **it2, diff_args)) {
+              // make not equal one pair of terms of `diff_args` that is
+              // consistent with the model
+              for (auto p : diff_args) {
+                if (!m_model->are_equal(p.first->get_expr(), p.second->get_expr())) { // caches results
+                  // TODO: use here m is distinct
+                  m_tg.add_deq_terms(p.first, p.second);
+                  // TODO: right now making not equal the first argument that is found different
+                  break;
+                }
+              }
+              diff_args.reset();
+            }
+          }
+        }
+      }
+    };
+
+    void term_graph::set_vars(func_decl_ref_vector const &decls,
+                                bool exclude) {
         m_is_var.set_decls(decls, exclude);
     }
 
@@ -1402,7 +1517,7 @@ namespace mbp {
 
     expr_ref_vector term_graph::shared_occurrences(family_id fid) {
         term_graph::projector p(*this);
-        return p.shared_occurrences(fid);        
+        return p.shared_occurrences(fid);
     }
 
     void term_graph::add_model_based_terms(model& mdl, expr_ref_vector const& terms) {
@@ -1412,7 +1527,7 @@ namespace mbp {
         m_is_var.reset_solved();
         
         SASSERT(!m_projector);
-        m_projector = alloc(term_graph::projector, *this);        
+        m_projector = alloc(term_graph::projector, *this);
 
         // retrieve partition of terms
         vector<expr_ref_vector> equivs = m_projector->get_partition(mdl, true);
@@ -1443,7 +1558,7 @@ namespace mbp {
         SASSERT(t && "only get representatives");
         return m_projector->find_term2app(*t);
     }
-    
+
     expr_ref_vector term_graph::dcert(model& mdl, expr_ref_vector const& lits) {
         TRACE("qe", tout << "dcert " << lits << "\n";);
         struct pair_t {
@@ -1600,6 +1715,13 @@ namespace mbp {
     reset_marks();
   }
 
+  void term_graph::mb_cover(model& mdl) {
+      m_is_var.reset_solved();
+      term_graph::cover c(*this);
+      c.set_model(mdl);
+      c.mb_cover();
+  }
+
   expr_ref_vector term_graph::non_ground_terms() {
     expr_ref_vector res(m);
     for (auto &t : m_terms)
@@ -1608,138 +1730,6 @@ namespace mbp {
 
     return res;
   }
-
-  static bool related(const term &t1, const term &t2) {
-    return (&t1.get_root() == &t2.get_root()) || term::are_ineq(t1, t2);
-  }
-
-  bool term_graph::is_split(const term &t1, const term &t2,
-                            vector<std::pair<term *, term *>> &diff_args) {
-    bool split = true;
-
-    auto ch1 = term::children(t1);
-    auto ch2 = term::children(t2);
-
-    for (auto it1 = ch1.begin(), it2 = ch2.begin(); it1 != ch1.end(); it1++, it2++) {
-      if (&(*it1)->get_root() == &(*it2)->get_root()) {
-        continue;
-      } else if ((*it1)->is_ground() && (*it2)->is_ground() &&
-               !term::are_ineq(**it1, **it2)) {
-        diff_args.push_back({*it1, *it2});
-      } else {
-        split = false;
-        break;
-      }
-    }
-
-    if (split == false)
-      diff_args.reset();
-
-    return split;
-  }
-
-  static bool same_func(const expr * e1, const expr * e2) {
-    const app *a1 = to_app(e1);
-    const app *a2 = to_app(e2);
-    return (a1->get_decl() == a2->get_decl()) &&
-           (a1->get_num_parameters() == a2->get_num_parameters());
-  }
-
-  static bool ground_or_const(const term& t) {
-    return t.is_ground() || to_app(t.get_expr())->get_num_args() == 0;
-  }
-
-  void term_graph::mb_cover(model & mdl) {
-      // include equalities from the model
-      vector<expr_ref_vector> partitions = get_partition(mdl);
-      // TODO: change partition to return terms?
-      vector<std::pair<term *, term *>> splits; // potential splits
-
-      if (m_terms.size() < 2)
-        return;
-
-      vector<std::pair<term *, term *>> diff_args;
-      // first include equalities if relevant
-      for (auto &part : partitions) {
-        term *t1, *t2;
-        if (part.size() == 1)
-          continue;
-        for (auto it = part.begin(); it != part.end() - 1; it++) {
-          t1 = get_term(*it);
-          if (ground_or_const(*t1))
-            continue;
-
-          // std::cout << "Processing " << expr_ref(t1->get_expr(), m) << "\n";
-          for (auto it2 = it + 1; it2 != part.end(); it2++) {
-            t2 = get_term(*it2);
-            if (ground_or_const(*t2))
-              continue;
-
-            // std::cout << "     " << expr_ref(t2->get_expr(), m) << "\n";
-            if (same_func(*it, *it2) && !related(*t1, *t2)) {
-              if (is_split(*t1, *t2, diff_args)) {
-                merge(*t1, *t2);
-                diff_args.reset(); // TODO: remove
-                merge_flush();
-                // TODO: cc now or later? if cc more terms become compatible but
-                // there is a cost
-                std::cout << "merged " << expr_ref(t1->get_expr(), m)
-                          << " " << expr_ref(t2->get_expr(), m) << "\n";
-              } else {
-                // add to potential splits to re-check after merges
-                std::cout << "potential split " << expr_ref(t1->get_expr(), m)
-                          << " " << expr_ref(t2->get_expr(), m) << "\n";
-                splits.push_back({t1, t2});
-              }
-            }
-          }
-        }
-      }
-
-      bool merged = true;
-      while (merged && !splits.empty()) {
-        merged = false;
-        for (auto p : splits) {
-          if (is_split(*p.first, *p.second, diff_args)) {
-            merge(*p.first, *p.second);
-            merged = true;
-            splits.erase(p);
-            diff_args.reset(); // TODO: remove
-          }
-        }
-        merge_flush(); // TODO: cc after every merge?
-      }
-
-      // now add inequalities.
-      // -- TODO: dcert could be reused here but I do not see how yet.
-      model_evaluator mev(mdl);
-      for (auto it = m_terms.begin(); it != m_terms.end() - 1; it++) {
-        if (ground_or_const(**it))
-          continue;
-
-        for (auto it2 = it + 1; it2 != m_terms.end(); it2++) {
-          if (ground_or_const(**it2))
-            continue;
-          if (same_func((*it)->get_expr(), (*it2)->get_expr()) &&
-              !related(**it, **it2) && is_split(**it, **it2, diff_args)) {
-            // make not equal one pair of terms of `diff_args` that is
-            // consistent with the model
-            // std::cout << "Split found" << expr_ref((*it)->get_expr(), m) << " "
-            //          << expr_ref((*it2)->get_expr(), m) << "\n";
-            for (auto p : diff_args) {
-              if (!mev.are_equal(p.first->get_expr(), p.second->get_expr())) {
-                // std::cout << "Add ineq" << expr_ref(p.first->get_expr(), m)
-                //           << " " << expr_ref(p.second->get_expr(), m) << "\n";
-                add_ineq_terms(p.first, p.second);
-                // TODO: making equal the first possible argument found
-                break;
-              }
-            }
-            diff_args.reset();
-          }
-        }
-      }
-    }
 
     void term_graph::merge_groundness(term & a, term & b) {
       SASSERT(a.is_root());
