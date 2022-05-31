@@ -30,6 +30,7 @@ namespace mbp {
 
     class term_graph {
         class projector;
+        class cover;
 
         class is_variable_proc : public ::is_variable_proc {
             bool m_exclude;
@@ -55,7 +56,8 @@ namespace mbp {
         u_map<term* >     m_app2term;
         ast_ref_vector    m_pinned;
         projector*        m_projector;
-        u_map<expr*>      m_term2app;
+        cover*            m_cover;
+        u_map<expr *> m_term2app;
         plugin_manager<solve_plugin> m_plugins;
         ptr_hashtable<term, term_hash, term_eq> m_cg_table;
         vector<std::pair<term*,term*>> m_merge;
@@ -73,7 +75,7 @@ namespace mbp {
         void internalize_eq(expr *a1, expr *a2);
         void internalize_lit(expr *lit);
         void internalize_distinct(expr *d);
-        void internalize_ineq(expr *a1, expr *a2);
+        void internalize_deq(expr *a1, expr *a2);
 
         bool is_internalized(expr *a);
 
@@ -147,7 +149,7 @@ namespace mbp {
         /**
          * Produce a model-based partition.
          */
-      vector<expr_ref_vector> get_partition(model& mdl); // IG: modifies the graph?
+      vector<expr_ref_vector> get_partition(model& mdl);
 
         /**
          * Extract shared occurrences of terms whose sort are 
@@ -164,25 +166,23 @@ namespace mbp {
         expr* rep_of(expr* e);
 
       // new methods by IG
-        using tg_ineq_int = uint64_t;
-        using tg_ineqs = vector<tg_ineq_int>;
-        struct add_ineq_proc {
-          uint64_t m_ineq_cnt =
+        using deqs = bit_vector;
+        struct add_deq_proc {
+          uint64_t m_deq_cnt =
               0; // TODO: how can I declare a type for a very big number?
                  //       is this a bad idea?
           void operator()(term *t1, term *t2);
           void operator()(ptr_vector<term> &ts);
         };
 
-        // -- inequalities added during MB-cover (for output)
-        vector<std::pair<term*,term*>> m_ineq_pairs;
-        // -- these are not added as a result of MB cover, maybe they are not
-        // necessary since they are in the original formula. (for output)
-        vector<ptr_vector<term>> m_ineq_distinct;
+        // -- disequalities added for output
+        vector<std::pair<term*,term*>> m_deq_pairs;
+        // -- maybe they are not necessary since they are in the original formula
+        vector<ptr_vector<term>> m_deq_distinct;
 
         void mark_elim_terms(func_decl_ref_vector &vars);
         expr_ref_vector non_ground_terms();
-        bool merge_split_if_applicable(const model_ref& mdl, term *t1, term *t2);
+        // bool merge_split_if_applicable(const model_ref& mdl, term *t1, term *t2);
         void ground_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
         void mk_ground_equalities(term const &t, expr_ref_vector &out);
         void mk_all_ground_equalities(term const &t, expr_ref_vector &out);
@@ -192,15 +192,12 @@ namespace mbp {
         void merge_groundness(term& a, term& b);
         // -- checks if two compatible terms (e.g. f(x,y) f(x,z)) form a split
         // point. If so, returns the arguments that are not currently equal in
-        // the term graph.
-        // TODO: make it a template to not store the arguments if not needed
-        bool is_split(const term &t1, const term &t2,
-                      vector<std::pair<term *, term *>> &diff_args);
+        // the term graph if `store_args` is true.
         void mb_cover(model& mdl);
-        void add_ineq_terms(term *t1, term *t2);
-        void add_ineq_terms(ptr_vector<term> &ts);
+        void add_deq_terms(term *t1, term *t2);
+        void add_deq_terms(ptr_vector<term> &ts);
 
       private:
-        add_ineq_proc m_add_ineq;
+        add_deq_proc m_add_deq;
     };
 }
