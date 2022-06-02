@@ -88,16 +88,19 @@ namespace mbp {
         // -- is an interpreted constant
         unsigned m_interpreted:1;
 
-        // -- the term can be rewritten to be ground
-        unsigned m_ground:1;
+        // -- the term is a compound term can be rewritten to be ground or it is a ground constant
+        unsigned m_gr:1;
+        // -- the class has a ground representative (only maintained for root nodes)
+        unsigned m_gr_class:1;
 
-        // -- terms that contain this term as a child
+        // -- terms that contain this term as a child (only maintained for root
+        // nodes)
         ptr_vector<term> m_parents;
 
         // arguments of term.
         ptr_vector<term> m_children;
 
-        // -- dequality computation representation
+        // -- disequality sets that the class belongs to (only maintained for root nodes)
         term_graph::deqs m_deqs;
 
       public:
@@ -169,8 +172,11 @@ namespace mbp {
           m_root->m_class_mark = v;
         }
 
-        bool is_ground() const {return m_ground;}
-        void set_ground(bool v) {m_ground = v;}
+        bool is_gr() const {return m_gr;}
+        void set_gr(bool v) {m_gr = v;}
+
+        bool is_class_gr() const { return m_root->m_gr_class; }
+        void set_class_gr(bool v) { m_root->m_gr_class = v; }
 
         static bool are_deq(const term &t1, const term &t2) {
           term_graph::deqs const &ds1 = t1.get_root().get_deqs();
@@ -213,7 +219,7 @@ namespace mbp {
         unsigned get_class_size() const {return m_class_size;}
 
         void merge_eq_class(term &b) {
-          this->m_deqs |= b.m_deqs;
+          this->m_deqs |= b.m_deqs; // merge disequalities
           set_mark_class(is_marked_class() || b.is_marked_class());
           std::swap(this->m_next, b.m_next);
           m_class_size += b.get_class_size();
@@ -424,6 +430,7 @@ namespace mbp {
     }
 
     void term_graph::internalize_deq(expr *a1, expr *a2) {
+      // TODO: what do not add disequalities of interpreted terms? (e.g. 1 != 2)
       add_deq_terms(internalize_term(a1), internalize_term(a2));
     }
 
@@ -443,10 +450,7 @@ namespace mbp {
           internalize_eq(e1, e2);
         } else if (m.is_distinct(lit)) {
           internalize_distinct(lit);
-        } else if (m.is_not(lit, ne) &&
-                   m.is_eq(ne, e1,
-                           e2)) { // TODO: what about disequalities of ground
-                                  // interpreted terms? (e.g. 1 != 2)
+        } else if (m.is_not(lit, ne) && m.is_eq(ne, e1, e2)) {
           internalize_deq(e1, e2);
         } else {
           internalize_term(lit);
@@ -463,7 +467,17 @@ namespace mbp {
             m_merge.pop_back();
             merge(*t1, *t2);
         }
-    }
+
+        if (!m_prop_ground)
+          return;
+
+        // after merge has been done, propagate groundness property
+        while (!m_gr_to_prop.empty()) {
+          term *t = m_gr_to_prop.back();
+          m_gr_to_prop.pop_back();
+          propagate_gr(*t);
+        }
+      }
 
     void term_graph::merge(term &t1, term &t2) {
         term *a = &t1.get_root();
@@ -487,6 +501,7 @@ namespace mbp {
             }
         }
         // make 'a' be the root of the equivalence class of 'b'
+        // IG: why? choose based on groundness?
         b->set_root(*a);
         for (term *it = &b->get_next(); it != b; it = &it->get_next()) {
             it->set_root(*a);
@@ -508,7 +523,43 @@ namespace mbp {
             }
           }
         }
+
+        if (m_prop_ground) {
+          // merge class groundness and store to propagation later
+          if (a->is_class_gr() && !b->is_class_gr()) {
+            m_gr_to_prop.push_back(b);
+            b->set_class_gr(
+                false); // class properties are only maintained in the root
+          } else if (!a->is_class_gr() && b->is_class_gr()) {
+            m_gr_to_prop.push_back(a);
+            a->set_class_gr(true);
+          }
+        }
+
         SASSERT(marks_are_clear());
+    }
+
+    void term_graph::propagate_gr(term &t) {
+      bool ground;
+      // TODO: iterate also over the compound elements in the class
+      for (term *p : term::parents(t)) {
+        if(p->is_gr())
+          continue;
+        ground = true;
+        for(term *c : term::children(p)) {
+          if(!c->is_class_gr()) {
+            ground = false;
+            break;
+          }
+        }
+        if(ground) {
+          p->set_gr(true);
+          if(!p->is_class_gr()) { // the class has a new ground representative
+            p->set_class_gr(true);
+            m_gr_to_prop.push_back(p);
+          }
+        }
+      }
     }
 
     expr* term_graph::mk_app_core (expr *e) {
@@ -575,39 +626,38 @@ namespace mbp {
         }
     }
 
-  // -- is_ground() function is for the equivalence class, not the term
-    static bool is_ground_app_term(term *t) {
+    static bool is_gr_app_term(term *t) {
 
       for (auto &it : term::children(t))
-        if (!it->get_root().is_ground())
+        if (!it->get_root().is_class_gr())
           return false;
 
       return true;
     }
 
-    void term_graph::mk_ground_equalities(term const &t, expr_ref_vector &out) {
+    void term_graph::mk_gr_equalities(term const &t, expr_ref_vector &out) {
       SASSERT(t.is_root());
       expr_ref rep(m);
 
       for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
         expr *e = it->get_expr();
-        bool is_ground = true;
+        bool is_gr = true;
         if (is_app(e)){
           app *a1 = to_app(e);
           if (a1->get_decl()->get_arity() == 0) {
-            if (!it->is_ground()){
+            if (!it->is_gr()){
               // SASSERT(m_is_var.contains(a1->get_decl()));
-              is_ground = false;
+              is_gr = false;
             }
           } else {
-            if (!is_ground_app_term(it)){
-              is_ground = false;
+            if (!is_gr_app_term(it)){
+              is_gr = false;
             }
           }
         }
 
-        if (is_ground) {
-            if (!rep) // make the term if there is another ground term in the
+        if (is_gr) {
+            if (!rep) // make the term if there is another gr term in the
               // equiv. class
               rep = mk_app(t);
             expr *mem = mk_app_core(e);
@@ -616,15 +666,15 @@ namespace mbp {
       }
     }
 
-    void term_graph::mk_all_ground_equalities(term const &t, expr_ref_vector &out) {
-      mk_ground_equalities(t, out);
+    void term_graph::mk_all_gr_equalities(term const &t, expr_ref_vector &out) {
+      mk_gr_equalities(t, out);
 
       for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-        if (!m_is_var(it->get_expr()) || is_ground_app_term(it))
+        if (!m_is_var(it->get_expr()) || is_gr_app_term(it))
           continue;
         expr *a1 = mk_app_core(it->get_expr());
         for (term *it2 = &it->get_next(); it2 != &t; it2 = &it2->get_next()) {
-          if (!m_is_var(it->get_expr()) || is_ground_app_term(it))
+          if (!m_is_var(it->get_expr()) || is_gr_app_term(it))
             continue;
           expr *a2 = mk_app_core(it2->get_expr());
           out.push_back(m.mk_eq(a1, a2));
@@ -647,7 +697,7 @@ namespace mbp {
 
     bool term_graph::marks_are_clear() {
         for (term * t : m_terms) {
-          if (t->is_marked()) return false; // missing mark2!
+          if (t->is_marked()) return false;
         }
         return true;
     }
@@ -723,42 +773,42 @@ namespace mbp {
         }
 
         for (auto p : m_deq_pairs) {
-          lits.push_back(m.mk_not(m.mk_eq(::to_app(mk_app(p.first->get_expr())), ::to_app(mk_app(p.second->get_expr())))));
+          lits.push_back(
+                         mk_neq(m, ::to_app(mk_app(p.first->get_expr())),
+                                     ::to_app(mk_app(p.second->get_expr()))));
         }
     }
 
-  // assumes that ground terms have been computed
-    void term_graph::ground_terms_to_lits(expr_ref_vector &lits, bool all_equalities) {
+  // assumes that ground terms have been computed and picked as root if exist
+    void term_graph::gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities) {
 
       for (expr *a : m_lits) {
         if (is_internalized(a)) {
           term *t = get_term(a);
           expr_ref to_print_e(a, m);
 
-          if (is_ground_app_term(t))
-            lits.push_back(::to_app(mk_app(a))); // rewrites to representatives?
+          if (is_gr_app_term(t))
+            lits.push_back(::to_app(mk_app(a))); // rewrites to (ground) representatives?
         }
       }
 
       for (term *t : m_terms) {
         if (!t->is_root())
           continue;
-        else if(!t->is_ground()) // a root that is not ground; nothing to do
+        else if(!t->is_gr()) // a root that is not gr; nothing to do
           continue;
         else if (all_equalities)
-          mk_all_ground_equalities(*t, lits);
+          mk_all_gr_equalities(*t, lits);
         else{
-          mk_ground_equalities(*t, lits);
+          mk_gr_equalities(*t, lits);
         }
       }
 
       for (auto p : m_deq_pairs) {
         term &t1 = p.first->get_root();
         term &t2 = p.second->get_root();
-        if(t1.is_ground() && t2.is_ground())
-          lits.push_back(
-                         m.mk_not(m.mk_eq(mk_app_core(t1.get_expr()),
-                                          mk_app_core(t2.get_expr()))));
+        if(t1.is_gr() && t2.is_gr())
+          lits.push_back(mk_neq(m, mk_app_core(t1.get_expr()), mk_app_core(t2.get_expr())));
       }
       // TODO: do for m_deq_distinct?
     }
@@ -769,9 +819,9 @@ namespace mbp {
       return mk_and(lits);
     }
 
-    expr_ref term_graph::to_ground_expr() {
+    expr_ref term_graph::to_gr_expr() {
       expr_ref_vector lits(m);
-      ground_terms_to_lits(lits, false);
+      gr_terms_to_lits(lits, false);
       return mk_and(lits);
     }
 
@@ -1346,12 +1396,15 @@ namespace mbp {
                (a1->get_num_parameters() == a2->get_num_parameters());
       }
 
-      static bool is_ground_or_const(const term &t) {
-        return t.is_ground() || to_app(t.get_expr())->get_num_args() == 0;
+      static bool is_gr_or_const(const term &t) {
+        return t.is_gr() || to_app(t.get_expr())->get_num_args() == 0;
       }
 
+      // returns a pair of booleans. the first boolean is true if `t1` and `t2`
+      // form a split. the second true if `t1` and `t2` could form a split after
+      // a merge.
       template <bool store_args>
-      bool is_split(const term &t1, const term &t2,
+      std::pair<bool,bool> is_split(const term &t1, const term &t2,
                                 vector<std::pair<term *, term *>> &diff_args) {
         bool is_split = true;
         bool may_be_split = true;
@@ -1366,7 +1419,7 @@ namespace mbp {
           } else if (term::are_deq(**it1, **it2)) {
             may_be_split = false;
             is_split = false;
-          } else if ((*it1)->is_ground() && (*it2)->is_ground()) {
+          } else if ((*it1)->is_gr() && (*it2)->is_gr()) {
             if (store_args) {
               diff_args.push_back({*it1, *it2});
             }
@@ -1378,10 +1431,8 @@ namespace mbp {
 
         if (store_args && is_split == false)
           diff_args.reset();
-        // if (may_be_split)
-        //   m_may_be_splits.push_back({&t1, &t2});
 
-        return is_split;
+        return {is_split,may_be_split};
       }
 
     public:
@@ -1408,21 +1459,23 @@ namespace mbp {
             continue;
           for (auto it = part.begin(); it != part.end() - 1; it++) {
             t1 = m_tg.get_term(*it);
-            if (is_ground_or_const(*t1))
+            if (is_gr_or_const(*t1))
               continue;
 
             for (auto it2 = it + 1; it2 != part.end(); it2++) {
               t2 = m_tg.get_term(*it2);
-              if (is_ground_or_const(*t2))
+              if (is_gr_or_const(*t2))
                 continue;
 
               if (have_same_top_operand(*it, *it2) && !are_related(*t1, *t2)) {
-                if (is_split<false>(*t1, *t2, diff_args)) {
+                auto p = is_split<false>(*t1, *t2,diff_args);
+                if (p.first) { // is split
                   m_tg.merge(*t1, *t2);
                   m_tg.merge_flush();
                   // TODO: cc now or later? if cc more terms become compatible but
                   // there is a cost
-                } else {
+                }
+                else if(p.second) { // may be split
                   // add to potential splits to re-check after merges
                   std::cout << "potential split " << expr_ref(t1->get_expr(), m)
                             << " " << expr_ref(t2->get_expr(), m) << "\n";
@@ -1438,7 +1491,7 @@ namespace mbp {
           merged = false;
           for (int i = 0 ; i < splits.size() ; i++) {
             auto p = splits[i];
-            if (is_split<false>(*p.first, *p.second, diff_args)) {
+            if (is_split<false>(*p.first, *p.second, diff_args).first) { // is split
               m_tg.merge(*p.first, *p.second);
               merged = true;
               splits[i] = splits.back();
@@ -1451,14 +1504,14 @@ namespace mbp {
 
         // now add disequalities
         for (auto it = m_tg.m_terms.begin(); it != m_tg.m_terms.end() - 1; it++) {
-          if (is_ground_or_const(**it))
+          if (is_gr_or_const(**it))
             continue;
 
           for (auto it2 = it + 1; it2 != m_tg.m_terms.end(); it2++) {
-            if (is_ground_or_const(**it2))
+            if (is_gr_or_const(**it2))
               continue;
             if (have_same_top_operand((*it)->get_expr(), (*it2)->get_expr()) &&
-                !are_equal(**it, **it2) && is_split<true>(**it, **it2, diff_args)) {
+                !are_equal(**it, **it2) && is_split<true>(**it, **it2, diff_args).first /* os split */) {
               // make not equal one pair of terms of `diff_args` that is
               // consistent with the model
               for (auto p : diff_args) {
@@ -1654,65 +1707,58 @@ namespace mbp {
         return result;
     }
 
-  void term_graph::mark_elim_terms(func_decl_ref_vector &vars) {
+  void term_graph::mark_non_ground(func_decl_ref_vector &vars) {
 
-    m_elim.reset();
     ptr_vector<term> to_propagate;
     func_decl_ref_vector to_elim(vars);
 
+    // initialize terms to ground and mark non-ground constants
     for (auto &t : m_terms) {
-      t->set_ground(true);
-      expr *te = t->get_expr();
-      if (!is_app(te)) continue;
+      t->set_gr(true);
+      t->set_class_gr(true);
 
-      func_decl *fd_del = nullptr;
-      for (auto fd : to_elim) {
-        if (t->get_decl_id() == fd->get_id()) {
-          t->set_ground(false);
-          m_elim.push_back(t);
+      if (!is_app(t->get_expr()))
+        continue;
+
+      // find if it is a constant to eliminate and mark as not ground
+      for (int i = 0; i < to_elim.size(); i++) {
+        if (t->get_decl_id() == to_elim[i]->get_id()) {
+          t->set_gr(false);
+          t->set_class_gr(false);
           to_propagate.push_back(t);
-          fd_del = fd;
+          // once found the variable will not be found again, remove
+          to_elim[i] = to_elim.back();
+          i--;
+          to_elim.pop_back();
           break;
         }
       }
-      // once found the variable will not be found again
-      if(fd_del) {
-        // TODO: move inside the loop? no iteration after erasing the element
-        to_elim.erase(fd_del);
-      }
     }
 
-    reset_marks();
-
-    // invariant: once a class is marked it will not be processed again
-    while(to_propagate.size() > 0) {
+    // propagate non-groundness
+    while(!to_propagate.empty()){
       term *t = to_propagate.back();
       to_propagate.pop_back();
-      if(t->is_ground()) continue; // cannot happen?
+      SASSERT(!t->is_gr());
 
-      term * root = nullptr; // TODO: make it an term_ref_vector and choose later
-      // not marked = the class has not been processed
-      if(!t->is_marked()){
-        // find a representative that is ground
-        for (term *it = &t->get_next(); it != t; it = &it->get_next()) {
-          t->set_mark(true);
-          if(it->is_ground())
-            root = it; // TODO: how to pick among ground ones?
-        }
-      }
-      if(root && root != &t->get_root()){ // ground node found, set it as root
-        root->mk_root();
-      }
-
-      // ground node in class not found, mark parents as not ground
-      for(auto &p : term::parents(t)){
-        if(!p->is_marked()){
+      // non-ground argument found, mark parents as not gr
+      for (auto &p : term::parents(t)){
+        if (p->is_gr()){
           to_propagate.push_back(p);
-          p->set_ground(false);
+          p->set_gr(false);
+          // if all the elements in the class are non-ground, set to false
+          bool all_not_ground = true;
+          for (term *it = &p->get_next(); it != p; it = &it->get_next()) {
+            if (it->is_gr())
+              all_not_ground = false; // TODO: how to pick among gr ones?
+          }
+          if (all_not_ground)
+            p->set_class_gr(false);
         }
       }
     }
-    reset_marks();
+
+    pick_roots(); // chooses ground if possible optional
   }
 
   void term_graph::mb_cover(model& mdl) {
@@ -1722,20 +1768,12 @@ namespace mbp {
       c.mb_cover();
   }
 
-  expr_ref_vector term_graph::non_ground_terms() {
+  expr_ref_vector term_graph::non_gr_terms() {
     expr_ref_vector res(m);
     for (auto &t : m_terms)
-      if(!t->is_ground())
+      if(!t->is_gr())
          res.push_back(t->get_expr());
 
     return res;
   }
-
-    void term_graph::merge_groundness(term & a, term & b) {
-      SASSERT(a.is_root());
-      if (b.is_ground()) {
-        a.set_ground(true);
-        b.set_ground(false);
-      }
-    }
-    }
+}

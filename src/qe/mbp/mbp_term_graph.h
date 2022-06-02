@@ -61,10 +61,13 @@ namespace mbp {
         plugin_manager<solve_plugin> m_plugins;
         ptr_hashtable<term, term_hash, term_eq> m_cg_table;
         vector<std::pair<term*,term*>> m_merge;
+        bool             m_prop_ground = false;
+        ptr_vector<term> m_gr_to_prop; // list of terms that now have a gr representative
 
         term_graph::is_variable_proc m_is_var;
 
         void merge(term &t1, term &t2);
+        void propagate_gr(term &t);
         void merge_flush();
 
         term *mk_term(expr *t);
@@ -180,16 +183,13 @@ namespace mbp {
         // -- maybe they are not necessary since they are in the original formula
         vector<ptr_vector<term>> m_deq_distinct;
 
-        void mark_elim_terms(func_decl_ref_vector &vars);
-        expr_ref_vector non_ground_terms();
-        // bool merge_split_if_applicable(const model_ref& mdl, term *t1, term *t2);
-        void ground_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
-        void mk_ground_equalities(term const &t, expr_ref_vector &out);
-        void mk_all_ground_equalities(term const &t, expr_ref_vector &out);
-        expr_ref to_ground_expr();
-        // -- merges the groundness property of 2 equivalence classes to be merged.
-        // -- `a` is required to be the root of the resulting equivalence class
-        void merge_groundness(term& a, term& b);
+        void mark_non_ground(func_decl_ref_vector &vars);
+        void set_prop_gr(bool v) { m_prop_ground = true;}
+        expr_ref_vector non_gr_terms();
+        void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
+        void mk_gr_equalities(term const &t, expr_ref_vector &out);
+        void mk_all_gr_equalities(term const &t, expr_ref_vector &out);
+        expr_ref to_gr_expr();
         // -- checks if two compatible terms (e.g. f(x,y) f(x,z)) form a split
         // point. If so, returns the arguments that are not currently equal in
         // the term graph if `store_args` is true.
