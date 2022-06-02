@@ -471,13 +471,19 @@ namespace mbp {
         if (!m_prop_ground)
           return;
 
-        // after merge has been done, propagate groundness property
+        // after cc has been computed, propagate groundness
         while (!m_gr_to_prop.empty()) {
           term *t = m_gr_to_prop.back();
           m_gr_to_prop.pop_back();
           propagate_gr(*t);
         }
       }
+
+  void term_graph::push_parents_propagate_gr(term &t) {
+    for (term *p : term::parents(t)) {
+      m_gr_to_prop.push_back(p);
+    }
+  }
 
     void term_graph::merge(term &t1, term &t2) {
         term *a = &t1.get_root();
@@ -500,6 +506,18 @@ namespace mbp {
                 m_cg_table.erase(p);
             }
         }
+
+        if (m_prop_ground) {
+          // merge class groundness and store to propagation later (only for the
+          // parents of the class that now has a ground representative)
+          if (a->is_class_gr() && !b->is_class_gr()) {
+            push_parents_propagate_gr(*b);
+          } else if (!a->is_class_gr() && b->is_class_gr()) {
+            push_parents_propagate_gr(*a);
+            a->set_class_gr(true);
+          }
+        }
+
         // make 'a' be the root of the equivalence class of 'b'
         // IG: why? choose based on groundness?
         b->set_root(*a);
@@ -524,40 +542,26 @@ namespace mbp {
           }
         }
 
-        if (m_prop_ground) {
-          // merge class groundness and store to propagation later
-          if (a->is_class_gr() && !b->is_class_gr()) {
-            m_gr_to_prop.push_back(b);
-            b->set_class_gr(
-                false); // class properties are only maintained in the root
-          } else if (!a->is_class_gr() && b->is_class_gr()) {
-            m_gr_to_prop.push_back(a);
-            a->set_class_gr(true);
-          }
-        }
-
         SASSERT(marks_are_clear());
     }
 
     void term_graph::propagate_gr(term &t) {
-      bool ground;
       // TODO: iterate also over the compound elements in the class
-      for (term *p : term::parents(t)) {
-        if(p->is_gr())
-          continue;
-        ground = true;
-        for(term *c : term::children(p)) {
-          if(!c->is_class_gr()) {
-            ground = false;
-            break;
-          }
+      if(t.is_gr())
+        return;
+      bool ground = true;
+      for(const term *c : term::children(t)) {
+        if(!c->is_class_gr()) {
+          ground = false;
+          break;
         }
-        if(ground) {
-          p->set_gr(true);
-          if(!p->is_class_gr()) { // the class has a new ground representative
-            p->set_class_gr(true);
-            m_gr_to_prop.push_back(p);
-          }
+      }
+
+      if(ground) {
+        t.set_gr(true);
+        if(!t.is_class_gr()) { // the class has now a ground representative
+          t.set_class_gr(true);
+          push_parents_propagate_gr(t);
         }
       }
     }
@@ -1407,9 +1411,11 @@ namespace mbp {
         return t.is_gr() || to_app(t.get_expr())->get_num_args() == 0;
       }
 
-      // returns a pair of booleans. the first boolean is true if `t1` and `t2`
-      // form a split. the second true if `t1` and `t2` could form a split after
-      // a merge.
+      // -- Checks if two compatible terms (e.g. f(x,y) f(x,z)) form a split
+      // point. Returns a pair of booleans. The first boolean is true if `t1`
+      // and `t2` form a split. If so, `store_args` contains the arguments that
+      // are not currently equal in the term graph. The second boolean is true
+      // if `t1` and `t2` could form a split after a merge.
       template <bool store_args>
       std::pair<bool,bool> is_split(const term &t1, const term &t2,
                                 vector<std::pair<term *, term *>> &diff_args) {
@@ -1435,6 +1441,8 @@ namespace mbp {
             break;
           }
         }
+
+        // is_split &= diff_args.empty();
 
         if (store_args && is_split == false)
           diff_args.reset();
@@ -1522,8 +1530,12 @@ namespace mbp {
               // make not equal one pair of terms of `diff_args` that is
               // consistent with the model
               for (auto p : diff_args) {
-                if (!m_model->are_equal(p.first->get_expr(), p.second->get_expr())) { // caches results
-                  // TODO: use here m is distinct
+                expr_ref p1(m), p2(m);
+                m_model->eval_expr(p.first->get_expr(), p1);
+                m_model->eval_expr(p.second->get_expr(), p2);
+                SASSERT(p1);
+                SASSERT(p2);
+                if (m.are_distinct(p1, p2)) {
                   m_tg.add_deq_terms(p.first, p.second);
                   // TODO: right now making not equal the first argument that is found different
                   break;
