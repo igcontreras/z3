@@ -190,14 +190,12 @@ namespace mbp {
         void mk_gr_equalities(term const &t, expr_ref_vector &out);
         void mk_all_gr_equalities(term const &t, expr_ref_vector &out);
         expr_ref to_gr_expr();
-        // -- checks if two compatible terms (e.g. f(x,y) f(x,z)) form a split
-        // point. If so, returns the arguments that are not currently equal in
-        // the term graph if `store_args` is true.
         void mb_cover(model& mdl);
         void add_deq_terms(term *t1, term *t2);
         void add_deq_terms(ptr_vector<term> &ts);
 
       private:
+        void push_parents_propagate_gr(term &t);
         add_deq_proc m_add_deq;
     };
 }
