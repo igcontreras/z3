@@ -184,7 +184,7 @@ namespace mbp {
         vector<ptr_vector<term>> m_deq_distinct;
 
         void mark_non_ground(func_decl_ref_vector &vars);
-        void set_prop_gr(bool v) { m_prop_ground = true;}
+        void set_prop_gr(bool v) { m_prop_ground = v;}
         expr_ref_vector non_gr_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
         void mk_gr_equalities(term const &t, expr_ref_vector &out);
