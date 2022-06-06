@@ -599,7 +599,6 @@ public:
       ctx.regular_stream() << std::endl;
 
       tg.mark_non_ground(vars);
-      tg.set_prop_gr(true);
 
       ctx.regular_stream() << "Ground terms before decisions: " << tg.to_gr_expr() << std::endl;
 
@@ -633,6 +632,8 @@ public:
 
         ctx.regular_stream() << "Ground terms after decisions: ";
         ctx.regular_stream() << tg2.to_gr_expr() << std::endl;
+        // ctx.regular_stream() << "Graph after decisions: ";
+        // ctx.regular_stream() << tg2.to_expr() << std::endl;
       }
     }
 };

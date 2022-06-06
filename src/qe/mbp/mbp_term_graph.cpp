@@ -77,21 +77,15 @@ namespace mbp {
         term* m_root;
         // -- next element in the equivalence class (cyclic linked list)
         term* m_next;
-        // -- eq class size
-        unsigned m_class_size;
         // -- general purpose mark
         unsigned m_mark:1;
         // -- general purpose second mark
         unsigned m_mark2:1;
-        // -- general purpose class mark
-        unsigned m_class_mark : 1;
         // -- is an interpreted constant
         unsigned m_interpreted:1;
 
         // -- the term is a compound term can be rewritten to be ground or it is a ground constant
         unsigned m_gr:1;
-        // -- the class has a ground representative (only maintained for root nodes)
-        unsigned m_gr_class:1;
 
         // -- terms that contain this term as a child (only maintained for root
         // nodes)
@@ -100,12 +94,39 @@ namespace mbp {
         // arguments of term.
         ptr_vector<term> m_children;
 
-        // -- disequality sets that the class belongs to (only maintained for root nodes)
-        term_graph::deqs m_deqs;
+        struct class_props {
+          // TODO: parents should be here
+          // -- the class has a ground representative
+          unsigned m_gr_class : 1;
+          // -- eq class size
+          unsigned m_class_size;
+          // -- disequality sets that the class belongs to
+          term_graph::deqs m_deqs;
+
+          class_props() : m_class_size(1) {}
+          void merge(class_props& b) {
+            m_class_size += b.m_class_size;
+            m_gr_class |= b.m_gr_class;
+            m_deqs |= b.m_deqs; // merge disequalities
+            // -- reset (useful for debugging)
+            b.m_class_size = 0;
+            b.m_gr_class = false;
+            b.m_deqs.reset();
+          }
+          void transfer(class_props &b) {
+            // TODO replace by std::swap of the whole struct?
+            m_class_size = b.m_class_size;
+            b.m_class_size = 0;
+            std::swap(m_deqs, b.m_deqs);
+            m_gr_class = b.m_gr_class;
+            b.m_gr_class = false;
+          }
+         };
+         class_props m_class_props;
 
       public:
         term(expr_ref const &v, u_map<term *> &app2term)
-            : m_expr(v), m_root(this), m_next(this), m_class_size(1),
+          : m_expr(v), m_root(this), m_next(this),
               m_mark(false), m_mark2(false), m_interpreted(false) {
           if (!is_app(m_expr))
             return;
@@ -166,17 +187,12 @@ namespace mbp {
         void set_mark(bool v){m_mark = v;}
         bool is_marked2() const {return m_mark2;} // NSB: where is this used?
         void set_mark2(bool v){m_mark2 = v;}      // NSB: where is this used?
-        bool is_marked_class() const { return m_root->m_class_mark; }
-        void set_mark_class(bool v) const {
-          // XXX assert(is_root()); ?
-          m_root->m_class_mark = v;
-        }
 
         bool is_gr() const {return m_gr;}
         void set_gr(bool v) {m_gr = v;}
 
-        bool is_class_gr() const { return m_root->m_gr_class; }
-        void set_class_gr(bool v) { m_root->m_gr_class = v; }
+        bool is_class_gr() const { return m_root->m_class_props.m_gr_class; }
+        void set_class_gr(bool v) { m_root->m_class_props.m_gr_class = v; }
 
         static bool are_deq(const term &t1, const term &t2) {
           term_graph::deqs const &ds1 = t1.get_root().get_deqs();
@@ -216,16 +232,11 @@ namespace mbp {
         term &get_next() const {return *m_next;}
         void add_parent(term* p) { m_parents.push_back(p); }
 
-        unsigned get_class_size() const {return m_class_size;}
+        unsigned get_class_size() const {return m_class_props.m_class_size;}
 
         void merge_eq_class(term &b) {
-          this->m_deqs |= b.m_deqs; // merge disequalities
-          set_mark_class(is_marked_class() || b.is_marked_class());
           std::swap(this->m_next, b.m_next);
-          m_class_size += b.get_class_size();
-          // -- reset (useful for debugging)
-          b.m_class_size = 0;
-          b.m_deqs.reset();
+          m_class_props.merge(b.m_class_props);
         }
 
         // -- make this term the root of its equivalence class
@@ -237,8 +248,7 @@ namespace mbp {
                 if (curr->is_root()) {
                     // found previous root
                     SASSERT(curr != this);
-                    m_class_size = curr->get_class_size();
-                    curr->m_class_size = 0;
+                    m_class_props.transfer(curr->m_class_props);
                 }
                 curr->set_root(*this);
                 curr = &curr->get_next();
@@ -247,7 +257,7 @@ namespace mbp {
         }
 
         std::ostream& display(std::ostream& out) const {
-            out << get_id() << ": " << m_expr 
+            out << get_id() << ": " << m_expr
                 << (is_root() ? " R" : "") << " - ";
             term const* r = &this->get_next();
             while (r != this) {
@@ -257,7 +267,7 @@ namespace mbp {
             out << "\n";
             return out;
         }
-      term_graph::deqs &get_deqs() { return m_deqs; }
+        term_graph::deqs &get_deqs() { return m_class_props.m_deqs; }
     };
 
     static std::ostream& operator<<(std::ostream& out, term const& t) {
@@ -480,6 +490,7 @@ namespace mbp {
       }
 
   void term_graph::push_parents_propagate_gr(term &t) {
+
     for (term *p : term::parents(t)) {
       m_gr_to_prop.push_back(p);
     }
@@ -499,12 +510,12 @@ namespace mbp {
             std::swap(a, b);
         }
 
-        // Remove parents of b from the cg table.
-        for (term* p : term::parents(b)) {
-            if (!p->is_marked()) {
-                p->set_mark(true);
-                m_cg_table.erase(p);
-            }
+        // Remove parents of b from the cg table
+        for (term *p : term::parents(b)) {
+          if (!p->is_marked()) {
+            p->set_mark(true);
+            m_cg_table.erase(p);
+          }
         }
 
         if (m_prop_ground) {
@@ -546,7 +557,6 @@ namespace mbp {
     }
 
     void term_graph::propagate_gr(term &t) {
-      // TODO: iterate also over the compound elements in the class
       if(t.is_gr())
         return;
       bool ground = true;
@@ -559,10 +569,10 @@ namespace mbp {
 
       if(ground) {
         t.set_gr(true);
-        if(!t.is_class_gr()) { // the class has now a ground representative
+        // if(!t.is_class_gr()) { // the class has now a ground representative
           t.set_class_gr(true);
           push_parents_propagate_gr(t);
-        }
+        // }
       }
     }
 
@@ -644,32 +654,17 @@ namespace mbp {
       expr_ref rep(m);
 
       for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-        expr *e = it->get_expr();
-        bool is_gr = true;
-        if (is_app(e)){
-          app *a1 = to_app(e);
-          if (a1->get_decl()->get_arity() == 0) {
-            if (!it->is_gr()){
-              // SASSERT(m_is_var.contains(a1->get_decl()));
-              is_gr = false;
-            }
-          } else {
-            if (!is_gr_app_term(it)){
-              is_gr = false;
-            }
-          }
-        }
-
-        if (is_gr) {
-            if (!rep) // make the term if there is another gr term in the
-              // equiv. class
+        if (it->is_gr()) {
+          if (!rep) { // make the term if there is another gr term in the equiv.
+                      // class
               rep = mk_app(t);
-            expr *mem = mk_app_core(e);
-            out.push_back(m.mk_eq(rep, mem));
           }
+          out.push_back(m.mk_eq(rep, mk_app_core(it->get_expr())));
+        }
       }
     }
 
+  // TODO: review this
     void term_graph::mk_all_gr_equalities(term const &t, expr_ref_vector &out) {
       mk_gr_equalities(t, out);
 
@@ -721,7 +716,6 @@ namespace mbp {
       }
       else if (t1.get_num_args() == 0 || t2.get_num_args() == 0) {
         if (t1.get_num_args() == t2.get_num_args()) {
-          // t1.get_num_args() == t2.get_num_args() == 0
           if (m.is_value(t1.get_expr()) == m.is_value(t2.get_expr()))
             return t1.get_id() < t2.get_id();
           return m.is_value(t2.get_expr());
@@ -793,6 +787,7 @@ namespace mbp {
   // assumes that ground terms have been computed and picked as root if exist
     void term_graph::gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities) {
 
+      pick_roots();
       for (expr *a : m_lits) {
         if (is_internalized(a)) {
           term *t = get_term(a);
@@ -1442,8 +1437,6 @@ namespace mbp {
           }
         }
 
-        // is_split &= diff_args.empty();
-
         if (store_args && is_split == false)
           diff_args.reset();
 
@@ -1461,9 +1454,10 @@ namespace mbp {
         if (m_tg.m_terms.size() < 2)
           return;
 
-        // get equalities from the model
+        // get equalities from the model  // TODO: change partition to return
+        // terms?
         vector<expr_ref_vector> partitions = m_tg.get_partition(*m_model);
-        // TODO: change partition to return terms?
+
         vector<std::pair<term *, term *>> splits; // potential splits
         vector<std::pair<term *, term *>> diff_args;
 
@@ -1491,9 +1485,6 @@ namespace mbp {
                   // there is a cost
                 }
                 else if(p.second) { // may be split
-                  // add to potential splits to re-check after merges
-                  std::cout << "potential split " << expr_ref(t1->get_expr(), m)
-                            << " " << expr_ref(t2->get_expr(), m) << "\n";
                   splits.push_back({t1, t2});
                 }
               }
