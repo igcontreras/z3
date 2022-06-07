@@ -617,7 +617,7 @@ public:
 
       tg.mark_non_ground(vars);
 
-      ctx.regular_stream() << "Ground terms before decisions: " << tg.to_gr_expr() << std::endl;
+      ctx.regular_stream() << "Ground terms before decisions: " << tg.to_ground_expr() << std::endl;
 
       solver_factory &sf = ctx.get_solver_factory();
       params_ref pa;
@@ -640,15 +640,14 @@ public:
         tg2.set_vars(vars, true);
         tg2.add_lits(orig_lits);
         tg2.mark_non_ground(vars);
-        tg2.set_prop_gr(true);
+        tg2.set_prop_ground(true);
         tg2.mb_cover(*mdl);
-        // tg2.mark_elim_terms(vars);
         expr_ref_vector tglits(m);
         tg2.gr_terms_to_lits(tglits, false);
         lits.push_back(m.mk_not(m.mk_and(tglits))); // get next disjunct
 
         ctx.regular_stream() << "Ground terms after decisions: ";
-        ctx.regular_stream() << tg2.to_gr_expr() << std::endl;
+        ctx.regular_stream() << tg2.to_ground_expr() << std::endl;
         // ctx.regular_stream() << "Graph after decisions: ";
         // ctx.regular_stream() << tg2.to_expr() << std::endl;
       }
