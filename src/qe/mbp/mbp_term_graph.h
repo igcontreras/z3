@@ -62,7 +62,7 @@ namespace mbp {
         ptr_hashtable<term, term_hash, term_eq> m_cg_table;
         vector<std::pair<term*,term*>> m_merge;
         bool             m_prop_ground = false;
-        ptr_vector<term> m_gr_to_prop; // list of terms that now have a gr representative
+        ptr_vector<term> m_ground_to_prop; // list of terms that now have a gr representative
 
         term_graph::is_variable_proc m_is_var;
 
@@ -184,12 +184,12 @@ namespace mbp {
         vector<ptr_vector<term>> m_deq_distinct;
 
         void mark_non_ground(func_decl_ref_vector &vars);
-        void set_prop_gr(bool v) { m_prop_ground = v;}
-        expr_ref_vector non_gr_terms();
+        void set_prop_ground(bool v) { m_prop_ground = v;}
+        expr_ref_vector non_ground_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
         void mk_gr_equalities(term const &t, expr_ref_vector &out);
         void mk_all_gr_equalities(term const &t, expr_ref_vector &out);
-        expr_ref to_gr_expr();
+        expr_ref to_ground_expr();
         void mb_cover(model& mdl);
         void add_deq_terms(term *t1, term *t2);
         void add_deq_terms(ptr_vector<term> &ts);
