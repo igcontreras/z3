@@ -24,7 +24,7 @@ Notes:
 #include "smt/smt_context.h"
 #include "opt/opt_context.h"
 #include "util/sorting_network.h"
-#include "tactic/generic_model_converter.h"
+#include "ast/converters/generic_model_converter.h"
 
 namespace opt {
 
@@ -38,8 +38,6 @@ namespace opt {
         ref<generic_model_converter> m_filter;
         sortmax(maxsat_context& c, vector<soft>& s, unsigned index): 
             maxsmt_solver_base(c, s, index), m_sort(*this), m_trail(m), m_fresh(m) {}
-
-        ~sortmax() override {}
 
         lbool operator()() override {
             if (!init()) 

@@ -232,10 +232,10 @@ namespace recfun {
         ctx.push(push_back_vector<scoped_ptr_vector<propagation_item>>(m_propagation_queue));        
     }
 
-    sat::literal solver::internalize(expr* e, bool sign, bool root, bool redundant) {
+    sat::literal solver::internalize(expr* e, bool sign, bool root) {
         force_push();
         SASSERT(m.is_bool(e));
-        if (!visit_rec(m, e, sign, root, redundant)) {
+        if (!visit_rec(m, e, sign, root)) {
             TRACE("array", tout << mk_pp(e, m) << "\n";);
             return sat::null_literal;
         }
@@ -245,9 +245,9 @@ namespace recfun {
         return lit;
     }
 
-    void solver::internalize(expr* e, bool redundant) {
+    void solver::internalize(expr* e) {
         force_push();
-        visit_rec(m, e, false, false, redundant);
+        visit_rec(m, e, false, false);
     }
 
     bool solver::visited(expr* e) {
@@ -259,7 +259,7 @@ namespace recfun {
         if (visited(e))
             return true;
         if (!is_app(e) || to_app(e)->get_family_id() != get_id()) {
-            ctx.internalize(e, m_is_redundant);
+            ctx.internalize(e);
             return true;
         }
         m_stack.push_back(sat::eframe(e));
@@ -332,6 +332,11 @@ namespace recfun {
         }
         return found;
     }
+
+    bool solver::is_beta_redex(euf::enode* p, euf::enode* n) const {
+        return is_defined(p) || is_case_pred(p);
+    }
+
 
     bool solver::add_dep(euf::enode* n, top_sort<euf::enode>& dep) {
         if (n->num_args() == 0)

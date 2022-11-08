@@ -31,7 +31,7 @@ Notes:
 #include "tactic/goal.h"
 #include "sat/sat_model_converter.h"
 #include "sat/sat_solver.h"
-#include "tactic/generic_model_converter.h"
+#include "ast/converters/generic_model_converter.h"
 #include "sat/smt/atom2bool_var.h"
 
 class sat2goal {
@@ -51,7 +51,6 @@ public:
         
     public:
         mc(ast_manager& m);
-        ~mc() override {}
         // flush model converter from SAT solver to this structure.
         void flush_smc(sat::solver& s, atom2bool_var const& map);
         void operator()(sat::model& m);

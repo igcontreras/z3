@@ -128,6 +128,22 @@ namespace arith {
         }
         else {
 
+
+            expr_ref mone(a.mk_int(-1), m);
+            expr_ref abs_q(m.mk_ite(a.mk_ge(q, zero), q, a.mk_uminus(q)), m);
+            literal eqz = mk_literal(m.mk_eq(q, zero));
+            literal mod_ge_0 = mk_literal(a.mk_ge(mod, zero));
+            literal mod_lt_q = mk_literal(a.mk_le(a.mk_sub(mod, abs_q), mone));
+            
+            // q = 0 or p = (p mod q) + q * (p div q)
+            // q = 0 or (p mod q) >= 0
+            // q = 0 or (p mod q) < abs(q)
+
+            add_clause(eqz, eq);
+            add_clause(eqz, mod_ge_0);
+            add_clause(eqz, mod_lt_q);
+
+#if 0
             /*literal div_ge_0   = */ mk_literal(a.mk_ge(div, zero));
             /*literal div_le_0   = */ mk_literal(a.mk_le(div, zero));
             /*literal p_ge_0     = */ mk_literal(a.mk_ge(p, zero));
@@ -139,6 +155,8 @@ namespace arith {
             // q <= 0 or (p mod q) >= 0
             // q <= 0 or (p mod q) <  q
             // q >= 0 or (p mod q) < -q
+
+
             literal q_ge_0 = mk_literal(a.mk_ge(q, zero));
             literal q_le_0 = mk_literal(a.mk_le(q, zero));
 
@@ -148,6 +166,17 @@ namespace arith {
             add_clause(q_le_0, mod_ge_0);
             add_clause(q_le_0, ~mk_literal(a.mk_ge(a.mk_sub(mod, q), zero)));
             add_clause(q_ge_0, ~mk_literal(a.mk_ge(a.mk_add(mod, q), zero)));
+#endif
+            
+            if (a.is_zero(p)) {
+                add_clause(eqz, mk_literal(m.mk_eq(mod, zero)));
+                add_clause(eqz, mk_literal(m.mk_eq(div, zero)));
+            }
+            else if (!a.is_numeral(q)) {
+                // (or (= y 0)  (<= (* y (div x y)) x))
+                add_clause(eqz, mk_literal(a.mk_le(a.mk_mul(q, div), p)));
+            }
+
 
         }
         if (get_config().m_arith_enum_const_mod && k.is_pos() && k < rational(8)) {
@@ -222,6 +251,17 @@ namespace arith {
         if (hi_sup != end) mk_bound_axiom(b, *hi_sup);
     }
 
+    void solver::add_farkas_clause(sat::literal l1, sat::literal l2) {
+        arith_proof_hint* bound_params = nullptr;
+        if (ctx.use_drat()) {
+            m_arith_hint.set_type(ctx, hint_type::farkas_h);
+            m_arith_hint.add_lit(rational(1), ~l1);
+            m_arith_hint.add_lit(rational(1), ~l2);
+            bound_params = m_arith_hint.mk(ctx);
+        }
+        add_clause(l1, l2, bound_params);
+    }
+
     void solver::mk_bound_axiom(api_bound& b1, api_bound& b2) {
         literal   l1(b1.get_lit());
         literal   l2(b2.get_lit());
@@ -233,46 +273,46 @@ namespace arith {
         SASSERT(b1.get_var() == b2.get_var());
         if (k1 == k2 && kind1 == kind2) return;
         SASSERT(k1 != k2 || kind1 != kind2);
-        char const* bound_params = "farkas 1 1";
 
+        
         if (kind1 == lp_api::lower_t) {
             if (kind2 == lp_api::lower_t) {
                 if (k2 <= k1)
-                    add_clause(~l1, l2, bound_params);
+                    add_farkas_clause(~l1, l2);
                 else
-                    add_clause(l1, ~l2, bound_params);
+                    add_farkas_clause(l1, ~l2);
             }
             else if (k1 <= k2)
                 // k1 <= k2, k1 <= x or x <= k2
-                add_clause(l1, l2);
+                add_farkas_clause(l1, l2);
             else {
                 // k1 > hi_inf, k1 <= x => ~(x <= hi_inf)
-                add_clause(~l1, ~l2, bound_params);
+                add_farkas_clause(~l1, ~l2);
                 if (v_is_int && k1 == k2 + rational(1))
                     // k1 <= x or x <= k1-1
-                    add_clause(l1, l2, bound_params);
+                    add_farkas_clause(l1, l2);
             }
         }
         else if (kind2 == lp_api::lower_t) {
             if (k1 >= k2)
                 // k1 >= lo_inf, k1 >= x or lo_inf <= x
-                add_clause(l1, l2, bound_params);
+                add_farkas_clause(l1, l2);
             else {
                 // k1 < k2, k2 <= x => ~(x <= k1)
-                add_clause(~l1, ~l2, bound_params);
+                add_farkas_clause(~l1, ~l2);
                 if (v_is_int && k1 == k2 - rational(1))
                     // x <= k1 or k1+l <= x
-                    add_clause(l1, l2, bound_params);
+                    add_farkas_clause(l1, l2);
             }
         }
         else {
             // kind1 == A_UPPER, kind2 == A_UPPER
             if (k1 >= k2)
                 // k1 >= k2, x <= k2 => x <= k1
-                add_clause(l1, ~l2, bound_params);
+                add_farkas_clause(l1, ~l2);
             else
                 // k1 <= hi_sup , x <= k1 =>  x <= hi_sup
-                add_clause(~l1, l2, bound_params);
+                add_farkas_clause(~l1, l2);
         }
     }
 
@@ -382,9 +422,9 @@ namespace arith {
             ge = mk_literal(a.mk_ge(diff, zero));
         }
         ++m_stats.m_assert_diseq;  
-        add_clause(~eq, le);
-        add_clause(~eq, ge);
-        add_clause(~le, ~ge, eq);
+        add_farkas_clause(~eq, le);
+        add_farkas_clause(~eq, ge);
+        add_clause(~le, ~ge, eq, explain_trichotomy(le, ge, eq));
     }
 
 

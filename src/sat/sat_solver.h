@@ -28,6 +28,7 @@ Revision History:
 #include "util/rlimit.h"
 #include "util/scoped_ptr_vector.h"
 #include "util/scoped_limit_trail.h"
+#include "util/visit_helper.h"
 #include "sat/sat_types.h"
 #include "sat/sat_clause.h"
 #include "sat/sat_watched.h"
@@ -84,7 +85,7 @@ namespace sat {
     };
 
     struct no_drat_params : public params_ref {
-        no_drat_params() { set_sym("drat.file", symbol()); }        
+        no_drat_params() { set_bool("drat.disable", true); }
     };
     
     class solver : public solver_core {
@@ -174,9 +175,9 @@ namespace sat {
         literal_vector          m_trail;
         clause_wrapper_vector   m_clauses_to_reinit;
         std::string             m_reason_unknown;
+        bool                    m_trim = false;
 
-        svector<unsigned>       m_visited;
-        unsigned                m_visited_ts;
+        visit_helper            m_visited;
 
         struct scope {
             unsigned m_trail_lim;
@@ -203,7 +204,7 @@ namespace sat {
         class lookahead*        m_cuber;
         class i_local_search*   m_local_search;
 
-        statistics              m_aux_stats;
+        statistics              m_aux_stats;        
 
         void del_clauses(clause_vector& clauses);
 
@@ -235,6 +236,7 @@ namespace sat {
         friend class aig_finder;
         friend class lut_finder;
         friend class npn3_finder;
+        friend class proof_trim;
     public:
         solver(params_ref const & p, reslimit& l);
         ~solver() override;
@@ -282,6 +284,8 @@ namespace sat {
 
         random_gen& rand() { return m_rand; }
 
+        void set_trim() { m_trim = true; }
+
     protected:
         void reset_var(bool_var v, bool ext, bool dvar);
 
@@ -301,9 +305,6 @@ namespace sat {
         void mk_bin_clause(literal l1, literal l2, sat::status st);
         void mk_bin_clause(literal l1, literal l2, bool learned) { mk_bin_clause(l1, l2, learned ? sat::status::redundant() : sat::status::asserted()); }
         bool propagate_bin_clause(literal l1, literal l2);
-        clause * mk_ter_clause(literal * lits, status st);
-        bool attach_ter_clause(clause & c, status st);
-        bool propagate_ter_clause(clause& c);
         clause * mk_nary_clause(unsigned num_lits, literal * lits, status st);
         bool has_variables_to_reinit(clause const& c) const;
         bool has_variables_to_reinit(literal l1, literal l2) const;
@@ -339,15 +340,14 @@ namespace sat {
         void detach_bin_clause(literal l1, literal l2, bool learned);
         void detach_clause(clause & c);
         void detach_nary_clause(clause & c);
-        void detach_ter_clause(clause & c);
         void push_reinit_stack(clause & c);
         void push_reinit_stack(literal l1, literal l2);
-
-        void init_visited();
-        void mark_visited(literal l) { m_visited[l.index()] = m_visited_ts; }
+        
+        void init_visited(unsigned lim = 1) { m_visited.init_visited(2 * num_vars(), lim); }
+        bool is_visited(sat::bool_var v) const { return is_visited(literal(v, false)); }
+        bool is_visited(literal lit) const { return m_visited.is_visited(lit.index()); }
+        void mark_visited(literal lit) { m_visited.mark_visited(lit.index()); }
         void mark_visited(bool_var v) { mark_visited(literal(v, false)); }
-        bool is_visited(bool_var v) const { return is_visited(literal(v, false)); }
-        bool is_visited(literal l) const { return m_visited[l.index()] == m_visited_ts; }
         bool all_distinct(literal_vector const& lits);
         bool all_distinct(clause const& cl);
 
@@ -397,7 +397,7 @@ namespace sat {
             }
         }
         void update_assign(literal l, justification j) {
-            if (j.level() == 0) 
+            if (j.level() == 0 && !m_trim) 
                 m_justification[l.var()] = j;
         }
         void assign_unit(literal l) { assign(l, justification(0)); }
@@ -427,17 +427,17 @@ namespace sat {
         }
         
         void checkpoint() {
-            if (!m_checkpoint_enabled) return;
-            if (limit_reached()) {
+            if (!m_checkpoint_enabled) 
+                return;
+            if (limit_reached()) 
                 throw solver_exception(Z3_CANCELED_MSG);
-            }
-            if (memory_exceeded()) {
+            if (memory_exceeded()) 
                 throw solver_exception(Z3_MAX_MEMORY_MSG);                
-            }
         }
         void set_par(parallel* p, unsigned id);
         bool canceled() { return !m_rlimit.inc(); }
         config const& get_config() const { return m_config; }
+        void set_drat(bool d) { m_config.m_drat = d; }
         drat& get_drat() { return m_drat; }
         drat* get_drat_ptr() { return &m_drat;  }
         void set_incremental(bool b) { m_config.m_incremental = b; }
@@ -475,6 +475,8 @@ namespace sat {
         bool should_propagate() const;
         bool propagate_core(bool update);
         bool propagate_literal(literal l, bool update);
+        void propagate_clause(clause& c, bool update, unsigned assign_level, clause_offset cls_off);
+        void set_watch(clause& c, unsigned idx, clause_offset cls_off);
         
         // -----------------------
         //
@@ -527,20 +529,22 @@ namespace sat {
 
         unsigned m_conflicts_since_init { 0 };
         unsigned m_restarts { 0 };
-        unsigned m_restart_next_out { 0 };
-        unsigned m_conflicts_since_restart { 0 };
-        bool     m_force_conflict_analysis { false };
-        unsigned m_simplifications { 0 };
-        unsigned m_restart_threshold { 0 };
-        unsigned m_luby_idx { 0 };
-        unsigned m_conflicts_since_gc { 0 };
-        unsigned m_gc_threshold { 0 };
-        unsigned m_defrag_threshold { 0 };
-        unsigned m_num_checkpoints { 0 };
-        double   m_min_d_tk { 0 } ;
-        unsigned m_next_simplify { 0 };
-        bool     m_simplify_enabled { true };
-        bool     m_restart_enabled { true };
+        unsigned m_restart_next_out = 0;
+        unsigned m_conflicts_since_restart = 0;
+        bool     m_force_conflict_analysis = false;
+        unsigned m_simplifications = 0;
+        unsigned m_restart_threshold = 0;
+        unsigned m_luby_idx = 0;
+        unsigned m_conflicts_since_gc = 0;
+        unsigned m_gc_threshold = 0;
+        unsigned m_defrag_threshold = 0;
+        unsigned m_num_checkpoints = 0;
+        double   m_min_d_tk = 0.0 ;
+        unsigned m_next_simplify = 0;
+        double   m_simplify_mult = 1.5;
+        bool     m_simplify_enabled = true;
+        bool     m_restart_enabled = true;
+        bool guess(bool_var next);
         bool decide();
         bool_var next_var();
         lbool bounded_search();
@@ -712,7 +716,6 @@ namespace sat {
         //
         // -----------------------
     public:
-        void set_should_simplify() { m_next_simplify = m_conflicts_since_init; }
         bool_var_vector const& get_vars_to_reinit() const { return m_vars_to_reinit;  }
         bool is_probing() const { return m_is_probing; }
         bool is_free(bool_var v) const { return m_free_vars.contains(v); }

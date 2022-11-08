@@ -33,7 +33,6 @@ void bv_rewriter::updt_local_params(params_ref const & _p) {
     m_split_concat_eq = p.split_concat_eq();
     m_bvnot_simpl = p.bv_not_simpl();
     m_bv_sort_ac = p.bv_sort_ac();
-    m_mkbv2num = _p.get_bool("mkbv2num", false);
     m_extract_prop = p.bv_extract_prop();
     m_ite2id = p.bv_ite2id();
     m_le_extra = p.bv_le_extra();
@@ -49,9 +48,6 @@ void bv_rewriter::updt_params(params_ref const & p) {
 void bv_rewriter::get_param_descrs(param_descrs & r) {
     poly_rewriter<bv_rewriter_core>::get_param_descrs(r);
     bv_rewriter_params::collect_param_descrs(r);
-#ifndef _EXTERNAL_RELEASE
-    r.insert("mkbv2num", CPK_BOOL, "(default: false) convert (mkbv [true/false]*) into a numeral");
-#endif
 }
 
 br_status bv_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
@@ -915,6 +911,11 @@ br_status bv_rewriter::mk_bv_lshr(expr * arg1, expr * arg2, expr_ref & result) {
         return BR_REWRITE2;
     }
 
+    if (arg1 == arg2) {
+        result = mk_numeral(0, bv_size);
+        return BR_DONE;
+    }
+
     return BR_FAILED;
 }
 
@@ -1740,7 +1741,7 @@ br_status bv_rewriter::mk_bv_or(unsigned num, expr * const * args, expr_ref & re
         unsigned low = 0;
         unsigned i = 0;
         while (i < sz) {
-            while (i < sz && mod(v1, two).is_one()) {
+            while (i < sz && v1.is_odd()) {
                 i++;
                 div(v1, two, v1);
             }
@@ -1749,7 +1750,7 @@ br_status bv_rewriter::mk_bv_or(unsigned num, expr * const * args, expr_ref & re
                 exs.push_back(m_util.mk_numeral(rational::power_of_two(num_sz) - numeral(1), num_sz));
                 low = i;
             }
-            while (i < sz && mod(v1, two).is_zero()) {
+            while (i < sz && v1.is_even()) {
                 i++;
                 div(v1, two, v1);
             }
@@ -2250,14 +2251,52 @@ bool bv_rewriter::is_zero_bit(expr * x, unsigned idx) {
     return false;
 }
 
+br_status bv_rewriter::mk_mul_hoist(unsigned num_args, expr * const * args, expr_ref & result) {
+    if (num_args <= 1)
+        return BR_FAILED;
+    expr* z = nullptr, *u = nullptr;
+    for (unsigned i = 0; i < num_args; ++i) {
+        // ~x = -1 - x
+        if (m_util.is_bv_not(args[i], z)) {
+            unsigned sz = m_util.get_bv_size(z);
+            ptr_vector<expr> new_args(num_args, args);
+            rational p = rational(2).expt(sz) - 1;
+            new_args[i] = m_util.mk_bv_sub(mk_numeral(p, sz), z);
+            result = m_util.mk_bv_mul(num_args, new_args.data());
+            return BR_REWRITE3;
+        }
+        // shl(z, u) * x = shl(x * z, u)
+        if (m_util.is_bv_shl(args[i], z, u)) {
+            ptr_vector<expr> new_args(num_args, args);
+            new_args[i] = z;
+            result = m_util.mk_bv_mul(num_args, new_args.data());
+            result = m_util.mk_bv_shl(result, u);
+            return BR_REWRITE2;
+        }
+    }
+    return BR_FAILED;
+}
+
 br_status bv_rewriter::mk_bv_mul(unsigned num_args, expr * const * args, expr_ref & result) {
     br_status st = mk_mul_core(num_args, args, result);
     if (st != BR_FAILED && st != BR_DONE)
         return st;
-    expr * x;
-    expr * y;
+    if (st == BR_DONE && is_mul(result)) {
+        st = mk_mul_hoist(to_app(result)->get_num_args(), to_app(result)->get_args(), result);
+        if (st != BR_FAILED)
+            return st;
+        st = BR_DONE;
+    }
+    if (st == BR_FAILED) {
+        st = mk_mul_hoist(num_args, args, result);
+        if (st != BR_FAILED)
+            return st;
+    }
+
+    expr* x, * y;
     if (st == BR_FAILED && num_args == 2) {
-        x = args[0]; y = args[1];
+        x = args[0]; 
+        y = args[1];
     }
     else if (st == BR_DONE && is_mul(result) && to_app(result)->get_num_args() == 2) {
         x = to_app(result)->get_arg(0);
@@ -2266,7 +2305,6 @@ br_status bv_rewriter::mk_bv_mul(unsigned num_args, expr * const * args, expr_re
     else {
         return st;
     }
-
     if (m_mul2concat) {
         numeral v;
         unsigned bv_size;

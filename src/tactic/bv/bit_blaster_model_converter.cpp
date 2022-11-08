@@ -18,7 +18,7 @@ Notes:
 --*/
 #include "model/model.h"
 #include "model/model_pp.h"
-#include "tactic/model_converter.h"
+#include "ast/converters/model_converter.h"
 #include "ast/bv_decl_plugin.h"
 #include "ast/ast_smt2_pp.h"
 #include "ast/ast_pp.h"
@@ -50,10 +50,7 @@ struct bit_blaster_model_converter : public model_converter {
         for (func_decl* f : newbits) 
             m_newbits.push_back(f);
     }
-    
-    ~bit_blaster_model_converter() override {
-    }
-    
+
     void collect_bits(obj_hashtable<func_decl> & bits) {
         unsigned sz = m_bits.size();
         for (unsigned i = 0; i < sz; i++) {

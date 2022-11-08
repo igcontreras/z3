@@ -22,9 +22,9 @@ Notes:
 #include "ast/ast_pp.h"
 #include "ast/ast_pp_util.h"
 #include "ast/display_dimacs.h"
-#include "tactic/model_converter.h"
+#include "ast/converters/model_converter.h"
 #include "solver/solver.h"
-#include "solver/solver_params.hpp"
+#include "params/solver_params.hpp"
 #include "model/model_evaluator.h"
 #include "model/model_params.hpp"
 

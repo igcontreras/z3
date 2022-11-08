@@ -107,11 +107,12 @@ namespace smt {
 
         ptr_vector<justification>   m_justifications;
 
-        unsigned                    m_final_check_idx; // circular counter used for implementing fairness
+        unsigned                    m_final_check_idx = 0; // circular counter used for implementing fairness
 
-        bool                        m_is_auxiliary { false }; // used to prevent unwanted information from being logged.
-        class parallel*             m_par { nullptr };
-        unsigned                    m_par_index { 0 };
+        bool                        m_is_auxiliary = false; // used to prevent unwanted information from being logged.
+        class parallel*             m_par = nullptr;
+        unsigned                    m_par_index = 0;
+        bool                        m_internalizing_assertions = false;
 
         // -----------------------------------
         //
@@ -531,22 +532,22 @@ namespace smt {
         }
 
         unsigned get_num_enodes_of(func_decl const * decl) const {
-            unsigned id = decl->get_decl_id();
+            unsigned id = decl->get_small_id();
             return id < m_decl2enodes.size() ? m_decl2enodes[id].size() : 0;
         }
 
         enode_vector const& enodes_of(func_decl const * d) const {
-            unsigned id = d->get_decl_id();
+            unsigned id = d->get_small_id();
             return id < m_decl2enodes.size() ? m_decl2enodes[id] : m_empty_vector;
         }
 
         enode_vector::const_iterator begin_enodes_of(func_decl const * decl) const {
-            unsigned id = decl->get_decl_id();
+            unsigned id = decl->get_small_id();
             return id < m_decl2enodes.size() ? m_decl2enodes[id].begin() : nullptr;
         }
 
         enode_vector::const_iterator end_enodes_of(func_decl const * decl) const {
-            unsigned id = decl->get_decl_id();
+            unsigned id = decl->get_small_id();
             return id < m_decl2enodes.size() ? m_decl2enodes[id].end() : nullptr;
         }
 
@@ -773,7 +774,10 @@ namespace smt {
 
         void internalize_quantifier(quantifier * q, bool gate_ctx);
 
-        bool m_has_lambda = false;
+        obj_map<enode, quantifier*> m_lambdas;
+
+        bool has_lambda();
+
         void internalize_lambda(quantifier * q);
 
         void internalize_formula_core(app * n, bool gate_ctx);
@@ -783,6 +787,7 @@ namespace smt {
         friend class set_enode_flag_trail;
 
     public:
+        
         void set_enode_flag(bool_var v, bool is_new_var);
 
     protected:
@@ -886,6 +891,10 @@ namespace smt {
         void remove_lit_occs(clause const& cls, unsigned num_bool_vars);
 
         void add_lit_occs(clause const& cls);
+
+        ast_pp_util m_lemma_visitor;
+        void dump_lemma(unsigned n, literal const* lits);
+        void dump_axiom(unsigned n, literal const* lits);
     public:        
 
         void ensure_internalized(expr* e);
@@ -1024,6 +1033,8 @@ namespace smt {
         bool assume_eq(enode * lhs, enode * rhs);
 
         bool is_shared(enode * n) const;
+
+        bool is_beta_redex(enode* p, enode* n) const;
 
         void assign_eq(enode * lhs, enode * rhs, eq_justification const & js) {
             push_eq(lhs, rhs, js);
@@ -1695,6 +1706,12 @@ namespace smt {
 
         void get_units(expr_ref_vector& result);
 
+        bool on_clause_active() const { return m_clause_proof.on_clause_active(); }
+
+        void register_on_clause(void* ctx, user_propagator::on_clause_eh_t& on_clause) {
+            m_clause_proof.register_on_clause(ctx, on_clause);
+        }
+
         /*
          * user-propagator
          */
@@ -1748,6 +1765,8 @@ namespace smt {
 
         bool watches_fixed(enode* n) const;
 
+        bool has_split_candidate(bool_var& var, bool& is_pos);
+        
         bool decide_user_interference(bool_var& var, bool& is_pos);
 
         void assign_fixed(enode* n, expr* val, unsigned sz, literal const* explain);

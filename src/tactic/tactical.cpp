@@ -20,6 +20,7 @@ Notes:
 #include "util/cancel_eh.h"
 #include "util/scoped_ptr_vector.h"
 #include "tactic/tactical.h"
+#include "tactic/goal_proof_converter.h"
 #ifndef SINGLE_THREAD
 #include <thread>
 #endif
@@ -164,6 +165,10 @@ public:
 
     tactic * translate(ast_manager & m) override {
         return translate_core<and_then_tactical>(m);
+    }
+
+    void register_on_clause(void* ctx, user_propagator::on_clause_eh_t& on_clause) override {
+        m_t2->register_on_clause(ctx, on_clause);
     }
 
     void user_propagate_init(
@@ -424,10 +429,20 @@ tactic * or_else(tactic * t1, tactic * t2, tactic * t3, tactic * t4, tactic * t5
     return or_else(10, ts);
 }
 
+class no_par_tactical : public tactic {
+public:
+    char const* name() const override { return "par"; }
+    void operator()(goal_ref const & in, goal_ref_buffer& result) override {
+        throw default_exception("par_tactical is unavailable in single threaded mode");
+    }
+    tactic * translate(ast_manager & m) override { return nullptr; }
+    void cleanup() override {}
+};
+
 #ifdef SINGLE_THREAD
 
 tactic * par(unsigned num, tactic * const * ts) {
-    throw default_exception("par_tactical is unavailable in single threaded mode");
+    return alloc(no_par_tactical);
 }
 
 #else
@@ -576,11 +591,23 @@ tactic * par(tactic * t1, tactic * t2, tactic * t3, tactic * t4) {
     return par(4, ts);
 }
 
+class no_par_and_then_tactical : public tactic {
+public:
+    char const* name() const override { return "par_then"; }
+    void operator()(goal_ref const & in, goal_ref_buffer& result) override {
+        throw default_exception("par_and_then is not available in single threaded mode");
+    }
+    tactic * translate(ast_manager & m) override { return nullptr; }
+    void cleanup() override {}
+};
+
+
 #ifdef SINGLE_THREAD
 
 tactic * par_and_then(tactic * t1, tactic * t2) {
-    throw default_exception("par_and_then is not available in single threaded mode");
+    return alloc(no_par_and_then_tactical);
 }
+
 #else
 class par_and_then_tactical : public and_then_tactical {
 public:

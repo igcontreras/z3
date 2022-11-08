@@ -5,10 +5,11 @@ Copyright (c) 2015 Microsoft Corporation
 --*/
 
 
-#include "tactic/horn_subsume_model_converter.h"
+#include "ast/converters/horn_subsume_model_converter.h"
 #include "ast/arith_decl_plugin.h"
 #include "model/model_smt2_pp.h"
 #include "ast/reg_decl_plugins.h"
+#include <iostream>
 
 void tst_horn_subsume_model_converter() {
     ast_manager m;

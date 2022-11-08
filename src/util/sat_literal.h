@@ -95,6 +95,7 @@ namespace sat {
     inline bool operator!=(literal const & l1, literal const & l2) { return l1.m_val != l2.m_val; }
 
     inline std::ostream & operator<<(std::ostream & out, sat::literal l) { if (l == sat::null_literal) out << "null"; else out << (l.sign() ? "-" : "") << l.var(); return out; }
+    
 
 
     typedef svector<literal> literal_vector;
@@ -109,12 +110,10 @@ namespace sat {
 
     inline void negate(literal_vector& ls) { for (unsigned i = 0; i < ls.size(); ++i) ls[i].neg(); }
 
-    typedef tracked_uint_set uint_set;
-
-    typedef uint_set bool_var_set;
+    typedef tracked_uint_set bool_var_set;
 
     class literal_set {
-        uint_set m_set;
+        tracked_uint_set m_set;
     public:
         literal_set(literal_vector const& v) {
             for (unsigned i = 0; i < v.size(); ++i) insert(v[i]);
@@ -140,9 +139,9 @@ namespace sat {
         void reset() { m_set.reset(); }
         void finalize() { m_set.finalize(); }
         class iterator {
-            uint_set::iterator m_it;
+            tracked_uint_set::iterator m_it;
         public:
-            iterator(uint_set::iterator it):m_it(it) {}
+            iterator(tracked_uint_set::iterator it):m_it(it) {}
             literal operator*() const { return to_literal(*m_it); }
             iterator& operator++() { ++m_it; return *this; }
             iterator operator++(int) { iterator tmp = *this; ++m_it; return tmp; }
@@ -191,4 +190,12 @@ namespace sat {
         return out << mk_lits_pp(ls.size(), ls.data());
     }
 
+};
+
+namespace std {
+
+    inline std::string to_string(sat::literal l) {
+        if (l.sign()) return "-" + to_string(l.var());
+        return to_string(l.var());
+    }
 };

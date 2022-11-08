@@ -44,7 +44,7 @@ Notes:
 #include "solver/solver2tactic.h"
 #include "solver/parallel_tactic.h"
 #include "solver/parallel_params.hpp"
-#include "tactic/tactic_params.hpp"
+#include "params/tactic_params.hpp"
 #include "parsers/smt2/smt2parser.h"
 
 
@@ -130,8 +130,7 @@ class smt_strategic_solver_factory : public solver_factory {
     symbol m_logic;
 public:
     smt_strategic_solver_factory(symbol const & logic):m_logic(logic) {}
-    
-    ~smt_strategic_solver_factory() override {}
+
     solver * operator()(ast_manager & m, params_ref const & p, bool proofs_enabled, bool models_enabled, bool unsat_core_enabled, symbol const & logic) override {
         symbol l;
         if (m_logic != symbol::null)

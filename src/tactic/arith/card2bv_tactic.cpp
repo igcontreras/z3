@@ -22,7 +22,7 @@ Notes:
 #include "ast/rewriter/pb2bv_rewriter.h"
 #include "ast/ast_util.h"
 #include "ast/ast_pp.h"
-#include "tactic/generic_model_converter.h"
+#include "ast/converters/generic_model_converter.h"
 
 class card2bv_tactic : public tactic {
     ast_manager &              m;
@@ -37,9 +37,6 @@ public:
 
     tactic * translate(ast_manager & m) override {
         return alloc(card2bv_tactic, m, m_params);
-    }
-
-    ~card2bv_tactic() override {
     }
 
     char const* name() const override { return "card2bv"; }

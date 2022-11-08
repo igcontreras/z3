@@ -83,7 +83,7 @@ public:
 
 class expr_solver {
 public:
-    virtual ~expr_solver() {}
+    virtual ~expr_solver() = default;
     virtual lbool check_sat(expr* e) = 0;
 };
 
@@ -322,6 +322,7 @@ class seq_rewriter {
     bool reduce_non_overlap(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& eqs);
     bool reduce_subsequence(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& eqs);
     bool reduce_by_length(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& eqs);
+    bool has_var(expr_ref_vector const& es);
     bool reduce_itos(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& eqs);
     bool reduce_eq_empty(expr* l, expr* r, expr_ref& result);    
     std::pair<bool, unsigned> min_length(expr_ref_vector const& es);
@@ -353,7 +354,7 @@ class seq_rewriter {
 
 public:
     seq_rewriter(ast_manager & m, params_ref const & p = params_ref()):
-        m_util(m), m_autil(m), m_br(m), m_re2aut(m), m_op_cache(m), m_es(m), 
+        m_util(m), m_autil(m), m_br(m, p), m_re2aut(m), m_op_cache(m), m_es(m), 
         m_lhs(m), m_rhs(m), m_coalesce_chars(true) {
     }
     ast_manager & m() const { return m_util.get_manager(); }

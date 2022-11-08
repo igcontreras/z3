@@ -37,6 +37,7 @@ Notes:
 #include "ast/ast_pp.h"
 #include "ast/ast_util.h"
 #include "ast/well_sorted.h"
+#include "ast/for_each_expr.h"
 
 namespace {
 struct th_rewriter_cfg : public default_rewriter_cfg {
@@ -60,6 +61,9 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     expr_substitution * m_subst = nullptr;
     unsigned long long  m_max_memory; // in bytes
     bool                m_new_subst = false;
+    expr_fast_mark1     m_visited;
+    expr_mark           m_marks;
+    bool                m_new_mark = false;
     unsigned            m_max_steps = UINT_MAX;
     bool                m_pull_cheap_ite = true;
     bool                m_flat = true;
@@ -74,7 +78,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
 
     void updt_local_params(params_ref const & _p) {
         rewriter_params p(_p);
-        m_flat           = p.flat();
+        m_flat           = true;
         m_max_memory     = megabytes_to_bytes(p.max_memory());
         m_max_steps      = p.max_steps();
         m_pull_cheap_ite = p.pull_cheap_ite();
@@ -208,6 +212,11 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             }
             if ((k == OP_AND || k == OP_OR) && m_seq_rw.u().has_re()) {
                 st = m_seq_rw.mk_bool_app(f, num, args, result);
+                if (st != BR_FAILED)
+                    return st;
+            }
+            if (false && k == OP_AND) {
+                st = m_a_rw.mk_and_core(num, args, result);
                 if (st != BR_FAILED)
                     return st;
             }
@@ -692,10 +701,42 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         return result;
     }
 
+    /**
+     * Apply substitution on pattern expressions.
+     * It happens only very rarely that this operation has an effect.
+     * To avoid expensive calls to expr_safe_replace we check with a pre-filter
+     * whether the substitution possibly could apply.
+     */
+
     void apply_subst(ptr_buffer<expr>& patterns) {
         if (!m_subst)
             return;
         if (patterns.empty())
+            return;
+        if (m_subst->sub().empty())
+            return;
+        if (m_new_mark) {
+            m_marks.reset();
+            for (auto const& [k, v] : m_subst->sub())
+                m_marks.mark(k);
+            m_new_mark = false;
+        }
+        struct has_mark {
+            expr_mark& m_marks;
+            bool found = false;
+            has_mark(expr_mark& m) : m_marks(m) {}
+            void operator()(quantifier* q) {
+                found = true;
+            }
+            void operator()(expr* e) {
+                found |= m_marks.is_marked(e);
+            }            
+        };
+        has_mark has_mark(m_marks);
+        for (expr* p : patterns)
+            quick_for_each_expr(has_mark, m_visited, p);
+        m_visited.reset();
+        if (!has_mark.found)
             return;
         if (m_new_subst) {
             m_rep.reset();
@@ -785,7 +826,6 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         result = elim_unused_vars(m(), q1, params_ref());
 
 
-        TRACE("reduce_quantifier", tout << "after elim_unused_vars:\n" << result << "\n";);
 
         result_pr = nullptr;
         if (m().proofs_enabled()) {
@@ -794,6 +834,9 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                 p2 = m().mk_elim_unused_vars(q1, result);
             result_pr = m().mk_transitivity(p1, p2);
         }
+
+        TRACE("reduce_quantifier", tout << "after elim_unused_vars:\n" << result << " " << result_pr << "\n" ;);
+
         SASSERT(old_q->get_sort() == result->get_sort());
         return true;
     }
@@ -807,7 +850,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         m_f_rw(m, p),
         m_dl_rw(m),
         m_pb_rw(m),
-        m_seq_rw(m),
+        m_seq_rw(m, p),
         m_char_rw(m),
         m_rec_rw(m),
         m_a_util(m),
@@ -822,6 +865,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         reset();
         m_subst = s;
         m_new_subst = true;
+        m_new_mark = true;
     }
 
     void reset() {

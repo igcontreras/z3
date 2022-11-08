@@ -52,7 +52,6 @@ namespace api {
             m_context(m, m_register_engine, p),
             m_trail(m) {}
 
-        ~fixedpoint_context() override {}
         family_id get_family_id() const override { return const_cast<datalog::context&>(m_context).get_decl_util().get_family_id(); }
         void set_state(void* state) {
             SASSERT(!m_state);
@@ -396,8 +395,7 @@ extern "C" {
         Z3_string     s) {
         Z3_TRY;
         LOG_Z3_fixedpoint_from_string(c, d, s);
-        std::string str(s);
-        std::istringstream is(str);
+        std::istringstream is(s);
         RETURN_Z3(Z3_fixedpoint_from_stream(c, d, is));
         Z3_CATCH_RETURN(nullptr);
     }

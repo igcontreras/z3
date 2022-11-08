@@ -18,7 +18,7 @@ Revision History:
 --*/
 #include "ast/normal_forms/nnf.h"
 #include "tactic/tactical.h"
-#include "tactic/generic_model_converter.h"
+#include "ast/converters/generic_model_converter.h"
 
 class nnf_tactic : public tactic {
     params_ref    m_params;
@@ -46,8 +46,6 @@ public:
     tactic * translate(ast_manager & m) override {
         return alloc(nnf_tactic, m_params);
     }
-
-    ~nnf_tactic() override {}
 
     char const* name() const override { return "nnf"; }
 

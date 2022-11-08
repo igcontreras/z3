@@ -9,6 +9,7 @@ Copyright (c) 2020 Microsoft Corporation
 #include "ast/reg_decl_plugins.h"
 #include "ast/ast_pp.h"
 #include "ast/arith_decl_plugin.h"
+#include <iostream>
 
 static expr_ref mk_const(ast_manager& m, char const* name, sort* s) {
     return expr_ref(m.mk_const(symbol(name), s), m);
@@ -123,7 +124,7 @@ static void test3() {
     SASSERT(g.inconsistent());
     ptr_vector<int> js;
     g.begin_explain();
-    g.explain<int>(js);
+    g.explain<int>(js, nullptr);
     g.end_explain();
     for (int* j : js) 
         std::cout << "conflict: " << *j << "\n";

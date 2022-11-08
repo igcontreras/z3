@@ -2068,7 +2068,7 @@ br_status seq_rewriter::mk_seq_replace_all(expr* a, expr* b, expr* c, expr_ref& 
  */
 br_status seq_rewriter::mk_seq_map(expr* f, expr* seqA, expr_ref& result) {
     if (str().is_empty(seqA)) {
-        result = str().mk_empty(get_array_range(f->get_sort()));
+        result = str().mk_empty(str().mk_seq(get_array_range(f->get_sort())));
         return BR_DONE;
     }
     expr* a, *s1, *s2;
@@ -2087,7 +2087,7 @@ br_status seq_rewriter::mk_seq_map(expr* f, expr* seqA, expr_ref& result) {
 
 br_status seq_rewriter::mk_seq_mapi(expr* f, expr* i, expr* seqA, expr_ref& result) {
     if (str().is_empty(seqA)) {
-        result = str().mk_empty(get_array_range(f->get_sort()));
+        result = str().mk_empty(str().mk_seq(get_array_range(f->get_sort())));
         return BR_DONE;
     }
     expr* a, *s1, *s2;
@@ -5607,7 +5607,7 @@ expr* seq_rewriter::concat_non_empty(expr_ref_vector& es) {
     sort* s = es[0]->get_sort();
     unsigned j = 0;
     for (expr* e : es) {
-        if (str().is_unit(e) || str().is_string(e))
+        if (str().is_unit(e) || str().is_string(e) || m().is_ite(e))
             es[j++] = e;
     }
     es.shrink(j);
@@ -5623,23 +5623,16 @@ bool seq_rewriter::set_empty(unsigned sz, expr* const* es, bool all, expr_ref_pa
     zstring s;
     expr* emp = nullptr;
     for (unsigned i = 0; i < sz; ++i) {
-        if (str().is_unit(es[i])) {
-            if (all) return false;
-        }
-        else if (str().is_empty(es[i])) {
+        auto [bounded, len] = min_length(es[i]);
+        if (len > 0) {
+            if (all)
+                return false;
             continue;
         }
-        else if (str().is_string(es[i], s)) {
-            if (s.length() == 0)
-                continue;
-            if (all) {
-                return false;
-            }
-        }
-        else {
-            emp = emp?emp:str().mk_empty(es[i]->get_sort());
-            eqs.push_back(emp, es[i]);
-        }
+        if (bounded && len == 0)
+            continue;
+        emp = emp?emp:str().mk_empty(es[i]->get_sort());
+        eqs.push_back(emp, es[i]);        
     }
     return true;
 }
@@ -5669,8 +5662,11 @@ std::pair<bool, unsigned> seq_rewriter::min_length(unsigned sz, expr* const* ss)
     zstring s;
     unsigned len = 0;
     bool bounded = true;
-    expr* c, *th, *el;
+
+    if (sz == 0)
+        return { bounded, len };
     auto visit = [&](expr* e) {
+        expr* c, *th, *el;
         if (cache.contains(e))
             return true;
         if (str().is_unit(e)) {
@@ -5703,15 +5699,14 @@ std::pair<bool, unsigned> seq_rewriter::min_length(unsigned sz, expr* const* ss)
             return visited;
         }
         else if (m().is_ite(e, c, th, el)) {
-            unsigned sz = sub.size();
+            unsigned subsz = sub.size();
             std::pair<bool, unsigned> r1, r2;
             if (!cache.find(th, r1))
                 sub.push_back(th);
             if (!cache.find(el, r2))
                 sub.push_back(el);
-            if (sz != sub.size())
-                return false;
-            
+            if (subsz != sub.size())
+                return false;            
             cache.insert(e, { r1.first && r2.first && r1.second == r2.second, std::min(r1.second, r2.second)});
             return true;
         }
@@ -5721,6 +5716,7 @@ std::pair<bool, unsigned> seq_rewriter::min_length(unsigned sz, expr* const* ss)
         }
     };
     while (!es.empty()) {
+        expr* c, *th, *el;
         expr* e = es.back();
         es.pop_back();
         if (str().is_unit(e)) 
@@ -5884,6 +5880,16 @@ bool seq_rewriter::reduce_eq_empty(expr* l, expr* r, expr_ref& result) {
     return false;
 }
 
+bool seq_rewriter::has_var(expr_ref_vector const& es) {
+    for (expr* e : es) {
+        auto [bounded, len] = min_length(e);
+        if (len == 0)
+            return true;
+    }
+    return false;
+}
+
+
 bool seq_rewriter::reduce_by_length(expr_ref_vector& ls, expr_ref_vector& rs,
                                     expr_ref_pair_vector& eqs) {
 
@@ -5892,24 +5898,25 @@ bool seq_rewriter::reduce_by_length(expr_ref_vector& ls, expr_ref_vector& rs,
 
     auto [bounded1, len1] = min_length(ls);
     auto [bounded2, len2] = min_length(rs);
+
     if (bounded1 && len1 < len2) 
         return false;
     if (bounded2 && len2 < len1) 
         return false;
-    if (bounded1 && len1 == len2 && len1 > 0) {
+    if (bounded1 && len1 == len2 && len1 > 0 && has_var(rs)) {
         if (!set_empty(rs.size(), rs.data(), false, eqs))
             return false;
         eqs.push_back(concat_non_empty(ls), concat_non_empty(rs));
         ls.reset(); 
         rs.reset();
     }
-    else if (bounded2 && len1 == len2 && len1 > 0) {
+    else if (bounded2 && len1 == len2 && len1 > 0 && has_var(ls))  {
         if (!set_empty(ls.size(), ls.data(), false, eqs))
             return false;
         eqs.push_back(concat_non_empty(ls), concat_non_empty(rs));
         ls.reset(); 
         rs.reset();
-    }    
+    }
     return true;
 }
 

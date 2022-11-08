@@ -27,7 +27,7 @@ Revision History:
 #include "tactic/core/nnf_tactic.h"
 #include "tactic/core/simplify_tactic.h"
 #include "ast/rewriter/th_rewriter.h"
-#include "tactic/generic_model_converter.h"
+#include "ast/converters/generic_model_converter.h"
 #include "ast/ast_smt2_pp.h"
 #include "ast/ast_pp.h"
 #include "ast/rewriter/expr_replacer.h"
@@ -901,9 +901,6 @@ public:
 
     tactic * translate(ast_manager & m) override {
         return alloc(purify_arith_tactic, m, m_params);
-    }
-        
-    ~purify_arith_tactic() override {
     }
 
     char const* name() const override { return "purify_arith"; }

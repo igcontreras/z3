@@ -30,7 +30,7 @@ namespace user_solver {
 
     void solver::add_expr(expr* e) {
         force_push();
-        ctx.internalize(e, false);
+        ctx.internalize(e);
         euf::enode* n = expr2enode(e);
         if (is_attached_to_var(n))
             return;
@@ -56,6 +56,18 @@ namespace user_solver {
     void solver::register_cb(expr* e) {
         add_expr(e);
     }
+    
+    void solver::next_split_cb(expr* e, unsigned idx, lbool phase) {
+        if (e == nullptr) {
+            m_next_split_expr = nullptr;
+            return;
+        }
+        force_push();
+        ctx.internalize(e);
+        m_next_split_expr = e;
+        m_next_split_idx = idx;
+        m_next_split_phase = phase;
+    }
 
     sat::check_result solver::check() {
         if (!(bool)m_final_eh)
@@ -72,6 +84,41 @@ namespace user_solver {
         m_id2justification.setx(v, sat::literal_vector(num_lits, jlits), sat::literal_vector());
         m_fixed_eh(m_user_context, this, var2expr(v), value);
     }
+    
+    bool solver::decide(sat::bool_var& var, lbool& phase) {
+        
+        if (!m_decide_eh)
+            return false;
+        
+        euf::enode* original_enode = bool_var2enode(var);
+        
+        if (!is_attached_to_var(original_enode))
+            return false;
+        
+        unsigned new_bit = 0; // ignored; currently no bv-support
+        expr* e = bool_var2expr(var);
+        
+        m_decide_eh(m_user_context, this, &e, &new_bit, &phase);
+        
+        euf::enode* new_enode = ctx.get_enode(e);
+    
+        if (original_enode == new_enode)
+            return false;
+        
+        var = new_enode->bool_var();
+        return true;
+    }
+    
+    bool solver::get_case_split(sat::bool_var& var, lbool &phase){
+        if (!m_next_split_expr)
+            return false;
+        
+        euf::enode* n = ctx.get_enode(m_next_split_expr);
+        var = n->bool_var();
+        phase = m_next_split_phase;
+        m_next_split_expr = nullptr;
+        return true;
+    }
 
     void solver::asserted(sat::literal lit) {
         if (!m_fixed_eh)
@@ -84,6 +131,21 @@ namespace user_solver {
         m_id2justification.setx(v, lits, sat::literal_vector());
         m_fixed_eh(m_user_context, this, var2expr(v), lit.sign() ? m.mk_false() : m.mk_true());
     }
+    
+    void solver::new_eq_eh(euf::th_eq const& eq) {
+        if (!m_eq_eh)
+            return;
+        force_push();
+        m_eq_eh(m_user_context, this, var2expr(eq.v1()), var2expr(eq.v2()));
+    }
+    
+    void solver::new_diseq_eh(euf::th_eq const& de) {
+        if (!m_diseq_eh)
+            return;
+        force_push();
+        m_diseq_eh(m_user_context, this, var2expr(de.v1()), var2expr(de.v2()));
+    }
+
 
     void solver::push_core() {
         th_euf_solver::push_core();
@@ -100,7 +162,7 @@ namespace user_solver {
     }
 
     void solver::propagate_consequence(prop_info const& prop) {
-        sat::literal lit = ctx.internalize(prop.m_conseq, false, false, true);
+        sat::literal lit = ctx.internalize(prop.m_conseq, false, false);
         if (s().value(lit) != l_true) {
             s().assign(lit, mk_justification(m_qhead));
             ++m_stats.m_num_propagations;
@@ -145,7 +207,7 @@ namespace user_solver {
         for (unsigned id : prop.m_ids)
             r.append(m_id2justification[id]);        
         for (auto const& p : prop.m_eqs)
-            ctx.add_antecedent(expr2enode(p.first), expr2enode(p.second));
+            ctx.add_antecedent(probing, expr2enode(p.first), expr2enode(p.second));
     }
 
     /*
@@ -188,8 +250,8 @@ namespace user_solver {
         return result;
     }
 
-    sat::literal solver::internalize(expr* e, bool sign, bool root, bool redundant) {
-        if (!visit_rec(m, e, sign, root, redundant)) {
+    sat::literal solver::internalize(expr* e, bool sign, bool root) {
+        if (!visit_rec(m, e, sign, root)) {
             TRACE("array", tout << mk_pp(e, m) << "\n";);
             return sat::null_literal;
         }
@@ -201,15 +263,15 @@ namespace user_solver {
         return lit;
     }
 
-    void solver::internalize(expr* e, bool redundant) {
-        visit_rec(m, e, false, false, redundant);
+    void solver::internalize(expr* e) {
+        visit_rec(m, e, false, false);
     }
 
     bool solver::visit(expr* e) {
         if (visited(e))
             return true;
         if (!is_app(e) || to_app(e)->get_family_id() != get_id()) {
-            ctx.internalize(e, m_is_redundant);
+            ctx.internalize(e);
             return true;
         }
         m_stack.push_back(sat::eframe(e));

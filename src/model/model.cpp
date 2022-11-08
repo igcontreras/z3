@@ -225,6 +225,20 @@ struct model::top_sort : public ::top_sort<func_decl> {
     }
 };
 
+void model::evaluate_constants() {
+    for (auto& [k, p] : m_interp) {
+        auto & [i, e] = p;
+        if (m.is_value(e))
+            continue;
+        expr_ref val(m);
+        val = (*this)(e);
+        m.dec_ref(e);
+        m.inc_ref(val);
+        p.second = val;
+    }
+}
+
+
 void model::compress(bool force_inline) {
     if (m_cleaned) return;
 
@@ -476,7 +490,7 @@ expr_ref model::cleanup_expr(top_sort& ts, expr* e, unsigned current_partition, 
                 // noop
             }
             else if (f->is_skolem() && can_inline_def(ts, f, force_inline) && (fi = get_func_interp(f)) && 
-                     fi->get_interp() && (!ts.partition_ids().find(f, pid) || pid != current_partition)) {
+                     fi->get_interp() && (!ts.find(f, pid) || pid != current_partition)) {
                 var_subst vs(m, false);
                 new_t = vs(fi->get_interp(), args.size(), args.data());
             }

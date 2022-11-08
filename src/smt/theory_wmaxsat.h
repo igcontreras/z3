@@ -21,7 +21,7 @@ Notes:
 
 #include "smt/smt_theory.h"
 #include "smt/smt_clause.h"
-#include "tactic/generic_model_converter.h"
+#include "ast/converters/generic_model_converter.h"
 
 namespace smt {
     class theory_wmaxsat : public theory {
@@ -74,10 +74,7 @@ namespace smt {
                 m_old_values(old) {
                 old.push_back(value);
             }
-            
-            ~numeral_trail() override {
-            }
-            
+
             void undo() override {
                 m_value = m_old_values.back();
                 m_old_values.shrink(m_old_values.size() - 1);

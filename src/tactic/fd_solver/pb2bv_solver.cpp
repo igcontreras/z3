@@ -22,7 +22,7 @@ Notes:
 #include "ast/rewriter/th_rewriter.h"
 #include "model/model_smt2_pp.h"
 #include "tactic/tactic.h"
-#include "tactic/generic_model_converter.h"
+#include "ast/converters/generic_model_converter.h"
 #include "solver/solver_na2as.h"
 #include "tactic/fd_solver/pb2bv_solver.h"
 
@@ -45,8 +45,6 @@ public:
     {
         solver::updt_params(p);
     }
-
-    ~pb2bv_solver() override {}
 
     solver* translate(ast_manager& dst_m, params_ref const& p) override {
         flush_assertions();
@@ -118,7 +116,7 @@ public:
         mc = concat(mc.get(), m_solver->get_model_converter().get());
         return mc;
     }
-    proof * get_proof() override { return m_solver->get_proof(); }
+    proof * get_proof_core() override { return m_solver->get_proof_core(); }
     std::string reason_unknown() const override { return m_solver->reason_unknown(); }
     void set_reason_unknown(char const* msg) override { m_solver->set_reason_unknown(msg); }
     void get_labels(svector<symbol> & r) override { m_solver->get_labels(r); }

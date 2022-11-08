@@ -18,13 +18,14 @@ Revision History:
 --*/
 #pragma once
 
+
 #include<vector>
 #include "ast/ast.h"
 #include "util/hashtable.h"
 #include "util/obj_hashtable.h"
 #include "util/uint_set.h"
-#include "tactic/horn_subsume_model_converter.h"
-#include "tactic/replace_proof_converter.h"
+#include "ast/converters/horn_subsume_model_converter.h"
+#include "ast/converters/replace_proof_converter.h"
 #include "ast/substitution/substitution.h"
 #include "ast/rewriter/ast_counter.h"
 #include "util/statistics.h"
@@ -257,12 +258,14 @@ namespace datalog {
             }
             container[i-ofs] = container[i];
         }
+#if 0
         if (r_i != removed_col_cnt) {
             for (unsigned i = 0; i < removed_col_cnt; ++i) {
                 std::cout << removed_cols[i] << " ";
             }
             std::cout << " container size: " << n << "\n";
         }
+#endif
         SASSERT(r_i==removed_col_cnt);
         container.resize(n-removed_col_cnt);
     }

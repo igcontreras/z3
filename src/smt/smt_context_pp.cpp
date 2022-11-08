@@ -166,7 +166,7 @@ namespace smt {
         unsigned num = get_num_bool_vars();
         for (unsigned v = 0; v < num; v++) {
             expr * n = m_bool_var2expr[v];
-            ast_def_ll_pp(out, m, n, get_pp_visited(), true, false);
+            ast_def_ll_pp(out << v << " ", m, n, get_pp_visited(), true, false);
         }
     }
 
@@ -766,11 +766,11 @@ namespace smt {
             for (; p2 + 2 < str.size(); ++p2) l2 << " ";            
             l1 << ")\n";
             l2 << ")\n";
-            IF_VERBOSE(1, verbose_stream() << l1.str() << l2.str());
+            IF_VERBOSE(2, verbose_stream() << l1.str() << l2.str());
             m_last_positions.reset();
             m_last_positions.append(offsets);
         }
-        IF_VERBOSE(1, verbose_stream() << str);
+        IF_VERBOSE(2, verbose_stream() << str);
     }
 
 };

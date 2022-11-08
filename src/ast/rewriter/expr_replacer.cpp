@@ -25,6 +25,11 @@ void expr_replacer::operator()(expr * t, expr_ref & result, proof_ref & result_p
     operator()(t, result, result_pr, result_dep);
 }
 
+void expr_replacer::operator()(expr* t, expr_ref& result, expr_dependency_ref& result_dep) {
+    proof_ref result_pr(m());
+    operator()(t, result, result_pr, result_dep);
+}
+
 void expr_replacer::operator()(expr * t, expr_ref & result) {
     proof_ref pr(m());
     operator()(t, result, pr);
@@ -128,8 +133,6 @@ public:
     th_rewriter2expr_replacer(ast_manager & m, params_ref const & p):
         m_r(m, p) {
     }
-
-    ~th_rewriter2expr_replacer() override {}
 
     ast_manager & m() const override { return m_r.m(); }
 

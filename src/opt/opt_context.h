@@ -20,7 +20,7 @@ Notes:
 #include "ast/ast.h"
 #include "ast/arith_decl_plugin.h"
 #include "ast/bv_decl_plugin.h"
-#include "tactic/model_converter.h"
+#include "ast/converters/model_converter.h"
 #include "tactic/tactic.h"
 #include "qe/qsat.h"
 #include "opt/opt_solver.h"
@@ -164,7 +164,6 @@ namespace opt {
             unsigned get_index(symbol const& id) { return m_indices[id]; }
         };
 
-        ast_manager&        m;
         on_model_t          m_on_model_ctx;
         std::function<void(on_model_t&, model_ref&)> m_on_model_eh;
         bool                m_calling_on_model = false;
@@ -194,11 +193,12 @@ namespace opt {
         func_decl_ref_vector         m_objective_refs;
         expr_ref_vector              m_core;
         tactic_ref                   m_simplify;
-        bool                         m_enable_sat { true } ;
-        bool                         m_enable_sls { false };
-        bool                         m_is_clausal { false };
-        bool                         m_pp_neat { true };
-        bool                         m_pp_wcnf { false };
+        bool                         m_enable_sat = true;
+        bool                         m_enable_sls = false;
+        bool                         m_is_clausal = false;
+        bool                         m_pp_neat = false;
+        bool                         m_pp_wcnf = false;
+        bool                         m_incremental = false;
         symbol                       m_maxsat_engine;
         symbol                       m_logic;
         svector<symbol>              m_labels;
@@ -225,7 +225,7 @@ namespace opt {
         void get_box_model(model_ref& _m, unsigned index) override;
         void fix_model(model_ref& _m) override;
         void collect_statistics(statistics& stats) const override;
-        proof* get_proof() override { return nullptr; }
+        proof* get_proof_core() override { return nullptr; }
         void get_labels(svector<symbol> & r) override;
         void get_unsat_core(expr_ref_vector & r) override;
         std::string reason_unknown() const override;
@@ -329,6 +329,7 @@ namespace opt {
 
         struct is_fd;
         bool probe_fd();
+        bool is_maxsat_query();
 
         struct is_propositional_fn;
         bool is_propositional(expr* e);

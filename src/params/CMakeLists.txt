@@ -15,6 +15,8 @@ z3_add_component(params
     poly_rewriter_params.pyg
     rewriter_params.pyg
     seq_rewriter_params.pyg
+    solver_params.pyg
+    tactic_params.pyg
   EXTRA_REGISTER_MODULE_HEADERS
     context_params.h
 )

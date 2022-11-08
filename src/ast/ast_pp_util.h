@@ -30,15 +30,17 @@ class ast_pp_util {
     stacked_value<unsigned> m_rec_decls;
     stacked_value<unsigned> m_decls;
     stacked_value<unsigned> m_sorts;
-    
- public:        
+    expr_mark               m_is_defined;
+    expr_ref_vector         m_defined;
+    unsigned_vector         m_defined_lim;
+
+ public:
 
     decl_collector      coll;
-
-    ast_pp_util(ast_manager& m): m(m), m_env(m), coll(m), m_rec_decls(0), m_decls(0), m_sorts(0) {}
-
-    void reset() { coll.reset(); m_removed.reset(); m_sorts.clear(0u); m_decls.clear(0u); m_rec_decls.clear(0u); }
     
+    ast_pp_util(ast_manager& m): m(m), m_env(m), m_rec_decls(0), m_decls(0), m_sorts(0), m_defined(m), coll(m) {}
+
+    void reset();
 
     void collect(expr* e);
 
@@ -50,6 +52,8 @@ class ast_pp_util {
 
     void display_decls(std::ostream& out);
 
+    void display_skolem_decls(std::ostream& out);
+
     void display_asserts(std::ostream& out, expr_ref_vector const& fmls, bool neat = true);
 
     void display_assert(std::ostream& out, expr* f, bool neat = true);
@@ -58,8 +62,12 @@ class ast_pp_util {
 
     std::ostream& display_expr(std::ostream& out, expr* f, bool neat = true);
 
+    std::ostream& define_expr(std::ostream& out, expr* f);
+
+    std::ostream& display_expr_def(std::ostream& out, expr* f);
+
     void push();
-    
+
     void pop(unsigned n);
 
     smt2_pp_environment& env() { return m_env; }

@@ -21,7 +21,7 @@ Revision History:
 
 #include "tactic/bv/dt2bv_tactic.h"
 #include "tactic/tactical.h"
-#include "tactic/generic_model_converter.h"
+#include "ast/converters/generic_model_converter.h"
 #include "ast/datatype_decl_plugin.h"
 #include "ast/bv_decl_plugin.h"
 #include "ast/rewriter/rewriter_def.h"
@@ -93,7 +93,6 @@ class dt2bv_tactic : public tactic {
     struct sort_pred : public i_sort_pred {
         dt2bv_tactic& m_t;
         sort_pred(dt2bv_tactic& t): m_t(t) {}
-        ~sort_pred() override {}
         bool operator()(sort* s) override {
             return m_t.m_fd_sorts.contains(s);
         }

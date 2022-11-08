@@ -229,6 +229,7 @@ namespace sat {
             }
         }
 
+        unsigned count = 0;
         do {
             if (m_subsumption)
                 subsume();
@@ -240,8 +241,9 @@ namespace sat {
                 return;
             if (!m_subsumption || m_sub_counter < 0)
                 break;
+            ++count;
         }
-        while (!m_sub_todo.empty());
+        while (!m_sub_todo.empty() && count < 20);
         bool vars_eliminated = m_num_elim_vars > m_old_num_elim_vars;
 
         if (m_need_cleanup || vars_eliminated) {
@@ -269,7 +271,6 @@ namespace sat {
             watch_list::iterator end2   = wlist.end();
             for (; it2 != end2; ++it2) {
                 switch (it2->get_kind()) {
-                case watched::TERNARY:
                 case watched::CLAUSE:
                     // consume
                     break;
@@ -1787,6 +1788,7 @@ namespace sat {
             clause& c = it.curr();
             if (!c.is_learned() && !c.was_removed()) {
                 r.push_back(clause_wrapper(c));
+                SASSERT(r.back().contains(l));
                 SASSERT(r.back().size() == c.size());
             }
         }
@@ -1808,9 +1810,13 @@ namespace sat {
        Return false if the result is a tautology
     */
     bool simplifier::resolve(clause_wrapper const & c1, clause_wrapper const & c2, literal l, literal_vector & r) {
-        CTRACE("resolve_bug", !c1.contains(l), tout << c1 << "\n" << c2 << "\nl: " << l << "\n";);
+        CTRACE("resolve_bug", !c1.contains(l) || !c2.contains(~l), tout << c1 << "\n" << c2 << "\nl: " << l << "\n";);
         if (m_visited.size() <= 2*s.num_vars())
             m_visited.resize(2*s.num_vars(), false);
+        if (c1.was_removed() && !c1.contains(l))
+            return false;
+        if (c2.was_removed() && !c2.contains(~l))
+            return false;
         SASSERT(c1.contains(l));
         SASSERT(c2.contains(~l));
         bool res = true;
@@ -1831,8 +1837,8 @@ namespace sat {
             if (not_l == l2)
                 continue;
             if ((~l2).index() >= m_visited.size()) {
-                s.display(std::cout << l2 << " " << s.num_vars() << " " << m_visited.size() << "\n");
-                exit(0);
+                //s.display(std::cout << l2 << " " << s.num_vars() << " " << m_visited.size() << "\n");
+                UNREACHABLE();
             }
             if (m_visited[(~l2).index()]) {
                 res = false;
@@ -1973,7 +1979,14 @@ namespace sat {
                 }
             }
         }
-        TRACE("sat_simplifier", tout << "eliminate " << v << ", before: " << before_clauses << " after: " << after_clauses << "\n";);
+        TRACE("sat_simplifier", tout << "eliminate " << v << ", before: " << before_clauses << " after: " << after_clauses << "\n";
+              tout << "pos\n";
+              for (auto & c : m_pos_cls) 
+                  tout << c << "\n";
+              tout << "neg\n";
+              for (auto & c : m_neg_cls) 
+                  tout << c << "\n";
+              );
         m_elim_counter -= num_pos * num_neg + before_lits;
 
         m_elim_counter -= num_pos * num_neg + before_lits;
@@ -1988,6 +2001,8 @@ namespace sat {
         m_elim_counter -= num_pos * num_neg + before_lits;
 
         for (auto & c1 : m_pos_cls) {
+            if (c1.was_removed() && !c1.contains(pos_l))
+                continue;
             for (auto & c2 : m_neg_cls) {
                 m_new_cls.reset();
                 if (!resolve(c1, c2, pos_l, m_new_cls))

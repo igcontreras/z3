@@ -39,7 +39,7 @@ Notes:
 #include "tactic/arith/card2bv_tactic.h"
 #include "tactic/arith/eq2bv_tactic.h"
 #include "tactic/bv/dt2bv_tactic.h"
-#include "tactic/generic_model_converter.h"
+#include "ast/converters/generic_model_converter.h"
 #include "ackermannization/ackermannize_bv_tactic.h"
 #include "sat/sat_solver/inc_sat_solver.h"
 #include "sat/sat_params.hpp"
@@ -124,7 +124,7 @@ namespace opt {
     }
 
     context::context(ast_manager& m):
-        m(m),
+        opt_wrapper(m),
         m_arith(m),
         m_bv(m),
         m_hard_constraints(m),
@@ -137,9 +137,6 @@ namespace opt {
         m_model_fixed(),
         m_objective_refs(m),
         m_core(m),
-        m_enable_sat(false),
-        m_is_clausal(false),
-        m_pp_neat(false),
         m_unknown("unknown")
     {
         params_ref p;
@@ -196,6 +193,8 @@ namespace opt {
 
     void context::add_hard_constraint(expr* f) {
         if (m_calling_on_model) {
+            if (!m_incremental)
+                throw default_exception("Set opt.incremental = true to allow adding constraints during search");
             get_solver().assert_expr(f);
             for (auto const& [k, v] : m_maxsmts)
                 v->reset_upper();
@@ -682,14 +681,11 @@ namespace opt {
 
     void context::init_solver() {
         setup_arith_solver();
+        m_sat_solver = nullptr;
         m_opt_solver = alloc(opt_solver, m, m_params, *m_fm);
         m_opt_solver->set_logic(m_logic);
         m_solver = m_opt_solver.get();
-        m_opt_solver->ensure_pb();
-    
-        //if (opt_params(m_params).priority() == symbol("pareto") ||
-        //    (opt_params(m_params).priority() == symbol("lex") && m_objectives.size() > 1)) {
-        //}        
+        m_opt_solver->ensure_pb();    
     }
 
     void context::setup_arith_solver() {
@@ -701,13 +697,30 @@ namespace opt {
         }
     }
 
+    /**
+     * Set the solver to the SAT core.
+     * It requres:
+     * - either EUF is enabled or the query is finite domain.
+     * - it is a MaxSAT query because linear optimiation is not exposed over the EUF core.
+     *   - opt_solver relies on features from the legacy core.
+     * - the MaxSAT engine does not depend on old core features (branch and bound solver for MaxSAT)
+     * - proofs are not enabled
+     * Relaxation of these filters are possible by adding functionality to the new core.
+     * - Pareto optimizaiton might already be possible with EUF = true
+     * - optsmt needs to be disetangled from the legacy core
+     */
     void context::update_solver() {
         sat_params p(m_params);
         if (!p.euf() && (!m_enable_sat || !probe_fd())) 
             return;
+        
+        if (!is_maxsat_query())
+            return;
 
         if (m_maxsat_engine != symbol("maxres") &&
             m_maxsat_engine != symbol("rc2") &&
+            m_maxsat_engine != symbol("rc2tot") &&
+            m_maxsat_engine != symbol("rc2bin") &&
             m_maxsat_engine != symbol("maxres-bin") &&
             m_maxsat_engine != symbol("maxres-bin-delay") &&
             m_maxsat_engine != symbol("pd-maxres") &&
@@ -757,24 +770,29 @@ namespace opt {
         }        
     };
 
+    bool context::is_maxsat_query() {
+        for (objective& obj : m_objectives) 
+            if (obj.m_type != O_MAXSMT)
+                return false;
+        return true;
+    }
+
     bool context::probe_fd() {
         expr_fast_mark1 visited;
         is_fd proc(m);
-        try {
+        if (!is_maxsat_query())
+            return false;
+        try {            
             for (objective& obj : m_objectives) {
-                if (obj.m_type != O_MAXSMT) return false;
                 maxsmt& ms = *m_maxsmts.find(obj.m_id);
-                for (unsigned j = 0; j < ms.size(); ++j) {
+                for (unsigned j = 0; j < ms.size(); ++j) 
                     quick_for_each_expr(proc, visited, ms[j]);
-                }
             }
             unsigned sz = get_solver().get_num_assertions();
-            for (unsigned i = 0; i < sz; i++) {
+            for (unsigned i = 0; i < sz; i++) 
                 quick_for_each_expr(proc, visited, get_solver().get_assertion(i));
-            }
-            for (expr* f : m_hard_constraints) {
+            for (expr* f : m_hard_constraints) 
                 quick_for_each_expr(proc, visited, f);
-            }
         }
         catch (const is_fd::found_fd &) {
             return false;
@@ -839,19 +857,14 @@ namespace opt {
         }
 
         goal_ref g(alloc(goal, m, true, !asms.empty()));
-        for (expr* fml : fmls) {
+        for (expr* fml : fmls) 
             g->assert_expr(fml);
-        }
-        for (expr * a : asms) {
+        for (expr * a : asms) 
             g->assert_expr(a, a);
-        }
         tactic_ref tac0 = 
             and_then(mk_simplify_tactic(m, m_params), 
                      mk_propagate_values_tactic(m),
-                     mk_solve_eqs_tactic(m),
-                     // NB: cannot ackermannize because max/min objectives would disappear
-                     // mk_ackermannize_bv_tactic(m, m_params), 
-                     // NB: mk_elim_uncstr_tactic(m) is not sound with soft constraints
+                     m_incremental ? mk_skip_tactic() : mk_solve_eqs_tactic(m),
                      mk_simplify_tactic(m));   
         opt_params optp(m_params);
         tactic_ref tac1, tac2, tac3, tac4;
@@ -862,7 +875,7 @@ namespace opt {
             m.linearize(core, deps);           
             has_dep |= !deps.empty();
         }
-        if (optp.elim_01() && m_logic.is_null() && !has_dep) {
+        if (optp.elim_01() && m_logic.is_null() && !has_dep && !m_incremental) {
             tac1 = mk_dt2bv_tactic(m);
             tac2 = mk_lia2card_tactic(m);
             tac3 = mk_eq2bv_tactic(m);
@@ -1569,6 +1582,7 @@ namespace opt {
         m_maxsat_engine = _p.maxsat_engine();
         m_pp_neat = _p.pp_neat();
         m_pp_wcnf = _p.pp_wcnf();
+        m_incremental = _p.incremental();
     }
 
     std::string context::to_string()  {
