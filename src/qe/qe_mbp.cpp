@@ -18,22 +18,22 @@ Revision History:
 
 --*/
 
-#include "ast/rewriter/expr_safe_replace.h"
+#include "qe/qe_mbp.h"
 #include "ast/ast_pp.h"
 #include "ast/ast_util.h"
-#include "ast/occurs.h"
-#include "ast/rewriter/th_rewriter.h"
 #include "ast/expr_functors.h"
 #include "ast/for_each_expr.h"
+#include "ast/occurs.h"
+#include "ast/rewriter/expr_safe_replace.h"
+#include "ast/rewriter/th_rewriter.h"
 #include "ast/scoped_proof.h"
-#include "qe/qe_mbp.h"
+#include "model/model_evaluator.h"
+#include "model/model_pp.h"
+#include "qe/lite/qe_lite.h"
+#include "qe/lite/qe_lite_tg.h"
 #include "qe/mbp/mbp_arith.h"
 #include "qe/mbp/mbp_arrays.h"
 #include "qe/mbp/mbp_datatypes.h"
-#include "qe/lite/qe_lite.h"
-#include "model/model_pp.h"
-#include "model/model_evaluator.h"
-
 
 using namespace qe;
 
@@ -333,12 +333,24 @@ public:
         TRACE("qe", tout << vars << " " << fmls << "\n";);
     }
 
-    void do_qe_lite(app_ref_vector& vars, expr_ref& fml) {
+  void do_qe_lite(app_ref_vector& vars, expr_ref& fml) {
         qe_lite qe(m, m_params, false);
         qe(vars, fml);
         m_rw(fml);
         TRACE("qe", tout << "After qe_lite:\n" << fml << "\n" << "Vars: " << vars << "\n";);
         SASSERT(!m.is_false(fml));
+    }
+
+    // requires that `fml` is a cube
+    void do_spacer_qe_lite(app_ref_vector &vars, expr_ref &fml) {
+        // SASSERT(is_cube(fml));
+        qe_lite_tg qe(m, m_params, false);
+        qe(vars, fml);
+        // m_rw(fml);
+        TRACE("qe", tout << "After qe_lite_tg:\n"
+                         << fml << "\n"
+                         << "Vars: " << vars << "\n";);
+        SASSERT(!m.is_false(fml)); // TODO: why?
     }
 
     void do_qe_bool(model& mdl, app_ref_vector& vars, expr_ref& fml) {
@@ -362,7 +374,7 @@ public:
 
         while (!vars.empty()) {
 
-            do_qe_lite(vars, fml);
+            do_spacer_qe_lite(vars, fml);
 
             do_qe_bool(mdl, vars, fml);
 

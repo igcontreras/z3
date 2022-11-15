@@ -31,6 +31,7 @@ namespace mbp {
     class term_graph {
         class projector;
         class cover;
+        class qe;
 
         class is_variable_proc : public ::is_variable_proc {
             bool m_exclude;
@@ -40,6 +41,7 @@ namespace mbp {
             bool operator()(const term &t) const;
 
             void set_decls(const func_decl_ref_vector &decls, bool exclude);
+            void set_decls(const app_ref_vector &vars, bool exclude);
             void mark_solved(const expr *e);
             void reset_solved() {m_solved.reset();}
             void reset() {m_decls.reset(); m_solved.reset(); m_exclude = true;}
@@ -57,6 +59,7 @@ namespace mbp {
         ast_ref_vector    m_pinned;
         projector*        m_projector;
         cover*            m_cover;
+        qe*               m_qe;
         u_map<expr *> m_term2app;
         plugin_manager<solve_plugin> m_plugins;
         ptr_hashtable<term, term_hash, term_eq> m_cg_table;
@@ -108,6 +111,7 @@ namespace mbp {
         ~term_graph();
 
         void set_vars(func_decl_ref_vector const& decls, bool exclude);
+        void set_vars(app_ref_vector const &vars, bool exclude);
 
         ast_manager& get_ast_manager() const { return m;}
 
@@ -184,12 +188,14 @@ namespace mbp {
         vector<ptr_vector<term>> m_deq_distinct;
 
         void mark_non_ground(func_decl_ref_vector &vars);
-        void set_prop_ground(bool v) { m_prop_ground = v;}
+        template <bool remove> void compute_non_ground(app_ref_vector &vars);
+        void set_prop_ground(bool v) { m_prop_ground = v; }
         expr_ref_vector non_ground_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
         void mk_gr_equalities(term const &t, expr_ref_vector &out);
         void mk_all_gr_equalities(term const &t, expr_ref_vector &out);
         expr_ref to_ground_expr();
+        void qe_lite(app_ref_vector &vars, expr_ref &fml);
         void mb_cover(model& mdl);
         void add_deq_terms(term *t1, term *t2);
         void add_deq_terms(ptr_vector<term> &ts);
