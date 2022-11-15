@@ -311,6 +311,16 @@ namespace mbp {
         m_exclude = exclude;
         for (auto *d : decls) m_decls.insert(d);
     }
+
+    void
+    term_graph::is_variable_proc::set_decls(const app_ref_vector &vars,
+                                            bool exclude) {
+        reset();
+        m_exclude = exclude;
+        for (auto *v : vars)
+        m_decls.insert(v->get_decl());
+    }
+
     void term_graph::is_variable_proc::mark_solved(const expr *e) {
         if ((*this)(e) && is_app(e))
             m_solved.insert(::to_app(e)->get_decl());
@@ -1581,9 +1591,34 @@ namespace mbp {
       }
     };
 
-    void term_graph::set_vars(func_decl_ref_vector const &decls,
-                                bool exclude) {
-        m_is_var.set_decls(decls, exclude);
+    class term_graph::qe {
+
+      term_graph &m_tg;
+      ast_manager &m;
+
+      static bool is_ground_or_const(const term &t) {
+        return t.is_ground() || to_app(t.get_expr())->get_num_args() == 0;
+      }
+
+    public:
+      qe(term_graph &tg) : m_tg(tg), m(m_tg.m) {}
+
+      // modifies `vars` to keep the variables that could not be eliminated
+      void qe_lite(app_ref_vector &vars, expr_ref &fml) {
+        m_tg.compute_non_ground<true>(vars);
+
+        expr_ref_vector lits(m);
+        m_tg.to_lits(lits, false /* all_equalities */, false /* repick_roots */);
+        fml = m.mk_and(lits);
+      }
+    };
+
+    void term_graph::set_vars(func_decl_ref_vector const &decls, bool exclude) {
+      m_is_var.set_decls(decls, exclude);
+    }
+
+    void term_graph::set_vars(app_ref_vector const &vars, bool exclude) {
+      m_is_var.set_decls(vars, exclude);
     }
 
     expr_ref_vector term_graph::project() {
@@ -1796,15 +1831,14 @@ namespace mbp {
           to_propagate.push_back(t);
           // once found, the variable will not be found again, remove
           to_elim[i] = to_elim.back();
-          i--;
+          --i;
           to_elim.pop_back();
           break;
         }
       }
     }
 
-    for(int i = 0; i < to_propagate.size(); i++) {
-      // TODO: might be reprocessing a class twice, use marks
+    for(int i = 0; i < to_propagate.size(); ++i) {
       auto t = to_propagate[i];
       if (t->is_class_gr() && all_not_ground_class(*t)) {
         t->set_class_gr(false);
@@ -1812,7 +1846,7 @@ namespace mbp {
       else { // remove from propagate if the class has a ground representative
         to_propagate[i] = to_propagate.back();
         to_propagate.pop_back();
-        i--;
+        --i;
       }
     }
 
@@ -1833,8 +1867,75 @@ namespace mbp {
         }
       }
     }
+  }
 
-    pick_roots(); // chooses ground if possible (optional)
+  template <bool remove> // whether to remove from the input vector
+  void term_graph::compute_non_ground(app_ref_vector &vars) {
+
+    ptr_vector<term> to_propagate;
+
+    // initialize terms to ground and mark non-ground constants
+    for (auto t : m_terms) {
+      t->set_gr(true);
+      t->set_class_gr(true);
+    }
+
+    for (int i = 0; i < vars.size(); ++i) {
+      term *t = get_term(vars[i].get());
+      if(t) {
+        t->set_gr(false);
+        to_propagate.push_back(t);
+      }
+      else if(remove) { // the variable does not appear in the formula (no term)
+        vars[i] = vars.back();
+        vars.pop_back();
+        --i;
+      }
+    }
+
+    // if remove = true, point to_propagate contains the terms for vars (in the
+    // same order)
+
+    // find classes that do not have a ground representative
+    for(int i = 0; i < to_propagate.size(); i++) {
+      auto t = to_propagate[i];
+      // TODO: might be reprocessing a ground class twice, use marks
+      if (t->is_class_gr() && all_not_ground_class(*t)) {
+        t->set_class_gr(false);
+      }
+      else { // remove from propagate & vars if the class has a ground representative
+        to_propagate[i] = to_propagate.back();
+        to_propagate.pop_back();
+        if(remove) {
+          vars[i] = vars.back();
+          vars.pop_back();
+        }
+        --i;
+      }
+    }
+
+    // propagate non-groundness
+    // invariant: to_propagate contains terms that do not have a ground representative
+    while(!to_propagate.empty()){
+      term *t = to_propagate.back();
+      to_propagate.pop_back();
+
+      // non-ground argument found, mark parents as not gr
+      for (auto &p : term::parents(t)){
+        if (p->is_ground()){ // p cannot be a constant!
+          p->set_gr(false);
+          if (all_not_ground_class(*p)) {
+            p->set_class_gr(false);
+            to_propagate.push_back(p);
+          }
+        }
+      }
+    }
+  }
+
+  void term_graph::qe_lite(app_ref_vector &vars, expr_ref &fml) {
+    term_graph::qe qe(*this);
+    qe.qe_lite(vars,fml);
   }
 
   void term_graph::mb_cover(model& mdl) {

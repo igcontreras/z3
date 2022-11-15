@@ -485,7 +485,7 @@ namespace qel {
                 ptr_vector<var> vs;
                 expr_ref_vector ts(m);
                 expr_ref t(m);
-                if (is_var_def(is_exists, args[i], vs, ts)) {
+                if (is_var_def(is_exists, args[i], vs, ts)) { // vs is the variable, ts is the definition
                     for (unsigned j = 0; j < vs.size(); ++j) {
                         var* v = vs[j];
                         t = ts.get(j);
@@ -2374,7 +2374,7 @@ public:
         m_array_der.set_is_variable_proc(is_var);
         m_der(fmls);
         m_fm(fmls);
-        // AG: disalble m_array_der() since it interferes with other array handling
+        // AG: disable m_array_der() since it interferes with other array handling
         if (m_use_array_der) m_array_der(fmls);
         TRACE("qe_lite", for (unsigned i = 0; i < fmls.size(); ++i) tout << mk_pp(fmls[i].get(), m) << "\n";);
     }
