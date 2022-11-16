@@ -98,6 +98,7 @@ namespace mbp {
         expr_ref mk_app(expr *a);
         void mk_equalities(term const &t, expr_ref_vector &out);
         void mk_all_equalities(term const &t, expr_ref_vector &out);
+        void mk_qe_lite_equalities(term const &t, expr_ref_vector &out);
         void display(std::ostream &out);
 
         bool is_pure_def(expr* atom, expr *& v);
@@ -124,6 +125,7 @@ namespace mbp {
         // deprecate?
         void to_lits(expr_ref_vector &lits, bool all_equalities = false,
                      bool repick_roots = true);
+        void to_lits_qe_lite(expr_ref_vector &lits);
         expr_ref to_expr(bool repick_roots = true);
 
         /**

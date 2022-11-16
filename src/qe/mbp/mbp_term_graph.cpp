@@ -650,6 +650,20 @@ namespace mbp {
         }
     }
 
+    void term_graph::mk_qe_lite_equalities(term const &t, expr_ref_vector &out) {
+        SASSERT(t.is_root());
+        expr_ref rep(m);
+        for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
+          if(!m_is_var(it->get_expr())) { // it is not a variable to elim
+            if(!rep)
+              rep = mk_app(t);
+
+            expr *mem = mk_app_core(it->get_expr());
+            out.push_back(m.mk_eq(rep, mem));
+          }
+        }
+    }
+
     static bool is_ground_app_term(term *t) {
 
       for (auto &it : term::children(t))
@@ -674,7 +688,7 @@ namespace mbp {
       }
     }
 
-  // TODO: review this
+    // TODO: review this
     void term_graph::mk_all_gr_equalities(term const &t, expr_ref_vector &out) {
       mk_gr_equalities(t, out);
 
@@ -696,13 +710,6 @@ namespace mbp {
             t->set_mark(false);
         }
     }
-
-    // TODO: not necessary?
-    // void term_graph::reset_class_marks() {
-    //   for (term *t : m_terms) {
-    //     t->set_class_mark(false);
-    //   }
-    // }
 
     bool term_graph::marks_are_clear() {
         for (term * t : m_terms) {
@@ -833,6 +840,29 @@ namespace mbp {
           lits.push_back(
                          mk_neq(m, ::to_app(mk_app(p.first->get_expr())),
                                      ::to_app(mk_app(p.second->get_expr()))));
+        }
+    }
+
+    void term_graph::to_lits_qe_lite(expr_ref_vector &lits) {
+        // it assumes that the roots have been properly picked
+        for (expr *a : m_lits) {
+          if (is_internalized(a)) {
+                lits.push_back(::to_app(mk_app(a)));
+          }
+        }
+
+        for (term *t : m_terms) {
+          if (!t->is_root())
+            continue;
+          else
+            mk_qe_lite_equalities(*t,lits);
+        }
+
+        // the following are output using representatives, which may contain
+        // variables that could not be eliminated
+        for (auto p : m_deq_pairs) {
+          lits.push_back(mk_neq(m, ::to_app(mk_app(p.first->get_expr())),
+                                ::to_app(mk_app(p.second->get_expr()))));
         }
     }
 
@@ -1518,12 +1548,12 @@ namespace mbp {
           term *t1, *t2;
           if (part.size() == 1)
             continue;
-          for (auto it = part.begin(); it != part.end() - 1; it++) {
+          for (auto it = part.begin(); it != part.end() - 1; ++it) {
             t1 = m_tg.get_term(*it);
             if (is_ground_or_const(*t1))
               continue;
 
-            for (auto it2 = it + 1; it2 != part.end(); it2++) {
+            for (auto it2 = it + 1; it2 != part.end(); ++it2) {
               t2 = m_tg.get_term(*it2);
               if (is_ground_or_const(*t2))
                 continue;
@@ -1606,10 +1636,41 @@ namespace mbp {
       // modifies `vars` to keep the variables that could not be eliminated
       void qe_lite(app_ref_vector &vars, expr_ref &fml) {
         m_tg.compute_non_ground<true>(vars);
+        // removes from `vars` the variables that have a ground representative
 
         expr_ref_vector lits(m);
-        m_tg.to_lits(lits, false /* all_equalities */, false /* repick_roots */);
-        fml = m.mk_and(lits);
+        m_tg.to_lits_qe_lite(lits);
+        if(lits.size() == 0)
+          fml = lits[0].get();
+        else
+          fml = m.mk_and(lits);
+
+        bool remove = false;
+        // After choosing representatives, more variables could be eliminated,
+        // either because they do not appear, or because they have another
+        // variable to represent them.
+        for (int i = 0; i < vars.size(); ++i) {
+          term * t = m_tg.get_term(vars[i].get());
+          if(t) {
+            remove = false;
+            if (!t->is_root()) {
+              remove = true;
+            }
+            else {
+              // TODO: corner case: what if the formula is a boolean variable?
+              auto it = term::parents(t);
+              if (it.begin() != it.end()) {
+                remove = true;
+              }
+            }
+
+            if(remove) {
+              vars[i] = vars.back();
+              vars.pop_back();
+              --i;
+            }
+          }
+        }
       }
     };
 
@@ -1825,7 +1886,7 @@ namespace mbp {
         continue;
 
       // find if it is a constant to eliminate and mark as not ground
-      for (int i = 0; i < to_elim.size(); i++) {
+      for (int i = 0; i < to_elim.size(); ++i) {
         if (t->get_decl_id() == to_elim[i]->get_id()) {
           t->set_gr(false);
           to_propagate.push_back(t);
