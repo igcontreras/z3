@@ -35,6 +35,7 @@ Notes:
 #include "qe/qe_mbi.h"
 #include "qe/mbp/mbp_term_graph.h"
 
+#include "qe/lite/qe_lite_tg.h"
 
 BINARY_SYM_CMD(get_quantifier_body_cmd,
                "dbg-get-qbody",
@@ -722,6 +723,62 @@ public:
     }
 };
 
+
+class qe_lite_tg_cmd : public cmd {
+    unsigned              m_arg_index;
+    ptr_vector<expr>      m_lits;
+    ptr_vector<func_decl> m_vars;
+public:
+  qe_lite_tg_cmd() : cmd("qe-lite-tg"){};
+  char const *get_usage() const override { return "(lits) (vars)"; }
+  char const *get_descr(cmd_context &ctx) const override {
+    return "QE lite over e-graphs"; }
+    unsigned get_arity() const override { return 2; }
+    cmd_arg_kind next_arg_kind(cmd_context& ctx) const override {
+        if (m_arg_index == 0) return CPK_EXPR_LIST;
+        return CPK_FUNC_DECL_LIST;
+    }
+    void set_next_arg(cmd_context& ctx, unsigned num, expr * const* args) override {
+        m_lits.append(num, args);
+        m_arg_index = 1;
+    }
+    void set_next_arg(cmd_context & ctx, unsigned num, func_decl * const * ts) override {
+        m_vars.append(num, ts);
+    }
+    void prepare(cmd_context & ctx) override { m_arg_index = 0; m_lits.reset(); m_vars.reset(); }
+    void execute(cmd_context & ctx) override {
+      ast_manager &m = ctx.m();
+      func_decl_ref_vector vars(m);
+      app_ref_vector vars_apps(m);
+      expr_ref_vector lits(m);
+
+      ctx.regular_stream() << "------------------------------ " << std::endl;
+
+      for (func_decl *v : m_vars) vars.push_back(v);
+      for (expr *e : m_lits) { lits.push_back(e);
+        ctx.regular_stream() << expr_ref(e,m) << std::endl;
+      }
+
+      ctx.regular_stream() << std::endl << "To elim: ";
+      for (func_decl *v : m_vars) {
+        ctx.regular_stream() << v->get_name() << " ";
+        vars_apps.push_back(m.mk_app(v->get_family_id(), v->get_decl_kind()));
+        ctx.regular_stream() << app_ref(vars_apps.back(),m) << " ;";
+      }
+      ctx.regular_stream() << std::endl;
+
+      expr_ref fml(m.mk_and(lits), m);
+      params_ref pa;
+
+      // the following is the same code as in qe_mbp in spacer
+      qe_lite_tg qe(m, pa, false);
+      qe(vars_apps, fml);
+      ctx.regular_stream() << "After qe_lite_tg:\n"
+                           << fml << "\n"
+                           << "Vars: " << vars_apps << "\n";
+    }
+};
+
 void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(print_dimacs_cmd));
     ctx.insert(alloc(get_quantifier_body_cmd));
@@ -752,4 +809,5 @@ void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(eufi_cmd));
     ctx.insert(alloc(tg_mb_cover_cmd));
     ctx.insert(alloc(abs_euf_itp_cmd));
+    ctx.insert(alloc(qe_lite_tg_cmd));
 }
