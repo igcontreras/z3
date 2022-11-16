@@ -17,11 +17,15 @@ public:
 
     mbp::term_graph tg(m);
     tg.set_vars(vars, true /*exclude*/);
-    // (exclude = true): these are the variables to eliminate
-    SASSERT(m.is_and(fml));
 
-    for (expr *lit : *to_app(fml))
-      tg.add_lit(lit);
+    if(m.is_and(fml)) {
+      for (expr *lit : *to_app(fml))
+        tg.add_lit(lit);
+    }
+    else { // an equality or a disequality
+      SASSERT(m.is_eq(fml) || m.is_not(fml));
+      tg.add_lit(fml);
+    }
 
     tg.qe_lite(vars, fml);
     }
