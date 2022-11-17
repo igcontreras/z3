@@ -754,28 +754,33 @@ public:
 
       ctx.regular_stream() << "------------------------------ " << std::endl;
 
-      for (func_decl *v : m_vars) vars.push_back(v);
-      for (expr *e : m_lits) { lits.push_back(e);
-        ctx.regular_stream() << expr_ref(e,m) << std::endl;
-      }
-
-      ctx.regular_stream() << std::endl << "To elim: ";
       for (func_decl *v : m_vars) {
-        ctx.regular_stream() << v->get_name() << " ";
-        vars_apps.push_back(m.mk_app(v->get_family_id(), v->get_decl_kind()));
-        ctx.regular_stream() << app_ref(vars_apps.back(),m) << " ;";
+        vars.push_back(v);
+        vars_apps.push_back(m.mk_const(v));
       }
-      ctx.regular_stream() << std::endl;
+      for (expr *e : m_lits)
+        lits.push_back(e);
+
 
       expr_ref fml(m.mk_and(lits), m);
+      ctx.regular_stream() << "Before qe_lite_tg: " << fml << std::endl
+                           << "Vars: ";
+      for (app *a : vars_apps)
+        ctx.regular_stream() << app_ref(a,m) << " ";
+
+      ctx.regular_stream() << std::endl;
+
       params_ref pa;
 
       // the following is the same code as in qe_mbp in spacer
       qe_lite_tg qe(m, pa, false);
       qe(vars_apps, fml);
-      ctx.regular_stream() << "After qe_lite_tg:\n"
-                           << fml << "\n"
-                           << "Vars: " << vars_apps << "\n";
+      ctx.regular_stream() << "After qe_lite_tg: " << fml << std::endl
+                           << "Vars: ";
+      for (app *a : vars_apps)
+        ctx.regular_stream() << app_ref(a, m) << " ";
+
+      ctx.regular_stream() << std::endl;
     }
 };
 

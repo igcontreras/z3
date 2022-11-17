@@ -90,15 +90,16 @@ namespace mbp {
         void pick_roots();
 
         void reset_marks();
+        void reset_marks2();
         bool marks_are_clear();
 
-        expr* mk_app_core(expr* a);
-        expr_ref mk_app(term const &t);
+        template <bool mark> expr *mk_app_core(expr *a);
+        template <bool mark> expr_ref mk_app(term &t);
         expr* mk_pure(term& t);
-        expr_ref mk_app(expr *a);
-        void mk_equalities(term const &t, expr_ref_vector &out);
-        void mk_all_equalities(term const &t, expr_ref_vector &out);
-        void mk_qe_lite_equalities(term const &t, expr_ref_vector &out);
+        template <bool mark> expr_ref mk_app(expr *a);
+        void mk_equalities(term &t, expr_ref_vector &out);
+        void mk_all_equalities(term &t, expr_ref_vector &out);
+        void mk_qe_lite_equalities(term &t, expr_ref_vector &out);
         void display(std::ostream &out);
 
         bool is_pure_def(expr* atom, expr *& v);
@@ -194,8 +195,8 @@ namespace mbp {
         void set_prop_ground(bool v) { m_prop_ground = v; }
         expr_ref_vector non_ground_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
-        void mk_gr_equalities(term const &t, expr_ref_vector &out);
-        void mk_all_gr_equalities(term const &t, expr_ref_vector &out);
+        void mk_gr_equalities(term &t, expr_ref_vector &out);
+        void mk_all_gr_equalities(term &t, expr_ref_vector &out);
         expr_ref to_ground_expr();
         void qe_lite(app_ref_vector &vars, expr_ref &fml);
         void mb_cover(model& mdl);
