@@ -586,24 +586,25 @@ namespace mbp {
       }
     }
 
-    expr* term_graph::mk_app_core (expr *e) {
-        if (is_app(e)) {
-            expr_ref_buffer kids(m);
-            app* a = ::to_app(e);
-            for (expr * arg : *a) {
-                kids.push_back (mk_app(arg));
-            }
-            app* res = m.mk_app(a->get_decl(), a->get_num_args(), kids.data());
-            m_pinned.push_back(res);
-            return res;
-        }
-        else {
-            return e;
-        }
+    template <bool mark> expr *term_graph::mk_app_core(expr *e) {
+      if (is_app(e)) {
+          expr_ref_buffer kids(m);
+          app *a = ::to_app(e);
+          for (expr *arg : *a) {
+            kids.push_back(mk_app<mark>(arg));
+          }
+          app *res = m.mk_app(a->get_decl(), a->get_num_args(), kids.data());
+          m_pinned.push_back(res);
+          return res;
+      } else {
+          return e;
+      }
     }
 
-    expr_ref term_graph::mk_app(term const &r) {
+    template <bool mark> expr_ref term_graph::mk_app(term &r) {
         SASSERT(r.is_root());
+        if(mark)
+          r.set_mark2(true);
 
         if (r.get_num_args() == 0) {
             return expr_ref(r.get_expr(), m);
@@ -614,52 +615,54 @@ namespace mbp {
             return expr_ref(res, m);
         }
 
-        res = mk_app_core (r.get_expr());
+        res = mk_app_core<mark> (r.get_expr());
         m_term2app.insert(r.get_id(), res);
         return expr_ref(res, m);
-
     }
 
-    expr_ref term_graph::mk_app(expr *a) {
+    template<bool mark> expr_ref term_graph::mk_app(expr *a) {
         term *t = get_term(a);
         if (!t)
             return expr_ref(a, m);
         else
-            return mk_app(t->get_root());
-
+          return mk_app<mark>(t->get_root());
     }
 
-    void term_graph::mk_equalities(term const &t, expr_ref_vector &out) {
+    void term_graph::mk_equalities(term &t, expr_ref_vector &out) {
         SASSERT(t.is_root());
-        expr_ref rep(mk_app(t), m);
+        expr_ref rep(mk_app<false>(t), m);
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-            expr* mem = mk_app_core(it->get_expr());
+            expr* mem = mk_app_core<false>(it->get_expr());
             out.push_back (m.mk_eq (rep, mem));
         }
     }
 
-    void term_graph::mk_all_equalities(term const &t, expr_ref_vector &out) {
+    void term_graph::mk_all_equalities(term &t, expr_ref_vector &out) {
         mk_equalities(t, out);
 
         for (term *it = &t.get_next(); it != &t; it = &it->get_next ()) {
-            expr* a1 = mk_app_core (it->get_expr());
+            expr* a1 = mk_app_core<false> (it->get_expr());
             for (term *it2 = &it->get_next(); it2 != &t; it2 = &it2->get_next()) {
-                expr* a2 =  mk_app_core(it2->get_expr());
-                out.push_back (m.mk_eq (a1, a2));
+              expr *a2 = mk_app_core<false>(it2->get_expr());
+              out.push_back(m.mk_eq(a1, a2));
             }
         }
     }
 
-    void term_graph::mk_qe_lite_equalities(term const &t, expr_ref_vector &out) {
+    void term_graph::mk_qe_lite_equalities(term &t, expr_ref_vector &out) {
         SASSERT(t.is_root());
-        expr_ref rep(m);
+        expr_ref rep(m); // delay output until an equality is found
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-          if(!m_is_var(it->get_expr())) { // it is not a variable to elim
-            if(!rep)
-              rep = mk_app(t);
+          expr * e = it->get_expr();
+          if(is_app(e)) {
+            app * a = to_app(e);
+            if(!m_is_var.contains(a->get_decl())) { // it is not a variable to elim
+              if(!rep)
+                 rep = mk_app<true>(t);
 
-            expr *mem = mk_app_core(it->get_expr());
-            out.push_back(m.mk_eq(rep, mem));
+              expr *mem = mk_app_core<true>(e);
+              out.push_back(m.mk_eq(rep, mem));
+            }
           }
         }
     }
@@ -673,7 +676,7 @@ namespace mbp {
       return true;
     }
 
-    void term_graph::mk_gr_equalities(term const &t, expr_ref_vector &out) {
+    void term_graph::mk_gr_equalities(term &t, expr_ref_vector &out) {
       SASSERT(t.is_root());
       expr_ref rep(m);
 
@@ -681,25 +684,25 @@ namespace mbp {
         if (it->is_ground()) {
           if (!rep) { // make the term if there is another gr term in the equiv.
                       // class
-              rep = mk_app(t);
+              rep = mk_app<false>(t);
           }
-          out.push_back(m.mk_eq(rep, mk_app_core(it->get_expr())));
+          out.push_back(m.mk_eq(rep, mk_app_core<false>(it->get_expr())));
         }
       }
     }
 
     // TODO: review this
-    void term_graph::mk_all_gr_equalities(term const &t, expr_ref_vector &out) {
+    void term_graph::mk_all_gr_equalities(term &t, expr_ref_vector &out) {
       mk_gr_equalities(t, out);
 
       for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
         if (!m_is_var(it->get_expr()) || is_ground_app_term(it))
           continue;
-        expr *a1 = mk_app_core(it->get_expr());
+        expr *a1 = mk_app_core<false>(it->get_expr());
         for (term *it2 = &it->get_next(); it2 != &t; it2 = &it2->get_next()) {
           if (!m_is_var(it->get_expr()) || is_ground_app_term(it))
             continue;
-          expr *a2 = mk_app_core(it2->get_expr());
+          expr *a2 = mk_app_core<false>(it2->get_expr());
           out.push_back(m.mk_eq(a1, a2));
         }
       }
@@ -708,6 +711,12 @@ namespace mbp {
     void term_graph::reset_marks() {
         for (term * t : m_terms) {
             t->set_mark(false);
+        }
+    }
+
+    void term_graph::reset_marks2() {
+        for (term *t : m_terms) {
+            t->set_mark2(false);
         }
     }
 
@@ -823,7 +832,7 @@ namespace mbp {
 
         for (expr * a : m_lits) {
             if (is_internalized(a)) {
-                lits.push_back (::to_app(mk_app(a)));
+                lits.push_back (::to_app(mk_app<false>(a)));
             }
         }
 
@@ -837,17 +846,18 @@ namespace mbp {
         }
 
         for (auto p : m_deq_pairs) {
-          lits.push_back(
-                         mk_neq(m, ::to_app(mk_app(p.first->get_expr())),
-                                     ::to_app(mk_app(p.second->get_expr()))));
+            lits.push_back(
+                mk_neq(m, ::to_app(mk_app<false>(p.first->get_expr())),
+                       ::to_app(mk_app<false>(p.second->get_expr()))));
         }
     }
 
     void term_graph::to_lits_qe_lite(expr_ref_vector &lits) {
         // it assumes that the roots have been properly picked
+
         for (expr *a : m_lits) {
           if (is_internalized(a)) {
-                lits.push_back(::to_app(mk_app(a)));
+                lits.push_back(::to_app(mk_app<true>(a)));
           }
         }
 
@@ -861,8 +871,8 @@ namespace mbp {
         // the following are output using representatives, which may contain
         // variables that could not be eliminated
         for (auto p : m_deq_pairs) {
-          lits.push_back(mk_neq(m, ::to_app(mk_app(p.first->get_expr())),
-                                ::to_app(mk_app(p.second->get_expr()))));
+          lits.push_back(mk_neq(m, ::to_app(mk_app<true>(p.first->get_expr())),
+                                ::to_app(mk_app<true>(p.second->get_expr()))));
         }
     }
 
@@ -876,7 +886,7 @@ namespace mbp {
           expr_ref to_print_e(a, m);
 
           if (is_ground_app_term(t))
-            lits.push_back(::to_app(mk_app(a))); // rewrites to (ground) representatives?
+            lits.push_back(::to_app(mk_app<false>(a)));
         }
       }
 
@@ -896,7 +906,8 @@ namespace mbp {
         term &t1 = p.first->get_root();
         term &t2 = p.second->get_root();
         if(t1.is_ground() && t2.is_ground())
-          lits.push_back(mk_neq(m, mk_app_core(t1.get_expr()), mk_app_core(t2.get_expr())));
+          lits.push_back(mk_neq(m, mk_app_core<false>(t1.get_expr()),
+                                mk_app_core<false>(t2.get_expr())));
       }
       // TODO: do for m_deq_distinct?
     }
@@ -1636,38 +1647,30 @@ namespace mbp {
       void qe_lite(app_ref_vector &vars, expr_ref &fml) {
         m_tg.compute_non_ground<true>(vars);
         // removes from `vars` the variables that have a ground representative
+        m_tg.pick_roots();
 
         expr_ref_vector lits(m);
+        // uses mark2 to mark the variables that appear in lits
+        m_tg.reset_marks2();
         m_tg.to_lits_qe_lite(lits);
-        if(lits.size() == 0)
+        if (lits.size() == 0)
+          fml = m.mk_true();
+        else if (lits.size() == 1)
           fml = lits[0].get();
         else
           fml = m.mk_and(lits);
 
-        bool remove = false;
         // After choosing representatives, more variables could be eliminated,
         // either because they do not appear, or because they have another
         // variable to represent them.
         for (int i = 0; i < vars.size(); ++i) {
           term * t = m_tg.get_term(vars[i].get());
-          if(t) {
-            remove = false;
-            if (!t->is_root()) {
-              remove = true;
-            }
-            else {
-              // TODO: corner case: what if the formula is a boolean variable?
-              auto it = term::parents(t);
-              if (it.begin() != it.end()) {
-                remove = true;
-              }
-            }
-
-            if(remove) {
-              vars[i] = vars.back();
-              vars.pop_back();
-              --i;
-            }
+          SASSERT(t); // if the variable was not in `fml` it was removed earlier
+                      // from `vars`
+          if (!t->is_marked2()) { // the term is not in the output
+            vars[i] = vars.back();
+            vars.pop_back();
+            --i;
           }
         }
       }
@@ -1953,11 +1956,14 @@ namespace mbp {
       }
     }
 
+    if(vars.empty())
+      return;
+
     // if remove = true, point to_propagate contains the terms for vars (in the
     // same order)
 
     // find classes that do not have a ground representative
-    for(int i = 0; i < to_propagate.size(); i++) {
+    for (int i = 0; i < to_propagate.size(); ++i) {
       auto t = to_propagate[i];
       // TODO: might be reprocessing a ground class twice, use marks
       if (t->is_class_gr() && all_not_ground_class(*t)) {
