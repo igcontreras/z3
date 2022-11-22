@@ -630,6 +630,7 @@ namespace mbp {
 
     void term_graph::mk_equalities(term &t, expr_ref_vector &out) {
         SASSERT(t.is_root());
+        if(t.get_class_size() == 1) return;
         expr_ref rep(mk_app<false>(t), m);
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
             expr* mem = mk_app_core<false>(it->get_expr());
@@ -638,6 +639,9 @@ namespace mbp {
     }
 
     void term_graph::mk_all_equalities(term &t, expr_ref_vector &out) {
+        if (t.get_class_size() == 1)
+            return;
+
         mk_equalities(t, out);
 
         for (term *it = &t.get_next(); it != &t; it = &it->get_next ()) {
@@ -651,6 +655,9 @@ namespace mbp {
 
     void term_graph::mk_qe_lite_equalities(term &t, expr_ref_vector &out) {
         SASSERT(t.is_root());
+        if (t.get_class_size() == 1)
+            return;
+
         expr_ref rep(m); // delay output until an equality is found
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
           expr * e = it->get_expr();
