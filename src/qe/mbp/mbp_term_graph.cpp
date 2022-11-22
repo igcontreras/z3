@@ -1967,9 +1967,6 @@ namespace mbp {
     if(vars.empty())
       return;
 
-    // if remove = true, point to_propagate contains the terms for vars (in the
-    // same order)
-
     // find classes that do not have a ground representative
     for (int i = 0; i < to_propagate.size(); ++i) {
       auto t = to_propagate[i];
@@ -1980,10 +1977,6 @@ namespace mbp {
       else { // remove from propagate & vars if the class has a ground representative
         to_propagate[i] = to_propagate.back();
         to_propagate.pop_back();
-        if(remove) {
-          vars[i] = vars.back();
-          vars.pop_back();
-        }
         --i;
       }
     }
