@@ -759,7 +759,8 @@ namespace mbp {
     /// XXX This should be factored out to let clients control the preference
     bool term_graph::term_lt(term const &t1, term const &t2) {
       // prefer ground over non-ground
-      // prefer constants over applications
+      // prefer constants over applications (ground)
+      // prefer applications over variables (for non-ground)
       // prefer uninterpreted constants over values
       // XXX (commented out) prefer non-cyclic
       // prefer smaller expressions over larger ones
@@ -780,7 +781,17 @@ namespace mbp {
       // else if (t1_cyclic && !t2_cyclic)
       //   return false;
 
-      else if (t1.get_num_args() == 0 || t2.get_num_args() == 0) {
+      if (!t1.is_ground()) { // both are not ground and function applications
+        bool t1_is_var = (to_app(t1.get_expr())->get_num_args() == 0);
+        bool t2_is_var = (to_app(t2.get_expr())->get_num_args() == 0);
+        if (!t1_is_var && t2_is_var)
+          return true;
+        else if (t1_is_var && !t2_is_var)
+          return false;
+        // else, we fall back to the user lt definition
+      }
+
+      if (t1.get_num_args() == 0 || t2.get_num_args() == 0) {
         if (t1.get_num_args() == t2.get_num_args()) {
           if (m.is_value(t1.get_expr()) == m.is_value(t2.get_expr()))
             return t1.get_id() < t2.get_id();
@@ -789,6 +800,8 @@ namespace mbp {
         return t1.get_num_args() < t2.get_num_args();
       }
 
+      // XXX this is the internalized size, not the size with the new
+      // representatives
       unsigned sz1 = get_num_exprs(t1.get_expr());
       unsigned sz2 = get_num_exprs(t2.get_expr());
       return sz1 < sz2;
@@ -2006,7 +2019,6 @@ namespace mbp {
   }
 
   void term_graph::mb_cover(model& mdl) {
-      // m_is_var.reset_solved();
       term_graph::cover c(*this);
       c.set_model(mdl);
       c.mb_cover();
