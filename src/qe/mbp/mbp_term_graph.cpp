@@ -668,7 +668,8 @@ namespace mbp {
                  rep = mk_app<true>(t);
 
               expr *mem = mk_app_core<true>(e);
-              out.push_back(m.mk_eq(rep, mem));
+              if(rep != mem)
+                out.push_back(m.mk_eq(rep, mem));
             }
           }
         }
@@ -832,6 +833,7 @@ namespace mbp {
     /// Choose better roots for equivalence classes
     void term_graph::pick_roots() {
         SASSERT(marks_are_clear());
+        m_term2app.reset(); // picking roots invalidates cache
         for (term* t : m_terms) {
             if (!t->is_marked() && t->is_root())
                 pick_root(*t);
@@ -1688,7 +1690,14 @@ namespace mbp {
           term * t = m_tg.get_term(vars[i].get());
           SASSERT(t); // if the variable was not in `fml` it was removed earlier
                       // from `vars`
-          if (!t->is_marked2()) { // the term is not in the output
+          if (!t->is_marked2() || !occurs(vars[i].get(),fml)) {
+            // the var is not in the output
+
+            // XXX the second check is expensive and can only happen for
+            // formulas like exists a,b . f(a) = f(b) && a = b, were we have 2
+            // terms in the equivalence class that are equal after rewriting
+            // them by their representatives. If so, we do not output them. This
+            // can be disabled and the second check is not needed.
             vars[i] = vars.back();
             vars.pop_back();
             --i;
