@@ -34,7 +34,7 @@ namespace euf {
 
     void solve_eqs::get_eqs(dep_eq_vector& eqs) {
         for (extract_eq* ex : m_extract_plugins)
-            for (unsigned i = m_qhead; i < m_fmls.size(); ++i)
+            for (unsigned i : indices())
                 ex->get_eqs(m_fmls[i], eqs);
     }
 
@@ -75,13 +75,6 @@ namespace euf {
             return m_id2level[id] != UINT_MAX;
         };
 
-        auto is_safe = [&](unsigned lvl, expr* t) {
-            for (auto* e : subterms::all(expr_ref(t, m), &m_todo, &m_visited)) 
-                if (is_var(e) && m_id2level[var2id(e)] < lvl)
-                    return false;            
-            return true;
-        };
-
         unsigned init_level = UINT_MAX;
         unsigned_vector todo;
         
@@ -94,30 +87,69 @@ namespace euf {
             init_level -= m_id2var.size() + 1;
             unsigned curr_level = init_level;
             todo.push_back(id);
+            
             while (!todo.empty()) {
                 unsigned j = todo.back();
                 todo.pop_back();
                 if (is_explored(j))
                     continue;
                 m_id2level[j] = curr_level++;
+
                 for (auto const& eq : m_next[j]) {
                     auto const& [orig, v, t, d] = eq;
                     SASSERT(j == var2id(v));
-                    if (!is_safe(curr_level, t))
+                    bool is_safe = true;
+                    if (m_fmls.frozen(v))
                         continue;
+                    
+                    unsigned todo_sz = todo.size();
+
+                    // determine if substitution is safe.
+                    // all time-stamps must be at or above current level
+                    // unexplored variables that are part of substitution are appended to work list.
+                    SASSERT(m_todo.empty());
+                    m_todo.push_back(t);
+                    expr_fast_mark1 visited;
+                    while (!m_todo.empty()) {
+                        expr* e = m_todo.back();
+                        m_todo.pop_back();
+                        if (visited.is_marked(e))
+                            continue;
+                        visited.mark(e, true);
+                        if (is_app(e)) {
+                            for (expr* arg : *to_app(e))
+                                m_todo.push_back(arg);
+                        }
+                        else if (is_quantifier(e))
+                            m_todo.push_back(to_quantifier(e)->get_expr());
+                        if (!is_var(e))
+                            continue;
+                        if (m_id2level[var2id(e)] < curr_level) {
+                            is_safe = false;
+                            break;
+                        }
+                        if (!is_explored(var2id(e)))
+                            todo.push_back(var2id(e));
+                    }
+                    m_todo.reset();
+                    visited.reset();
+
+                    if (!is_safe) {
+                        todo.shrink(todo_sz);
+                        continue;
+                    }
                     SASSERT(!occurs(v, t));
                     m_next[j][0] = eq;
                     m_subst_ids.push_back(j);                   
-                    for (expr* e : subterms::all(expr_ref(t, m), &m_todo, &m_visited))
-                        if (is_var(e) && !is_explored(var2id(e))) 
-                            todo.push_back(var2id(e));   
                     break;
                 }
-            }            
+            }                   
         }
     }
 
     void solve_eqs::normalize() {
+        if (m_subst_ids.empty())
+            return;
         scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m, false);
         rp->set_substitution(m_subst.get());
 
@@ -152,15 +184,18 @@ namespace euf {
     void solve_eqs::apply_subst(vector<dependent_expr>& old_fmls) {
         if (!m.inc())
             return;
+        if (m_subst_ids.empty())
+            return;
+        
         scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m, false);
         rp->set_substitution(m_subst.get());
 
-        for (unsigned i = m_qhead; i < m_fmls.size() && !m_fmls.inconsistent(); ++i) {
+        for (unsigned i : indices()) {
             auto [f, d] = m_fmls[i]();
             auto [new_f, new_dep] = rp->replace_with_dep(f);
+            m_rewriter(new_f);
             if (new_f == f)
                 continue;
-            m_rewriter(new_f);
             new_dep = m.mk_join(d, new_dep);
             old_fmls.push_back(m_fmls[i]);
             m_fmls.update(i, dependent_expr(m, new_f, new_dep));
@@ -185,13 +220,12 @@ namespace euf {
             normalize();
             apply_subst(old_fmls);
             ++count;
+            save_subst({});
         } 
         while (!m_subst_ids.empty() && count < 20 && m.inc());
 
         if (!m.inc())
             return;
-
-        save_subst({});
 
         if (m_config.m_context_solve) {            
             old_fmls.reset();
@@ -205,13 +239,11 @@ namespace euf {
             apply_subst(old_fmls);
             save_subst(old_fmls);
         }
-
-        advance_qhead(m_fmls.size());
     }
 
     void solve_eqs::save_subst(vector<dependent_expr> const& old_fmls) {
         if (!m_subst->empty())   
-            m_fmls.model_trail().push(m_subst.detach(), old_fmls);        
+            m_fmls.model_trail().push(m_subst.detach(), old_fmls);                
     }
 
     void solve_eqs::filter_unsafe_vars() {
@@ -222,11 +254,10 @@ namespace euf {
                 m_unsafe_vars.mark(term);
     }
 
-
-
     solve_eqs::solve_eqs(ast_manager& m, dependent_expr_state& fmls) : 
         dependent_expr_simplifier(m, fmls), m_rewriter(m) {
         register_extract_eqs(m, m_extract_plugins);
+        m_rewriter.set_flat_and_or(false);
     }
 
     void solve_eqs::updt_params(params_ref const& p) {
@@ -235,6 +266,13 @@ namespace euf {
         m_config.m_context_solve = p.get_bool("context_solve", tp.solve_eqs_context_solve());
         for (auto* ex : m_extract_plugins)
             ex->updt_params(p);
+    }
+
+    void solve_eqs::collect_param_descrs(param_descrs& r) {
+        r.insert("solve_eqs_max_occs", CPK_UINT, "(default: infty) maximum number of occurrences for considering a variable for gaussian eliminations.");
+        r.insert("theory_solver", CPK_BOOL, "(default: true) use theory solvers.");
+        r.insert("ite_solver", CPK_BOOL, "(default: true) use if-then-else solver.");
+        r.insert("context_solve", CPK_BOOL, "(default: false) solve equalities under disjunctions.");
     }
 
     void solve_eqs::collect_statistics(statistics& st) const {

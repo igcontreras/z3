@@ -29,15 +29,22 @@ namespace euf {
     class basic_extract_eq : public extract_eq {
         ast_manager& m;
         bool m_ite_solver = true;
+        bool m_allow_bool = true;
 
     public:
         basic_extract_eq(ast_manager& m) : m(m) {}
+
+        virtual void set_allow_booleans(bool f) {
+            m_allow_bool = f;
+        }
 
         void get_eqs(dependent_expr const& e, dep_eq_vector& eqs) override {
             auto [f, d] = e();
             expr* x, * y;
             if (m.is_eq(f, x, y)) {
                 if (x == y)
+                    return;
+                if (!m_allow_bool && m.is_bool(x))
                     return;
                 if (is_uninterp_const(x))
                     eqs.push_back(dependent_eq(e.fml(), to_app(x), expr_ref(y, m), d));
@@ -47,6 +54,8 @@ namespace euf {
             expr* c, * th, * el, * x1, * y1, * x2, * y2;
             if (m_ite_solver && m.is_ite(f, c, th, el)) {
                 if (m.is_eq(th, x1, y1) && m.is_eq(el, x2, y2)) {
+                    if (!m_allow_bool && m.is_bool(x1))
+                        return;
                     if (x1 == y2 && is_uninterp_const(x1))
                         std::swap(x2, y2);
                     if (x2 == y2 && is_uninterp_const(x2))
@@ -57,6 +66,8 @@ namespace euf {
                         eqs.push_back(dependent_eq(e.fml(), to_app(x1), expr_ref(m.mk_ite(c, y1, y2), m), d));
                 }
             }
+            if (!m_allow_bool)
+                return;
             if (is_uninterp_const(f))
                 eqs.push_back(dependent_eq(e.fml(), to_app(f), expr_ref(m.mk_true(), m), d));
             if (m.is_not(f, x) && is_uninterp_const(x))
@@ -181,6 +192,8 @@ namespace euf {
                 ++i;
                 if (!is_uninterp_const(arg))
                     continue;
+                if (!a.is_real(arg))
+                    continue;
                 unsigned j = 0;
                 bool nonzero = true;
                 for (expr* arg2 : *to_app(x)) {
@@ -245,7 +258,7 @@ namespace euf {
             if (!m_enabled)
                 return;
             m_nonzero.reset();
-            for (unsigned i = 0; i < fmls.size(); ++i) 
+            for (unsigned i = 0; i < fmls.qtail(); ++i) 
                 add_pos(fmls[i].fml());            
         }
 

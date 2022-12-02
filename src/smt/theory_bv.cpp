@@ -1318,7 +1318,7 @@ namespace smt {
         SASSERT(consequent.var() != antecedent.var());
         TRACE("bv_bit_prop", tout << "assigning: " << consequent << " @ " << ctx.get_scope_level();
               tout << " using "; ctx.display_literal(tout, antecedent); 
-              tout << " #" << get_enode(v1)->get_owner_id() << " #" << get_enode(v2)->get_owner_id() << " idx: " << idx << "\n";
+              tout << " " << enode_pp(get_enode(v1), ctx) << " " << enode_pp(get_enode(v2), ctx) << " idx: " << idx << "\n";
               tout << "propagate_eqc: " << propagate_eqc << "\n";);
         if (consequent == false_literal) {
             m_stats.m_num_conflicts++;
@@ -1358,6 +1358,9 @@ namespace smt {
             // So, we need to propagate the assignment to other bits.
             bool_var bv = consequent.var();
             atom * a    = get_bv2a(bv);
+            CTRACE("bv", !a, tout << ctx.literal2expr(literal(bv, false)) << "\n");
+            if (!a)
+                return;
             SASSERT(a->is_bit());
             bit_atom * b = static_cast<bit_atom*>(a);
             var_pos_occ * curr = b->m_occs;
@@ -1489,6 +1492,7 @@ namespace smt {
         m_approximates_large_bvs(false) {
         memset(m_eq_activity, 0, sizeof(m_eq_activity));
         memset(m_diseq_activity, 0, sizeof(m_diseq_activity));
+        m_bb.set_flat_and_or(false);
     }
 
     theory_bv::~theory_bv() {

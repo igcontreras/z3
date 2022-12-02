@@ -32,6 +32,10 @@ namespace euf {
         struct stats {
             unsigned m_num_steps = 0;
             unsigned m_num_elim_vars = 0;
+            void reset() {
+                m_num_steps = 0;
+                m_num_elim_vars = 0;
+            }
         };
 
         struct config {
@@ -68,11 +72,17 @@ namespace euf {
 
         solve_eqs(ast_manager& m, dependent_expr_state& fmls);
 
+        char const* name() const override { return "solve-eqs"; }
+
         void reduce() override;
 
         void updt_params(params_ref const& p) override;
 
+        void collect_param_descrs(param_descrs& r) override;
+
         void collect_statistics(statistics& st) const override;
+
+        void reset_statistics() override { m_stats.reset(); }
 
     };
 }
