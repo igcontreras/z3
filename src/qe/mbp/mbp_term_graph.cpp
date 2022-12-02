@@ -541,7 +541,6 @@ namespace mbp {
         }
 
         // make 'a' be the root of the equivalence class of 'b'
-        // IG: why? choose based on groundness?
         b->set_root(*a);
         for (term *it = &b->get_next(); it != b; it = &it->get_next()) {
             it->set_root(*a);
@@ -568,7 +567,6 @@ namespace mbp {
     }
 
     void term_graph::propagate_gr(term &t) {
-    
       bool ground = true;
       for (const term *c : term::children(t)) {
         if (!c->is_class_gr()) {
