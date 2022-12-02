@@ -60,12 +60,14 @@ namespace mbp {
         projector*        m_projector;
         cover*            m_cover;
         qe*               m_qe;
-        u_map<expr *> m_term2app;
+        u_map<expr *> m_term2app; // any representative change invalidates this cache
         plugin_manager<solve_plugin> m_plugins;
         ptr_hashtable<term, term_hash, term_eq> m_cg_table;
         vector<std::pair<term*,term*>> m_merge;
-        bool             m_prop_ground = false;
-        ptr_vector<term> m_ground_to_prop; // list of terms that now have a gr representative
+        bool             m_prop_ground = false; // flag to control whether to
+                                              // propagate groundness after merge
+        ptr_vector<term> m_ground_to_prop;
+        // list of terms that now have a gr representative, to propagate after merge
 
         term_graph::is_variable_proc m_is_var;
 
