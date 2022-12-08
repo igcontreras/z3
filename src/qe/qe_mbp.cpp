@@ -19,6 +19,8 @@ Revision History:
 --*/
 
 #include "qe/qe_mbp.h"
+#include "ast/array_decl_plugin.h"
+#include "ast/ast.h"
 #include "ast/ast_pp.h"
 #include "ast/ast_util.h"
 #include "ast/expr_functors.h"
@@ -34,6 +36,8 @@ Revision History:
 #include "qe/mbp/mbp_arith.h"
 #include "qe/mbp/mbp_arrays.h"
 #include "qe/mbp/mbp_datatypes.h"
+#include "util/debug.h"
+#include "qe/qe_mbp_tg.h"
 
 using namespace qe;
 
@@ -360,6 +364,31 @@ public:
         fml = mk_and(fmls);
     }
 
+    void tg_project(app_ref_vector &vars, model &mdl, expr_ref &fml) {
+      // initialize tg
+      // do mbp for arrays
+      // do mbp for adts
+      // do abstraction on all array and adt variables
+      flatten_and(fml);
+      app_ref_vector vars_to_elim(m);
+      array_util array_u(m);
+      // sort out vars into bools, arith (int/real), and arrays
+      for (app* v : vars) {
+	if (array_u.is_array(v)) {
+	  vars_to_elim.push_back(v);
+	}
+      }    
+      qe_mbp_tg mbptg(m, m_params);
+      mbptg(vars_to_elim, fml, mdl);
+      m_rw(fml);
+      TRACE("qe", tout << "After mbp_tg:\n"
+                       << fml << "\n"
+                       << "Vars: " << vars_to_elim << "\n";);
+      for (app *v : vars_to_elim) {
+        SASSERT(!array_u.is_array(v));
+      }        
+    }
+    
     void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {
         TRACE("qe", tout << "Before projection:\n" << fml << "\n" << "Vars: " << vars << "\n";);
 
@@ -370,6 +399,7 @@ public:
         array_util arr_u(m);
         arith_util ari_u(m);
 
+	tg_project(vars, mdl, fml);
         flatten_and(fml);
 
         while (!vars.empty()) {
