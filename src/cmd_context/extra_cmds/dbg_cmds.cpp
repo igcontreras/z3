@@ -16,6 +16,7 @@ Notes:
 
 --*/
 #include<iomanip>
+#include "ast/ast.h"
 #include "cmd_context/cmd_context.h"
 #include "cmd_context/cmd_util.h"
 #include "ast/rewriter/rewriter.h"
@@ -34,7 +35,7 @@ Notes:
 #include "qe/qe_mbp.h"
 #include "qe/qe_mbi.h"
 #include "qe/mbp/mbp_term_graph.h"
-
+#include "qe/qe_mbp_tg.h"
 #include "qe/lite/qe_lite.h"
 #include "qe/lite/qe_lite_tg.h"
 
@@ -656,6 +657,61 @@ public:
     }
 };
 
+class tg_mbp_cmd : public cmd {
+    unsigned              m_arg_index;
+    ptr_vector<expr>      m_lits;
+    ptr_vector<expr> m_vars;
+public:
+  tg_mbp_cmd() : cmd("mbp-tg") {};
+  char const *get_usage() const override { return "(exprs) (vars)"; }
+  char const *get_descr(cmd_context &ctx) const override {
+    return "Model based projection using e-graphs"; }
+    unsigned get_arity() const override { return 2; }
+    cmd_arg_kind next_arg_kind(cmd_context& ctx) const override {
+        return CPK_EXPR_LIST;
+    }
+    void set_next_arg(cmd_context& ctx, unsigned num, expr * const* args) override {
+      if(m_arg_index == 0) {
+        m_lits.append(num, args);
+        m_arg_index = 1;
+      }
+      else {
+	 m_vars.append(num, args);
+      }
+    }
+    void prepare(cmd_context & ctx) override { m_arg_index = 0; m_lits.reset(); m_vars.reset(); }
+    void execute(cmd_context & ctx) override {
+      ast_manager &m = ctx.m();
+      app_ref_vector vars(m);
+      expr_ref fml(m);
+      expr_ref_vector lits(m);
+      for (expr *v : m_vars) vars.push_back(to_app(v));
+      for (expr *e : m_lits) lits.push_back(e);
+      fml = mk_and(lits);
+      solver_factory &sf = ctx.get_solver_factory();
+      params_ref pa;
+      solver_ref s = sf(m, pa, false, true, true, symbol::null);
+      s->assert_expr(fml);
+      lbool r = s->check_sat();
+      if (r != l_true) {
+	return;
+      }
+      model_ref mdl;
+      s->get_model(mdl);
+      qe_mbp_tg mbptg(m, pa);
+      mbptg(vars, fml, *mdl.get());
+
+      ctx.regular_stream() << "------------------------------ " << std::endl;
+      ctx.regular_stream() << "Orig tg: " << mk_and(lits) << std::endl;
+      ctx.regular_stream() << "To elim: ";
+      for (expr *v : m_vars) {
+        ctx.regular_stream() << to_app(v)->get_decl()->get_name() << " ";
+      }
+      ctx.regular_stream() << std::endl;
+      ctx.regular_stream() << "output " << fml << std::endl;
+    }
+};
+
 // Let I = implicant(A,M), S := mb-cover(I,M,v), check-sat(S,B)
 // Instead of computing the implicant we assume that it is computed in this
 // debugging command (m_ia).
@@ -869,6 +925,7 @@ void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(set_next_id));
     ctx.insert(alloc(get_interpolant_cmd));
     ctx.insert(alloc(mbp_cmd));
+    ctx.insert(alloc(tg_mbp_cmd));
     ctx.insert(alloc(mbi_cmd));
     ctx.insert(alloc(euf_project_cmd));
     ctx.insert(alloc(eufi_cmd));
