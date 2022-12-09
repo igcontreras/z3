@@ -17,6 +17,7 @@ Notes:
 
 --*/
 
+#include "ast/ast.h"
 #include "util/util.h"
 #include "util/uint_set.h"
 #include "util/obj_pair_hashtable.h"
@@ -312,6 +313,10 @@ namespace mbp {
         for (auto *d : decls) m_decls.insert(d);
     }
 
+  void term_graph::is_variable_proc::add_decls(const app_ref_vector &decls) {
+    for (auto *d : decls) m_decls.insert(d->get_decl());
+  }
+
     void
     term_graph::is_variable_proc::set_decls(const app_ref_vector &vars,
                                             bool exclude) {
@@ -385,7 +390,12 @@ namespace mbp {
         }
     }
 
-    bool term_graph::is_internalized(expr *a) {
+  void term_graph::get_terms(expr_ref_vector& res) const {
+    for(term* t: m_terms)
+      res.push_back(t->get_expr());
+  }
+  
+  bool term_graph::is_internalized(expr *a) {
         return m_app2term.contains(a->get_id());
     }
 
@@ -1734,6 +1744,10 @@ namespace mbp {
       m_is_var.set_decls(vars, exclude);
     }
 
+    void term_graph::add_vars(app_ref_vector const &vars) {
+      m_is_var.add_decls(vars);
+    }
+  
     expr_ref_vector term_graph::project() {
         // reset solved vars so that they are not considered pure by projector
         m_is_var.reset_solved();

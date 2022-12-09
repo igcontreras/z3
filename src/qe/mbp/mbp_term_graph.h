@@ -23,6 +23,7 @@ Notes:
 #include "util/plugin_manager.h"
 #include "qe/mbp/mbp_solve_plugin.h"
 #include "model/model.h"
+#include "util/vector.h"
 
 namespace mbp {
 
@@ -42,6 +43,7 @@ namespace mbp {
 
             void set_decls(const func_decl_ref_vector &decls, bool exclude);
             void set_decls(const app_ref_vector &vars, bool exclude);
+	  void add_decls(const app_ref_vector &vars);
             void mark_solved(const expr *e);
             void reset_solved() {m_solved.reset();}
             void reset() {m_decls.reset(); m_solved.reset(); m_exclude = true;}
@@ -114,8 +116,12 @@ namespace mbp {
         term_graph(ast_manager &m);
         ~term_graph();
 
+      const expr_ref_vector& get_lits() const { return m_lits; }
+      void get_terms(expr_ref_vector& res) const; 
+      
         void set_vars(func_decl_ref_vector const& decls, bool exclude);
         void set_vars(app_ref_vector const &vars, bool exclude);
+        void add_vars(app_ref_vector const &vars);
 
         ast_manager& get_ast_manager() const { return m;}
 
