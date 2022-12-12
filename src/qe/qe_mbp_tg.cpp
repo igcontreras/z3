@@ -177,6 +177,7 @@ public:
 	  app_ref_vector aux_consts(m);
 	  expr_ref eq(m);
 	  eq = p.mk_eq(aux_consts, true);
+	  for(app* a : aux_consts) m_vars.push_back(a);
 	  tg.add_vars(aux_consts);
 	  tg.add_lit(eq);
 	  tg.add_lit(m.mk_true());
@@ -209,8 +210,11 @@ public:
 	rdTerms.push_back(term);
       }
     }
-    for (expr* e1 : rdTerms) {
-      for (expr* e2 : rdTerms) {
+
+    for (unsigned i = 0; i < rdTerms.size(); i++) {
+      for (unsigned j = i+1; j < rdTerms.size(); j++) {
+	expr* e1 = rdTerms.get(i);
+	expr* e2 = rdTerms.get(j);
 	expr* a1 = to_app(e1)->get_arg(0);
 	expr* a2 = to_app(e2)->get_arg(0);
 	expr* i1 = to_app(e1)->get_arg(1);
@@ -226,6 +230,7 @@ public:
     }
 
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()););
+    tg.compute_non_ground<true>(m_vars);
     e = tg.to_ground_expr();
     TRACE("mbp_tg", tout << "after mbp tg " << e;);
   }
