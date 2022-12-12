@@ -936,7 +936,6 @@ namespace mbp {
       for (expr *a : m_lits) {
         if (is_internalized(a)) {
           term *t = get_term(a);
-          expr_ref to_print_e(a, m);
 
           if (is_ground_app_term(t))
             lits.push_back(::to_app(mk_app<false>(a)));
@@ -2030,7 +2029,8 @@ namespace mbp {
       if (t->is_class_gr() && all_not_ground_class(*t)) {
         t->set_class_gr(false);
       }
-      else { // remove from propagate & vars if the class has a ground representative
+      else { // remove from propagate & vars if the class either has a
+	     // ground representative or has other vars
         to_propagate[i] = to_propagate.back();
         to_propagate.pop_back();
         --i;
