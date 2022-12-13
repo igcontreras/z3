@@ -404,6 +404,22 @@ namespace mbp {
         return m_app2term.find (a->get_id(), res) ? res : nullptr;
     }
 
+    void term_graph::mark(expr *e) {
+      SASSERT(is_internalized(e));
+      term* res;
+      m_app2term.find(e->get_id(), res);
+      SASSERT(res);
+      res->set_mark2(true);
+    }
+
+    bool term_graph::is_marked(expr *e) {
+      SASSERT(is_internalized(e));
+      term *res;
+      m_app2term.find(e->get_id(), res);
+      SASSERT(res);
+      return res->is_marked2();
+    }
+
     term *term_graph::mk_term(expr *a) {
         expr_ref e(a, m);
         term * t = alloc(term, e, m_app2term);

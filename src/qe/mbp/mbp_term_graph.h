@@ -118,6 +118,8 @@ namespace mbp {
 
       const expr_ref_vector& get_lits() const { return m_lits; }
       void get_terms(expr_ref_vector& res) const; 
+      void mark(expr* e);
+      bool is_marked(expr* e);
       
         void set_vars(func_decl_ref_vector const& decls, bool exclude);
         void set_vars(app_ref_vector const &vars, bool exclude);
