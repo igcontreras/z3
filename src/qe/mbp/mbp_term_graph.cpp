@@ -427,6 +427,29 @@ namespace mbp {
             if (sz < todo.size()) continue;
             todo.pop_back();
             res = mk_term(t);
+            // the term was not internalized in this syntactic form, but it
+            // could be congruent with some other term, if that is the case, we
+            // need to merge them. Checking it for the parents of one of the
+            // arguments is enough
+            auto new_term_chs = term::children(res);
+            auto ch_it = new_term_chs.begin();
+            if(ch_it != new_term_chs.end()) {
+              for (auto congr_candidate : term::parents(*ch_it)) {
+                if(to_app(congr_candidate->get_expr())->get_decl() == to_app(t)->get_decl()) {
+                  bool toMerge = true;
+                  auto ch_cngr = term::children(congr_candidate);
+                  auto ch_cngr_it = ch_cngr.begin();
+                  for(auto ch_new : term::children(res)) {
+                    if(&((*ch_cngr_it)->get_root()) != &(ch_new->get_root())) {
+                      toMerge = false;
+                      break;
+                    }
+                    if(toMerge)
+                      merge(*congr_candidate,*res); // store for merging later
+                  }
+                }
+              }
+            }
         }
         SASSERT(res);
         return res;
