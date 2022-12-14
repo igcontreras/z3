@@ -373,11 +373,17 @@ public:
       app_ref_vector vars_to_elim(m);
       array_util array_u(m);
       // sort out vars into bools, arith (int/real), and arrays
-      for (app* v : vars) {
+      unsigned j = 0, i = vars.size();
+      for (;j < i;) {
+	app* v = vars.get(j);
 	if (array_u.is_array(v)) {
 	  vars_to_elim.push_back(v);
+	  vars[j] = vars.get(--i);
 	}
-      }    
+	else
+	  j++;
+      }
+      vars.shrink(j);
       qe_mbp_tg mbptg(m, m_params);
       mbptg(vars_to_elim, fml, mdl);
       m_rw(fml);
@@ -386,7 +392,10 @@ public:
                        << "Vars: " << vars_to_elim << "\n";);
       for (app *v : vars_to_elim) {
         SASSERT(!array_u.is_array(v));
-      }        
+      }
+      for (app* v : vars_to_elim) {
+	  vars.push_back(v);
+      }
     }
     
     void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {
