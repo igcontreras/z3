@@ -55,6 +55,11 @@ br_status array_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * c
       st = BR_DONE;
       return st;
     }
+    else if (args[0] == args[1]) {
+      result = m().mk_true();
+      st = BR_DONE;
+      return st;
+    }
   }
     SASSERT(f->get_family_id() == get_fid());
     switch (f->get_decl_kind()) {

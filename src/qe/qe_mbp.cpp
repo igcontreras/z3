@@ -389,15 +389,15 @@ public:
       qe_mbp_tg mbptg(m, m_params);
       mbptg(vars_to_elim, fml, mdl);
       m_rw(fml);
-      TRACE("qe", tout << "After mbp_tg:\n"
-                       << fml << "\n"
-                       << "Vars: " << vars_to_elim << "\n";);
       for (app *v : vars_to_elim) {
         SASSERT(!array_u.is_array(v) && !dt_u.is_datatype(v->get_sort()));
       }
       for (app* v : vars_to_elim) {
 	  vars.push_back(v);
       }
+      TRACE("qe", tout << "After mbp_tg:\n"
+                       << fml << "\n"
+                       << "Vars: " << vars << "\n";);
     }
     
     void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {

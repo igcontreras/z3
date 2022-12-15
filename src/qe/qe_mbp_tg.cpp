@@ -391,6 +391,7 @@ public:
     if (vars.empty())
       return;
     for(auto v : vars) m_vars.push_back(v);
+    vars.reset();
     expr_ref_vector fml(m);
     mbp::term_graph tg(m);
     tg.set_prop_ground(true);
