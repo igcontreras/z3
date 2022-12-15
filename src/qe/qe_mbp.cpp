@@ -23,6 +23,7 @@ Revision History:
 #include "ast/ast.h"
 #include "ast/ast_pp.h"
 #include "ast/ast_util.h"
+#include "ast/datatype_decl_plugin.h"
 #include "ast/expr_functors.h"
 #include "ast/for_each_expr.h"
 #include "ast/occurs.h"
@@ -372,11 +373,12 @@ public:
       flatten_and(fml);
       app_ref_vector vars_to_elim(m);
       array_util array_u(m);
+      datatype_util dt_u(m);
       // sort out vars into bools, arith (int/real), and arrays
       unsigned j = 0, i = vars.size();
       for (;j < i;) {
 	app* v = vars.get(j);
-	if (array_u.is_array(v)) {
+	if (array_u.is_array(v) || dt_u.is_datatype(v->get_sort())) {
 	  vars_to_elim.push_back(v);
 	  vars[j] = vars.get(--i);
 	}
@@ -391,7 +393,7 @@ public:
                        << fml << "\n"
                        << "Vars: " << vars_to_elim << "\n";);
       for (app *v : vars_to_elim) {
-        SASSERT(!array_u.is_array(v));
+        SASSERT(!array_u.is_array(v) && !dt_u.is_datatype(v->get_sort()));
       }
       for (app* v : vars_to_elim) {
 	  vars.push_back(v);
