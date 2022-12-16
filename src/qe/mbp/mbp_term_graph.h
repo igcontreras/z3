@@ -44,6 +44,7 @@ namespace mbp {
             void set_decls(const func_decl_ref_vector &decls, bool exclude);
             void set_decls(const app_ref_vector &vars, bool exclude);
 	  void add_decls(const app_ref_vector &vars);
+	  void add_decl(app_ref var);
             void mark_solved(const expr *e);
             void reset_solved() {m_solved.reset();}
             void reset() {m_decls.reset(); m_solved.reset(); m_exclude = true;}
@@ -124,6 +125,7 @@ namespace mbp {
         void set_vars(func_decl_ref_vector const& decls, bool exclude);
         void set_vars(app_ref_vector const &vars, bool exclude);
         void add_vars(app_ref_vector const &vars);
+        void add_var(app_ref var);
 
         ast_manager& get_ast_manager() const { return m;}
 

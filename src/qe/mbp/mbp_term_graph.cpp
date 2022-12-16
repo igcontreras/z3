@@ -317,6 +317,10 @@ namespace mbp {
     for (auto *d : decls) m_decls.insert(d->get_decl());
   }
 
+  void term_graph::is_variable_proc::add_decl(app_ref d) {
+    m_decls.insert(d->get_decl());
+  }
+
     void
     term_graph::is_variable_proc::set_decls(const app_ref_vector &vars,
                                             bool exclude) {
@@ -1762,6 +1766,10 @@ namespace mbp {
 
     void term_graph::add_vars(app_ref_vector const &vars) {
       m_is_var.add_decls(vars);
+    }
+
+    void term_graph::add_var(app_ref var) {
+      m_is_var.add_decl(var);
     }
   
     expr_ref_vector term_graph::project() {
