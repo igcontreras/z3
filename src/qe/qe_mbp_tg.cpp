@@ -238,6 +238,58 @@ private:
     return false;
   }
 
+  void rm_select(expr* term, mbp::term_graph& tg, model& mdl, expr_ref_vector& fml, app_ref_vector& vars) {
+    expr* v = to_app(term)->get_arg(0);
+    app_ref u(m);
+    ptr_vector<func_decl> const* accessors =  m_dt_util.get_constructor_accessors(m_dt_util.get_accessor_constructor(to_app(term)->get_decl()));
+    for (unsigned i = 0; i < accessors->size(); i++) {
+      func_decl* d = accessors->get(i);
+      u = new_var(d->get_range());
+      expr* eq = m.mk_eq(m.mk_app(d, v), u);
+      tg.add_var(u);
+      tg.add_lit(eq);
+      tg.mark(u);
+      tg.mark(m.mk_app(d, v));
+      vars.push_back(u);
+      if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
+	m_vars.push_back(u);
+      mdl.register_decl(u->get_decl(), to_app(mdl(to_app(term)->get_arg(0)))->get_arg(i));
+    }
+  }
+
+  void deconstruct_eq(expr* cons, expr* rhs, mbp::term_graph& tg, expr_ref_vector& fml) {
+    ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
+    for (unsigned i = 0; i < accessors->size(); i++) {
+      app* a = m.mk_app(accessors->get(i), rhs);
+      expr* newRhs = to_app(cons)->get_arg(i);
+      tg.add_lit(m.mk_eq(a, newRhs));
+      fml.push_back(m.mk_eq(a, newRhs));
+    }
+    func_decl* is_cons = m_dt_util.get_constructor_recognizer(to_app(cons)->get_decl());
+    tg.add_lit(m.mk_app(is_cons, rhs));
+  }
+
+  void deconstruct_neq(expr* cons, expr* rhs, mbp::term_graph& tg, expr_ref_vector& fml, model& mdl) {
+    ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
+    func_decl* is_cons = m_dt_util.get_constructor_recognizer(to_app(cons)->get_decl());
+    expr* a = m.mk_app(is_cons, rhs);
+    if (mdl.is_false(a)) {
+      tg.add_lit(m.mk_not(a));
+      return;
+    }
+    tg.add_lit(a);
+
+    for (unsigned i = 0; i < accessors->size(); i++) {
+      app* a = m.mk_app(accessors->get(i), rhs);
+      expr* newRhs = to_app(cons)->get_arg(i);
+      expr* eq = m.mk_eq(a, newRhs);
+      if (mdl.is_false(eq)) {
+	tg.add_lit(m.mk_not(eq));
+	fml.push_back(m.mk_not(eq));
+      }
+    }
+  }
+
   //todo are the literals to be processed
   // progress indicates whether mbp_arr added terms to the term graph
   void mbp_adt(expr_ref_vector& fml, mbp::term_graph& tg, model& mdl, app_ref_vector &vars, bool& progress) {
@@ -251,55 +303,20 @@ private:
       if (is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0))) {
 	tg.mark(term);
 	progress = true;
-	expr* v = to_app(term)->get_arg(0);
-	app_ref u(m);
-	ptr_vector<func_decl> const* accessors =  m_dt_util.get_constructor_accessors(m_dt_util.get_accessor_constructor(to_app(term)->get_decl()));
-	for (unsigned i = 0; i < accessors->size(); i++) {
-	  func_decl* d = accessors->get(i);
-	  u = new_var(d->get_range());
-	  expr* eq = m.mk_eq(m.mk_app(d, v), u);
-	  tg.add_lit(eq);
-	  fml.push_back(eq);
-	  vars.push_back(u);
-	  m_vars.push_back(u);
-	  //TODO: update model to have u
-	  mdl.register_decl(u->get_decl(), to_app(mdl(to_app(term)->get_arg(0)))->get_arg(i));
+	rm_select(term, tg, mdl, fml, vars);
 	}
-      }
     }
 
     for (unsigned i = 0; i < fml.size(); i++) {
       expr* e = fml.get(i);
       if (is_constructor_app(e, cons, rhs)) {
-	ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
+	deconstruct_eq(cons, rhs, tg, fml);
 	progress = true;
-	for (unsigned i = 0; i < accessors->size(); i++) {
-	  app* a = m.mk_app(accessors->get(i), rhs);
-	  expr* newRhs = to_app(cons)->get_arg(i);
-	  tg.add_lit(m.mk_eq(a, newRhs));
-	  fml.push_back(m.mk_eq(a, newRhs));
-	}
-        func_decl* is_cons = m_dt_util.get_constructor_recognizer(to_app(cons)->get_decl());
-	tg.add_lit(m.mk_app(is_cons, rhs));
 	fml[i] = m.mk_true();
       }
       else if (m.is_not(e, f) && is_constructor_app(f, cons, rhs)) {
 	progress = true;
-	ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
-	for (unsigned i = 0; i < accessors->size(); i++) {
-          app* a = m.mk_app(accessors->get(i), rhs);
-	  expr* newRhs = to_app(cons)->get_arg(i);
-	  expr* eq = m.mk_eq(a, newRhs);
-	  if (mdl.is_false(eq)) {
-	    tg.add_lit(m.mk_not(eq));
-	    fml.push_back(m.mk_not(eq));
-	  }
-	}
-	func_decl* is_cons = m_dt_util.get_constructor_recognizer(to_app(cons)->get_decl());
-	expr* a = m.mk_app(is_cons, rhs);
-	if (mdl.is_false(a)) {
-	  tg.add_lit(m.mk_not(a));
-	}
+	deconstruct_neq(cons, rhs, tg, fml, mdl);
 	fml[i] = m.mk_true();
       }
     }
@@ -315,6 +332,7 @@ private:
     }
     todo.shrink(j);
   }
+
   // todo are the literals to be processed
   // progress indicates whether mbp_arr added terms to the term graph
   void mbp_arr(expr_ref_vector& todo, mbp::term_graph& tg, model& mdl, app_ref_vector &vars, bool& progress) {
@@ -325,6 +343,7 @@ private:
     vector<expr_ref_vector> indices;
     for(unsigned i = 0; i < todo.size(); i++) {
       expr* e = todo.get(i);
+      TRACE("mbp_tg", tout << "processing " << expr_ref(e, m););
       bool is_not = m.is_not(e, e);
       if (!(is_app(e) && is_partial_eq(to_app(e)))) { i++; continue; }
       peq p(to_app(e), m);
@@ -343,6 +362,7 @@ private:
       expr* term = terms.get(i);
       if (tg.is_marked(term)) continue;
       if (is_rd_wr(term)) {
+	TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
 	progress = true;
 	tg.mark(term);
 	expr_ref e = elimrdwr(term, tg, mdl, todo);
@@ -367,8 +387,9 @@ private:
 	expr* a2 = to_app(e2)->get_arg(0);
 	expr* i1 = to_app(e1)->get_arg(1);
 	expr* i2 = to_app(e2)->get_arg(1);
-	expr* eq = m.mk_eq(i1, i2);
-	if (a1 == a2) {
+	if (a1->get_id() == a2->get_id() && (has_var(i1) || has_var(i2))) {
+	  TRACE("mbp_tg", tout << "processing " << expr_ref(e1, m) << " and " << expr_ref(e2, m););
+	  expr* eq = m.mk_eq(i1, i2);
 	  progress = true;
 	  if (mdl.is_true(eq)) {
 	    tg.add_lit(eq);
@@ -376,7 +397,7 @@ private:
 	  }
 	  else {
 	    tg.add_lit(m.mk_not(eq));
-	    todo.push_back(eq);
+	    todo.push_back(m.mk_not(eq));
 	  }
 	}
       }
