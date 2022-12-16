@@ -474,9 +474,11 @@ namespace mbp {
                       toMerge = false;
                       break;
                     }
-                    if(toMerge)
-                      merge(*congr_candidate,*res); // store for merging later
-                  }
+		  }
+		  if(toMerge) {
+		    merge(*congr_candidate,*res); // store for merging later
+		    break;
+		  }
                 }
               }
             }
