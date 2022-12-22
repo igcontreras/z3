@@ -198,11 +198,6 @@ namespace mbp {
           void operator()(ptr_vector<term> &ts);
         };
 
-        // -- disequalities added for output
-        vector<std::pair<term*,term*>> m_deq_pairs;
-        // -- maybe they are not necessary since they are in the original formula
-        vector<ptr_vector<term>> m_deq_distinct;
-
         void mark_non_ground(func_decl_ref_vector &vars);
         template <bool remove> void compute_non_ground(app_ref_vector &vars);
         void set_prop_ground(bool v) { m_prop_ground = v; }

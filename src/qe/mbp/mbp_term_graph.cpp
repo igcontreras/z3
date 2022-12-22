@@ -86,6 +86,10 @@ namespace mbp {
         unsigned m_mark3:1;
         // -- is an interpreted constant
         unsigned m_interpreted:1;
+        // caches whether m_expr is an equality
+        unsigned m_is_eq: 1;
+	// caches whether m_expr is an inequality
+        unsigned m_is_neq: 1;
 
         // -- the term is a compound term can be rewritten to be ground or it is a ground constant
         unsigned m_gr:1;
@@ -130,8 +134,9 @@ namespace mbp {
       public:
         term(expr_ref const &v, u_map<term *> &app2term)
           : m_expr(v), m_root(this), m_next(this),
-              m_mark(false), m_mark2(false), m_interpreted(false) {
-          if (!is_app(m_expr))
+	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)) {
+	  m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
+	  if (!is_app(m_expr))
             return;
           for (expr *e : *to_app(m_expr)) {
             term *t = app2term[e->get_id()];
@@ -183,6 +188,8 @@ namespace mbp {
         }
 
         unsigned get_id() const { return m_expr->get_id();}
+        bool is_eq_neq() const { return m_is_eq || m_is_neq; }
+        bool is_neq() const { return m_is_neq; }
 
         unsigned get_decl_id() const { return is_app(m_expr) ? to_app(m_expr)->get_decl()->get_id() : m_expr->get_id(); }
 
@@ -495,6 +502,10 @@ namespace mbp {
         merge(*internalize_term(a1), *internalize_term(a2));
         merge_flush();
         SASSERT(m_merge.empty());
+	expr* eq = m.mk_eq(a1, a2);
+	expr* eq2 = m.mk_eq(a2, a1);
+	if(!get_term(eq2))
+	  mk_term(eq);
     }
 
     void term_graph::internalize_distinct(expr *d) {
@@ -505,21 +516,24 @@ namespace mbp {
         ++*tsit = internalize_term(arg);
       }
       m_add_deq(ts);
+      SASSERT(false && "internalizing distinct not supported");
     }
 
     void term_graph::internalize_deq(expr *a1, expr *a2) {
       // TODO: what do not add disequalities of interpreted terms? (e.g. 1 != 2)
       add_deq_terms(internalize_term(a1), internalize_term(a2));
+      expr* deq = m.mk_not(m.mk_eq(a1, a2));
+      expr* deq2 = m.mk_not(m.mk_eq(a2, a1));
+      if(!get_term(deq2))
+	mk_term(deq);
     }
 
     void term_graph::add_deq_terms(term *t1, term *t2) {
       m_add_deq(t1, t2);
-      m_deq_pairs.push_back({t1, t2}); // for output
     }
 
     void term_graph::add_deq_terms(ptr_vector<term>& ts) {
       m_add_deq(ts);
-      m_deq_distinct.push_back(ts);
     }
 
   void term_graph::internalize_lit(expr * lit) {
@@ -926,6 +940,14 @@ namespace mbp {
         }
 
         for (term * t : m_terms) {
+	    if (t->is_neq()) {
+	      term* const* eq = term::children(t).begin();
+	      expr* l =  (*term::children(*eq).begin())->get_expr();
+	      expr* r =  (*term::children(*eq).begin() + 1)->get_expr();
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(l)),
+				    ::to_app(mk_app<false>(r))));
+	    }
+	    if (t->is_eq_neq()) continue;
             if (!t->is_root())
                 continue;
             else if (all_equalities)
@@ -933,12 +955,7 @@ namespace mbp {
             else
                 mk_equalities(*t, lits);
         }
-
-        for (auto p : m_deq_pairs) {
-            lits.push_back(
-                mk_neq(m, ::to_app(mk_app<false>(p.first->get_expr())),
-                       ::to_app(mk_app<false>(p.second->get_expr()))));
-        }
+	SASSERT(m_deq_distinct.empty());
     }
 
     void term_graph::to_lits_qe_lite(expr_ref_vector &lits) {
@@ -951,18 +968,22 @@ namespace mbp {
         }
 
         for (term *t : m_terms) {
-          if (!t->is_root())
+	  // the following are output using representatives, which may contain
+	  // variables that could not be eliminated
+          if (t->is_neq()) {
+	      term* const* eq = term::children(t).begin();
+	      expr* l =  (*term::children(*eq).begin())->get_expr();
+	      expr* r =  (*term::children(*eq).begin() + 1)->get_expr();
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<true>(l)),
+				    ::to_app(mk_app<true>(r))));
+	  }
+	  if (t->is_eq_neq()) continue;
+	  if (!t->is_root())
             continue;
           else
             mk_qe_lite_equalities(*t,lits);
         }
-
-        // the following are output using representatives, which may contain
-        // variables that could not be eliminated
-        for (auto p : m_deq_pairs) {
-          lits.push_back(mk_neq(m, ::to_app(mk_app<true>(p.first->get_expr())),
-                                ::to_app(mk_app<true>(p.second->get_expr()))));
-        }
+	SASSERT(m_deq_distinct.empty());
     }
 
   // assumes that ground terms have been computed and picked as root if exist
@@ -979,6 +1000,14 @@ namespace mbp {
       }
 
       for (term *t : m_terms) {
+	if (t->is_neq()) {
+	      term* const* eq = term::children(t).begin();
+	      term& l =  (*term::children(*eq).begin())->get_root();
+	      term& r =  (*term::children(*eq).begin() + 1)->get_root();
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(l.get_expr())),
+				    ::to_app(mk_app<false>(r.get_expr()))));
+	}
+	if (t->is_eq_neq()) continue;
         if (!t->is_root())
           continue;
         else if(!t->is_ground()) // a root that is not gr; nothing to do
@@ -989,14 +1018,7 @@ namespace mbp {
           mk_gr_equalities(*t, lits);
         }
       }
-
-      for (auto p : m_deq_pairs) {
-        term &t1 = p.first->get_root();
-        term &t2 = p.second->get_root();
-        if(t1.is_ground() && t2.is_ground())
-          lits.push_back(mk_neq(m, mk_app_core<false>(t1.get_expr()),
-                                mk_app_core<false>(t2.get_expr())));
-      }
+      SASSERT(m_deq_distinct.empty());
       // TODO: do for m_deq_distinct?
     }
 
@@ -1077,7 +1099,7 @@ namespace mbp {
             ptr_vector<term> worklist;
             for (term * t : m_tg.m_terms) {
                 // skip pure terms
-                if (!in_term2app(*t)) {
+	        if (!in_term2app(*t) && !t->is_eq_neq()) {
                     worklist.push_back(t);
                     t->set_mark(true);
                 }
@@ -1186,6 +1208,7 @@ namespace mbp {
             m_decl2terms.reset();
             m_decls.reset();
             for (term *t : m_tg.m_terms) {
+	        if (t->is_eq_neq()) continue;
                 expr* e = t->get_expr();
                 if (!is_app(e)) continue;
                 if (!is_projected(*t)) continue;
@@ -1295,6 +1318,7 @@ namespace mbp {
         template<bool pure>
         void mk_equalities(expr_ref_vector &res) {
             for (term *t : m_tg.m_terms) {
+	        if (t->is_eq_neq()) continue;
                 if (!t->is_root()) continue;
                 if (!m_root2rep.contains(t->get_id())) continue;
                 if (pure)
@@ -1471,6 +1495,7 @@ namespace mbp {
             };
             model::scoped_model_completion _smc(mdl, true);
             for (term *t : m_tg.m_terms) {
+	        if (t->is_eq_neq()) continue;
                 expr* a = t->get_expr();
                 if (!is_app(a)) 
                     continue;
@@ -1486,6 +1511,7 @@ namespace mbp {
         expr_ref_vector shared_occurrences(family_id fid) {
             expr_ref_vector result(m);
             for (term *t : m_tg.m_terms) {
+	        if (t->is_eq_neq()) continue;
                 expr* e = t->get_expr();
                 if (e->get_sort()->get_family_id() != fid) continue;
                 for (term * p : term::parents(t->get_root())) {
@@ -1510,6 +1536,7 @@ namespace mbp {
 
             ptr_vector<term> worklist;
             for (term * t : m_tg.m_terms) {
+	        if (t->is_eq_neq()) continue;
                 worklist.push_back(t);
                 t->set_mark(true);
             }
@@ -1691,10 +1718,12 @@ namespace mbp {
 
         // now add disequalities
         for (auto it = m_tg.m_terms.begin(); it != m_tg.m_terms.end() - 1; it++) {
-          if (is_ground_or_const(**it))
+	  if ((*it)->is_eq_neq()) continue;
+	  if (is_ground_or_const(**it))
             continue;
 
           for (auto it2 = it + 1; it2 != m_tg.m_terms.end(); it2++) {
+	    if ((*it2)->is_eq_neq()) continue;
             if (is_ground_or_const(**it2))
               continue;
             if (have_same_top_operand((*it)->get_expr(), (*it2)->get_expr()) &&
@@ -2110,10 +2139,11 @@ namespace mbp {
 
   expr_ref_vector term_graph::non_ground_terms() {
     expr_ref_vector res(m);
-    for (auto &t : m_terms)
+    for (auto &t : m_terms) {
+      if (t->is_eq_neq()) continue;
       if(!t->is_ground())
          res.push_back(t->get_expr());
-
+    }
     return res;
   }
 }
