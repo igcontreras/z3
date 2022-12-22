@@ -15,17 +15,19 @@ namespace check_uninterp_consts_ns {
   struct found {};
   struct proc {
     app_ref_vector &m_vars;
-    proc(app_ref_vector &vars) : m_vars(vars) {}
+    bool m_only_arr;
+    array_util m_arr;
+    proc(app_ref_vector &vars, bool only_arr = false) : m_vars(vars), m_only_arr(only_arr), m_arr(m_vars.get_manager()) {}
     void operator()(expr *n) const {}
     void operator()(app *n) {
-      if (is_uninterp_const(n) && m_vars.contains(n)) throw found();
+      if (is_uninterp_const(n) && m_vars.contains(n) && (!m_only_arr || m_arr.is_array(n))) throw found();
     }
   };
 } // namespace check_uninterp_consts_ns
 
 // check if e contains any apps from vars
-bool contains_vars(expr *e, app_ref_vector &vars) {
-  check_uninterp_consts_ns::proc proc(vars);
+bool contains_vars(expr *e, app_ref_vector &vars, bool only_arr = false) {
+  check_uninterp_consts_ns::proc proc(vars, only_arr);
   try {
     for_each_expr(proc, e);
   }
@@ -33,10 +35,10 @@ bool contains_vars(expr *e, app_ref_vector &vars) {
   return false;
 }
 
-bool contains_var(expr *e, app_ref var) {
+bool contains_var(expr *e, app_ref var, bool only_arr = false) {
   app_ref_vector vars(var.get_manager());
   vars.push_back(var);
-  check_uninterp_consts_ns::proc proc(vars);
+  check_uninterp_consts_ns::proc proc(vars, only_arr);
   try {
     for_each_expr(proc, e);
   }
@@ -64,6 +66,10 @@ private:
 
   bool has_var(expr* t) {
     return contains_vars(t, m_vars);
+  }
+
+  bool has_arr_var(expr* t) {
+    return contains_vars(t, m_vars, true);
   }
 
   bool is_var(expr* t) {
@@ -203,11 +209,12 @@ private:
     TRACE("mbp_tg", tout << "added lit  " << eq;);
   }
 
-  expr_ref elimrdwr(expr* term, mbp::term_graph &tg, model& mdl, expr_ref_vector& todo) {
+  expr_ref elimrdwr(expr* term, mbp::term_graph &tg, model& mdl, expr_ref_vector& todo, bool new_arr_eq) {
     SASSERT(is_rd_wr(term));
     expr* wr_ind = to_app(to_app(term)->get_arg(0))->get_arg(1);
     expr* rd_ind = to_app(term)->get_arg(1);
-    expr* eq = m.mk_eq(wr_ind, rd_ind);
+    expr *eq = m.mk_eq(wr_ind, rd_ind);
+    new_arr_eq |= has_arr_var(eq);
     expr_ref e(m);
     if (mdl.is_true(eq)) {
       tg.add_lit(eq);
@@ -336,72 +343,71 @@ private:
   // todo are the literals to be processed
   // progress indicates whether mbp_arr added terms to the term graph
   void mbp_arr(expr_ref_vector& todo, mbp::term_graph& tg, model& mdl, app_ref_vector &vars, bool& progress) {
+    bool new_array_eq = false;
     progress = false;
-    TRACE("mbp_tg", tout << "Before preprocess " << mk_and(todo););
-    preprocess_arr(todo);
-    TRACE("mbp_tg", tout << "After preprocess " << mk_and(todo););
-    vector<expr_ref_vector> indices;
-    for(unsigned i = 0; i < todo.size(); i++) {
-      expr* e = todo.get(i);
-      TRACE("mbp_tg", tout << "processing " << expr_ref(e, m););
-      bool is_not = m.is_not(e, e);
-      if (!(is_app(e) && is_partial_eq(to_app(e)))) { i++; continue; }
-      peq p(to_app(e), m);
-      if (is_arr_write(p.lhs())) {
-	progress = true;
-        elimwreq(p, tg, mdl, is_not, todo);
-      }
-      else if (is_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m)))
-	elimeq(p, tg, vars);
-      todo[i] = m.mk_true();
-    }
-    remove_true(todo);
-    expr_ref_vector terms(m), rdTerms(m);
-    tg.get_terms(terms);
-    for (unsigned i = 0; i < terms.size(); i++) {
-      expr* term = terms.get(i);
-      if (tg.is_marked(term)) continue;
-      if (is_rd_wr(term)) {
-	TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
-	progress = true;
-	tg.mark(term);
-	expr_ref e = elimrdwr(term, tg, mdl, todo);
-	terms.push_back(e);
-	// Assuming that rdterms never return arrays, elimrdwr will
-	// not produce any new partial equalities
-	// for(expr *r : equiv_terms) {
-	// if (should_create_peq(r, e))
-	// todo.push_back(mk_peq(r, e)); }
-      }
-      else if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars)) {
-	tg.mark(term);
-	rdTerms.push_back(term);
-      }
-    }
-
-    for (unsigned i = 0; i < rdTerms.size(); i++) {
-      for (unsigned j = i+1; j < rdTerms.size(); j++) {
-	expr* e1 = rdTerms.get(i);
-	expr* e2 = rdTerms.get(j);
-	expr* a1 = to_app(e1)->get_arg(0);
-	expr* a2 = to_app(e2)->get_arg(0);
-	expr* i1 = to_app(e1)->get_arg(1);
-	expr* i2 = to_app(e2)->get_arg(1);
-	if (a1->get_id() == a2->get_id() && (has_var(i1) || has_var(i2))) {
-	  TRACE("mbp_tg", tout << "processing " << expr_ref(e1, m) << " and " << expr_ref(e2, m););
-	  expr* eq = m.mk_eq(i1, i2);
+    do {
+      new_array_eq = false;
+      TRACE("mbp_tg", tout << "Before preprocess " << mk_and(todo););
+      preprocess_arr(todo);
+      TRACE("mbp_tg", tout << "After preprocess " << mk_and(todo););
+      vector<expr_ref_vector> indices;
+      for(unsigned i = 0; i < todo.size(); i++) {
+	expr* e = todo.get(i);
+	TRACE("mbp_tg", tout << "processing " << expr_ref(e, m););
+	bool is_not = m.is_not(e, e);
+	if (!(is_app(e) && is_partial_eq(to_app(e)))) { i++; continue; }
+	peq p(to_app(e), m);
+	if (is_arr_write(p.lhs())) {
 	  progress = true;
-	  if (mdl.is_true(eq)) {
-	    tg.add_lit(eq);
-	    todo.push_back(eq);
-	  }
-	  else {
-	    tg.add_lit(m.mk_not(eq));
-	    todo.push_back(m.mk_not(eq));
+	  elimwreq(p, tg, mdl, is_not, todo);
+	}
+	else if (is_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m)))
+	  elimeq(p, tg, vars);
+	todo[i] = m.mk_true();
+      }
+      remove_true(todo);
+      expr_ref_vector terms(m), rdTerms(m);
+      tg.get_terms(terms);
+      for (unsigned i = 0; i < terms.size(); i++) {
+	expr* term = terms.get(i);
+	if (tg.is_marked(term)) continue;
+	if (is_rd_wr(term)) {
+	  TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
+	  progress = true;
+	  tg.mark(term);
+	  expr_ref e = elimrdwr(term, tg, mdl, todo, new_array_eq);
+	  terms.push_back(e);
+	}
+	else if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars)) {
+	  tg.mark(term);
+	  rdTerms.push_back(term);
+	}
+      }
+
+      for (unsigned i = 0; i < rdTerms.size(); i++) {
+	for (unsigned j = i+1; j < rdTerms.size(); j++) {
+	  expr* e1 = rdTerms.get(i);
+	  expr* e2 = rdTerms.get(j);
+	  expr* a1 = to_app(e1)->get_arg(0);
+	  expr* a2 = to_app(e2)->get_arg(0);
+	  expr* i1 = to_app(e1)->get_arg(1);
+	  expr* i2 = to_app(e2)->get_arg(1);
+	  if (a1->get_id() == a2->get_id() && (has_var(i1) || has_var(i2))) {
+	    expr* eq = m.mk_eq(i1, i2);
+	    new_array_eq |= has_arr_var(eq);
+	    progress = true;
+	    if (mdl.is_true(eq)) {
+	      tg.add_lit(eq);
+	      todo.push_back(eq);
+	    }
+	    else {
+	      tg.add_lit(m.mk_not(eq));
+	      todo.push_back(m.mk_not(eq));
+	    }
 	  }
 	}
       }
-    }
+    } while(new_array_eq);
   }
 
 public:
@@ -411,7 +417,10 @@ public:
   void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl) {
     if (vars.empty())
       return;
-    for(auto v : vars) m_vars.push_back(v);
+    for(auto v : vars) {
+      SASSERT(m_dt_util.is_datatype(v->_get_sort()) || m_array_util.is_array(v));
+      m_vars.push_back(v);
+    }
     vars.reset();
     expr_ref_vector fml(m);
     mbp::term_graph tg(m);
