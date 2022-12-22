@@ -96,6 +96,7 @@ namespace mbp {
 
         void reset_marks();
         void reset_marks2();
+        void reset_marks3();
         bool marks_are_clear();
 
         template <bool mark> expr *mk_app_core(expr *a);
