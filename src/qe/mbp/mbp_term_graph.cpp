@@ -83,6 +83,7 @@ namespace mbp {
         unsigned m_mark:1;
         // -- general purpose second mark
         unsigned m_mark2:1;
+        unsigned m_mark3:1;
         // -- is an interpreted constant
         unsigned m_interpreted:1;
 
@@ -189,6 +190,8 @@ namespace mbp {
         void set_mark(bool v){m_mark = v;}
         bool is_marked2() const {return m_mark2;} // NSB: where is this used?
         void set_mark2(bool v){m_mark2 = v;}      // NSB: where is this used?
+        bool is_marked3() const {return m_mark3;}
+        void set_mark3(bool v){m_mark3 = v;}
 
         bool is_ground() const {return m_gr;}
         void set_gr(bool v) {m_gr = v;}
@@ -781,6 +784,12 @@ namespace mbp {
         }
     }
 
+    void term_graph::reset_marks3() {
+        for (term *t : m_terms) {
+            t->set_mark3(false);
+        }
+    }
+
     bool term_graph::marks_are_clear() {
         for (term * t : m_terms) {
           if (t->is_marked()) return false;
@@ -793,6 +802,7 @@ namespace mbp {
 
       for (auto c : term::children(t1)) {
         descendants.push_back(c);
+	c->set_mark3(true);
       }
 
       term *t1_root = &t1.get_root();
@@ -800,10 +810,13 @@ namespace mbp {
       while(!descendants.empty()) {
         d = descendants.back();
         descendants.pop_back();
-        if (t1_root == &d->get_root())
+        if (t1_root->get_id() == d->get_root().get_id())
           return true;
-        for (auto c : term::children(d)) {
-          descendants.push_back(c);
+        for (auto c : term::children(d->get_root())) {
+	  if (!c->is_marked3()) {
+	    c->set_mark3(true);
+	    descendants.push_back(c);
+	  }
         }
       }
       return false;
@@ -869,9 +882,10 @@ namespace mbp {
           r->set_mark(true);
           r = &r->get_next();
         }
-
+	reset_marks3();
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
             it->set_mark(true);
+	    reset_marks3();
             if (is_cyclic(*it)) // never pick cyclic terms
               continue;
             else if (term_lt(*it, *r)) { r = it; }
