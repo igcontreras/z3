@@ -129,8 +129,7 @@ private:
     }
   }
 
-  void elimwreq(expr* e, mbp::term_graph &tg, model& mdl, bool is_neg) {
-    peq p(to_app(e), m);
+  void elimwreq(peq p, mbp::term_graph &tg, model& mdl, bool is_neg) {
     SASSERT(is_arr_write(p.lhs()));
     TRACE("mbp_tg", tout << "processing " << expr_ref(p.mk_peq(), m););
     vector<expr_ref_vector> indices;
@@ -244,8 +243,8 @@ private:
       expr* eq = m.mk_eq(m.mk_app(d, v), u);
       tg.add_var(u);
       tg.add_lit(eq);
-      tg.mark(u);
-      tg.mark(m.mk_app(d, v));
+      tg.mark2(u);
+      tg.mark2(m.mk_app(d, v));
       vars.push_back(u);
       if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
 	m_vars.push_back(u);
@@ -292,26 +291,27 @@ private:
     unsigned sz = 0;
     bool progress = false;
     do {
+      TRACE("mbp_tg", tout << "Iterating over terms of tg";);
       progress = false;
       tg.get_terms(terms);
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
 	expr* term = terms.get(i);
-	if (tg.is_marked(term)) continue;
+	if (tg.is_marked2(term)) continue;
 	if (is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0))) {
-	  tg.mark(term);
+	  tg.mark2(term);
 	  progress = true;
 	  rm_select(term, tg, mdl, vars);
 	  continue;
 	}
 	if (is_constructor_app(term, cons, rhs)) {
-	  tg.mark(term);
+	  tg.mark2(term);
 	  progress = true;
 	  deconstruct_eq(cons, rhs, tg);
 	  continue;
 	}
 	if (m.is_not(term, f) && is_constructor_app(f, cons, rhs)) {
-	  tg.mark(term);
+	  tg.mark2(term);
           progress = true;
 	  deconstruct_neq(cons, rhs, tg, mdl);
 	  continue;
@@ -326,47 +326,52 @@ private:
   bool mbp_arr(expr_ref_vector& todo, mbp::term_graph& tg, model& mdl, app_ref_vector &vars) {
     vector<expr_ref_vector> indices;
     expr_ref_vector terms(m), rdTerms(m);
-    bool progress = false;
+    expr_ref e(m), rdEq(m), rdDeq(m);
+    expr* nt, *term;
+    bool progress = false, is_neg = false;
     unsigned sz = 0;
     do {
+      TRACE("mbp_tg", tout << "Iterating over terms of tg";);
       progress = false;
       terms.reset();
+      rdTerms.reset();
       tg.get_terms(terms);
       // initialize sz in first iteration
       sz = sz == 0 ? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
-	expr* term = terms.get(i);
-	if (tg.is_marked(term)) continue;
+	term = terms.get(i);
+	if (tg.is_marked2(term)) continue;
 	TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
 	if (should_create_peq(term)) {
 	  // rewrite array eq as peq
-	  tg.mark(term);
+	  tg.mark2(term);
 	  progress = true;
-	  expr* peq = mk_peq(to_app(term)->get_arg(0), to_app(term)->get_arg(1)).mk_peq();
-	  tg.add_lit(peq);	 
+	  e = mk_peq(to_app(term)->get_arg(0), to_app(term)->get_arg(1)).mk_peq();
+	  tg.add_lit(e);
 	  continue;
 	}
-	expr* nt = term;
-	bool is_neg = m.is_not(term, nt);
+	nt = term;
+	is_neg = m.is_not(term, nt);
 	if (is_app(nt) && is_partial_eq(to_app(nt))) {
+	  TRACE("mbp_tg", tout << "processing " << expr_ref(nt, m););
 	  peq p(to_app(nt), m);
 	  if (is_arr_write(p.lhs())) {
-	    tg.mark(nt);
-	    tg.mark(term);
+	    tg.mark2(nt);
+	    tg.mark2(term);
 	    progress = true;
-	    elimwreq(nt, tg, mdl, is_neg);
+	    elimwreq(p, tg, mdl, is_neg);
 	    continue;
 	  }
 	  if (is_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m))) {
-	    tg.mark(nt);
-	    tg.mark(term);
+	    tg.mark2(nt);
+	    tg.mark2(term);
 	    progress = true;
 	    elimeq(p, tg, vars);
 	    continue;
 	  }
 	}
 	if (is_rd_wr(term)) {
-	  tg.mark(term);
+	  tg.mark2(term);
 	  progress = true;
 	  elimrdwr(term, tg, mdl);
 	  continue;
@@ -385,18 +390,18 @@ private:
 	  expr* i1 = to_app(e1)->get_arg(1);
 	  expr* i2 = to_app(e2)->get_arg(1);
 	  if (a1->get_id() == a2->get_id() && (has_var(i1) || has_var(i2))) {
-	    expr* eq = m.mk_eq(i1, i2);
-	    if (!tg.is_marked(eq) && mdl.is_true(eq)) {
+	    rdEq = m.mk_eq(i1, i2);
+	    if (!tg.is_marked2(rdEq) && mdl.is_true(rdEq)) {
 	      progress = true;
-	      tg.add_lit(eq);
-              tg.mark(eq);
+	      tg.add_lit(rdEq);
+              tg.mark2(rdEq);
 	      continue;
 	    }
-	    eq = m.mk_not(eq);
-	    if (!tg.is_marked(eq) && mdl.is_true(eq)) {
+	    rdDeq = m.mk_not(rdEq);
+	    if (!tg.is_marked2(rdDeq) && mdl.is_true(rdDeq)) {
 	      progress = true;
-	      tg.add_lit(eq);
-              tg.mark(eq);
+	      tg.add_lit(rdDeq);
+              tg.mark2(rdDeq);
 	      continue;
 	    }
 	  }

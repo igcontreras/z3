@@ -423,7 +423,7 @@ namespace mbp {
         return m_app2term.find (a->get_id(), res) ? res : nullptr;
     }
 
-    void term_graph::mark(expr *e) {
+    void term_graph::mark2(expr *e) {
       SASSERT(is_internalized(e));
       term* res;
       m_app2term.find(e->get_id(), res);
@@ -431,8 +431,8 @@ namespace mbp {
       res->set_mark2(true);
     }
 
-    bool term_graph::is_marked(expr *e) {
-      SASSERT(is_internalized(e));
+    bool term_graph::is_marked2(expr *e) {
+      if (!is_internalized(e)) return false;
       term *res;
       m_app2term.find(e->get_id(), res);
       SASSERT(res);
@@ -530,8 +530,9 @@ namespace mbp {
       expr* deq = m.mk_not(m.mk_eq(a1, a2));
       expr* deq2 = m.mk_not(m.mk_eq(a2, a1));
       if(!get_term(deq2)) {
+	term* eq_term = mk_term(m.mk_eq(a1, a2));
 	term* deq_term = mk_term(deq);
-	(*term::children(deq_term).begin())->set_neq_child();
+	eq_term->set_neq_child();
       }
     }
 
