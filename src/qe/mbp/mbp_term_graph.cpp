@@ -531,8 +531,8 @@ namespace mbp {
       expr* deq2 = m.mk_not(m.mk_eq(a2, a1));
       if(!get_term(deq2)) {
 	term* eq_term = mk_term(m.mk_eq(a1, a2));
-	term* deq_term = mk_term(deq);
 	eq_term->set_neq_child();
+	mk_term(deq);
       }
     }
 
@@ -950,10 +950,14 @@ namespace mbp {
         for (term * t : m_terms) {
 	    if (t->is_neq()) {
 	      term* const* eq = term::children(t).begin();
-	      expr* l =  (*term::children(*eq).begin())->get_expr();
-	      expr* r =  (*term::children(*eq).begin() + 1)->get_expr();
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(l)),
-				    ::to_app(mk_app<false>(r))));
+	      expr* ch[2];
+	      unsigned i = 0;
+	      for(auto c : term::children(*eq)) {
+		ch[i] = c->get_expr();
+		i++;
+	      }
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(ch[0])),
+				    ::to_app(mk_app<false>(ch[1]))));
 	    }
 	    if (t->is_eq_neq()) continue;
             if (!t->is_root())
@@ -980,10 +984,14 @@ namespace mbp {
 	  // variables that could not be eliminated
           if (t->is_neq()) {
 	      term* const* eq = term::children(t).begin();
-	      expr* l =  (*term::children(*eq).begin())->get_expr();
-	      expr* r =  (*term::children(*eq).begin() + 1)->get_expr();
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<true>(l)),
-				    ::to_app(mk_app<true>(r))));
+	      expr* ch[2];
+	      unsigned i = 0;
+	      for(auto c : term::children(*eq)) {
+		ch[i] = c->get_expr();
+		i++;
+	      }
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<true>(ch[0])),
+				    ::to_app(mk_app<true>(ch[1]))));
 	  }
 	  if (t->is_eq_neq()) continue;
 	  if (!t->is_root())
@@ -1010,10 +1018,14 @@ namespace mbp {
       for (term *t : m_terms) {
 	if (t->is_neq()) {
 	      term* const* eq = term::children(t).begin();
-	      term& l =  (*term::children(*eq).begin())->get_root();
-	      term& r =  (*term::children(*eq).begin() + 1)->get_root();
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(l.get_expr())),
-				    ::to_app(mk_app<false>(r.get_expr()))));
+	      term* ch[2];
+	      unsigned i = 0;
+	      for(auto c : term::children(*eq)) {
+		ch[i] = &c->get_root();
+		i++;
+	      }
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(ch[0]->get_expr())),
+				    ::to_app(mk_app<false>(ch[1]->get_expr()))));
 	}
 	if (t->is_eq_neq()) continue;
         if (!t->is_root())
