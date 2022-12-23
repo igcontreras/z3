@@ -90,6 +90,8 @@ namespace mbp {
         unsigned m_is_eq: 1;
 	// caches whether m_expr is an inequality
         unsigned m_is_neq: 1;
+      	// caches whether m_expr is the child of not
+        unsigned m_is_neq_child: 1;
 
         // -- the term is a compound term can be rewritten to be ground or it is a ground constant
         unsigned m_gr:1;
@@ -134,7 +136,7 @@ namespace mbp {
       public:
         term(expr_ref const &v, u_map<term *> &app2term)
           : m_expr(v), m_root(this), m_next(this),
-	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)) {
+	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_neq_child(false) {
 	  m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
 	  if (!is_app(m_expr))
             return;
@@ -190,7 +192,8 @@ namespace mbp {
         unsigned get_id() const { return m_expr->get_id();}
         bool is_eq_neq() const { return m_is_eq || m_is_neq; }
         bool is_neq() const { return m_is_neq; }
-
+        void set_neq_child() { m_is_neq_child = true; }
+        bool is_neq_child() const { return m_is_neq_child; }
         unsigned get_decl_id() const { return is_app(m_expr) ? to_app(m_expr)->get_decl()->get_id() : m_expr->get_id(); }
 
         bool is_marked() const {return m_mark;}
@@ -405,8 +408,10 @@ namespace mbp {
     }
 
   void term_graph::get_terms(expr_ref_vector& res) const {
-    for(term* t: m_terms)
-      res.push_back(t->get_expr());
+    for(term* t: m_terms) {
+      if (!t->is_neq_child())
+	res.push_back(t->get_expr());
+    }
   }
   
   bool term_graph::is_internalized(expr *a) {
@@ -524,8 +529,10 @@ namespace mbp {
       add_deq_terms(internalize_term(a1), internalize_term(a2));
       expr* deq = m.mk_not(m.mk_eq(a1, a2));
       expr* deq2 = m.mk_not(m.mk_eq(a2, a1));
-      if(!get_term(deq2))
-	mk_term(deq);
+      if(!get_term(deq2)) {
+	term* deq_term = mk_term(deq);
+	(*term::children(deq_term).begin())->set_neq_child();
+      }
     }
 
     void term_graph::add_deq_terms(term *t1, term *t2) {
