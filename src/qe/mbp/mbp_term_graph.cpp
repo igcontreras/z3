@@ -77,6 +77,8 @@ namespace mbp {
         expr_ref m_expr; // NSB: to make usable with exprs
         // -- root of the equivalence class
         term* m_root;
+        // -- representative of the equivalence class
+        term* m_repr;
         // -- next element in the equivalence class (cyclic linked list)
         term* m_next;
         // -- general purpose mark
@@ -189,6 +191,7 @@ namespace mbp {
             return true;
         }
 
+        unsigned deg() const { return m_children.size(); }
         unsigned get_id() const { return m_expr->get_id();}
         bool is_eq_neq() const { return m_is_eq || m_is_neq; }
         bool is_neq() const { return m_is_neq; }
@@ -244,6 +247,13 @@ namespace mbp {
         term &get_root() const {return *m_root;}
         bool is_root() const {return m_root == this;}
         void set_root(term &r) {m_root = &r;}
+        term *get_repr() { return m_repr; }
+        bool is_repr() const {return m_repr == this;}
+        void set_repr(term *t) {
+	  SASSERT(get_root().get_id() == t->get_root().get_id());
+	  m_repr = t;
+	}
+        void reset_repr() { m_repr = nullptr; }
         term &get_next() const {return *m_next;}
         void add_parent(term* p) { m_parents.push_back(p); }
 
@@ -271,9 +281,21 @@ namespace mbp {
             while (curr != this);
         }
 
+      // -- make this term the repr of its equivalence class
+      void mk_repr() {
+	SASSERT(!get_repr());
+	term *curr = this;
+	do {
+	  SASSERT(!curr->get_repr());
+	  curr->set_repr(this);
+	  curr = &curr->get_next();
+	}
+	while (curr != this);
+      }
+
         std::ostream& display(std::ostream& out) const {
             out << get_id() << ": " << m_expr
-                << (is_root() ? " R" : "") << " - ";
+                << (is_repr() ? " R" : "") << " - ";
             term const* r = &this->get_next();
             while (r != this) {
                 out << r->get_id() << " ";
@@ -680,7 +702,7 @@ namespace mbp {
     }
 
     template <bool mark> expr_ref term_graph::mk_app(term &r) {
-        SASSERT(r.is_root());
+        SASSERT(r.is_repr());
         if(mark)
           r.set_mark2(true);
 
@@ -699,15 +721,17 @@ namespace mbp {
     }
 
     template<bool mark> expr_ref term_graph::mk_app(expr *a) {
-        term *t = get_term(a);
-        if (!t)
-            return expr_ref(a, m);
-        else
-          return mk_app<mark>(t->get_root());
+      term *t = get_term(a);
+      if (!t)
+	return expr_ref(a, m);
+      else {
+	SASSERT(t->get_repr());
+        return mk_app<mark>(*t->get_repr());
+      }
     }
 
     void term_graph::mk_equalities(term &t, expr_ref_vector &out) {
-        SASSERT(t.is_root());
+        SASSERT(t.is_repr());
         if(t.get_class_size() == 1) return;
         expr_ref rep(mk_app<false>(t), m);
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
@@ -732,7 +756,7 @@ namespace mbp {
     }
 
     void term_graph::mk_qe_lite_equalities(term &t, expr_ref_vector &out) {
-        SASSERT(t.is_root());
+        SASSERT(t.is_repr());
         if (t.get_class_size() == 1)
             return;
 
@@ -763,7 +787,7 @@ namespace mbp {
     }
 
     void term_graph::mk_gr_equalities(term &t, expr_ref_vector &out) {
-      SASSERT(t.is_root());
+      SASSERT(t.is_repr());
       expr_ref rep(m);
 
       for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
@@ -847,18 +871,11 @@ namespace mbp {
     /// Order of preference for roots of equivalence classes
     /// XXX This should be factored out to let clients control the preference
     bool term_graph::term_lt(term const &t1, term const &t2) {
-      // prefer ground over non-ground
       // prefer constants over applications (ground)
       // prefer applications over variables (for non-ground)
       // prefer uninterpreted constants over values
-      // XXX (commented out) prefer non-cyclic
       // prefer smaller expressions over larger ones
-      if(t1.is_ground() && !t2.is_ground()) {
-        return true;
-      }
-      else if (!t1.is_ground() && t2.is_ground()) {
-        return false;
-      }
+
       // -- commented out for performance, pick_root already checks if the term
       // -- is cyclic, but if term_lt should be called outside of pick_root, it
       // -- could be uncommented to prefer non-cyclic terms.
@@ -869,17 +886,6 @@ namespace mbp {
       //   return true;
       // else if (t1_cyclic && !t2_cyclic)
       //   return false;
-
-      if (!t1.is_ground()) { // both are not ground and function applications
-        bool t1_is_var = (to_app(t1.get_expr())->get_num_args() == 0);
-        bool t2_is_var = (to_app(t2.get_expr())->get_num_args() == 0);
-        if (!t1_is_var && t2_is_var)
-          return true;
-        else if (t1_is_var && !t2_is_var)
-          return false;
-        // else, we fall back to the user lt definition
-      }
-
       if (t1.get_num_args() == 0 || t2.get_num_args() == 0) {
         if (t1.get_num_args() == t2.get_num_args()) {
           if (m.is_value(t1.get_expr()) == m.is_value(t2.get_expr()))
@@ -896,39 +902,49 @@ namespace mbp {
       return sz1 < sz2;
     }
 
-  void term_graph::pick_root(term & t){
-        term *r = &t;
-
-        // skip cyclic terms
-        while(is_cyclic(*r)) {
-          r->set_mark(true);
-          r = &r->get_next();
-        }
-	reset_marks3();
-        for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-            it->set_mark(true);
-	    reset_marks3();
-            if (is_cyclic(*it)) // never pick cyclic terms
-              continue;
-            else if (term_lt(*it, *r)) { r = it; }
-        }
-
-        // -- if found something better, make it the new root
-        if (r != &t) {
-            r->mk_root();
-        }
+  bool all_children_picked(term* t) {
+    if (t->deg() == 0) return true;
+    for (term* c : term::children(t)) {
+      if (!c->get_repr()) return false;
+    }
+    return true;
   }
 
-    /// Choose better roots for equivalence classes
-    void term_graph::pick_roots() {
-        SASSERT(marks_are_clear());
-        m_term2app.reset(); // picking roots invalidates cache
-        for (term* t : m_terms) {
-            if (!t->is_marked() && t->is_root())
-                pick_root(*t);
-        }
-        reset_marks();
+  void term_graph::pick_repr_class(term *t) {
+    SASSERT(all_children_picked(t));
+    term *r = t;
+    for (term *it = &t->get_next(); it != t; it = &it->get_next()) {
+      if (!all_children_picked(it)) continue;
+      if ((it->is_ground() && !r->is_ground()) ||
+	  (it->is_ground() && r->is_ground() && term_lt(*it, *r)) ||
+	  term_lt(*it, *r))
+	r = it;
     }
+    r->mk_repr();
+  }
+    /// Choose better repr for equivalence classes
+  void term_graph::pick_repr() {
+    //invalidates cache
+    m_term2app.reset();
+    SASSERT(marks_are_clear());
+    for (term* t : m_terms) t->reset_repr();
+    for (term* t : m_terms) {
+      if (t->deg() == 0 && t->is_ground())
+	pick_repr_class(t);
+    }
+    for (term* t : m_terms) {
+      if (!t->get_repr() && t->deg() != 0)
+	pick_repr_class(t);
+    }
+    for (term* t : m_terms) {
+      if (t->deg() == 0)
+	pick_repr_class(t);
+    }
+    for (term* t : m_terms) {
+      if (!t->get_repr())
+	pick_repr_class(t);
+    }
+  }
 
     void term_graph::display(std::ostream &out) {
         for (term * t : m_terms) {
@@ -937,9 +953,9 @@ namespace mbp {
     }
 
   void term_graph::to_lits(expr_ref_vector & lits, bool all_equalities,
-                               bool repick_roots) {
-        if (repick_roots)
-          pick_roots();
+                               bool repick_repr) {
+        if (repick_repr)
+          pick_repr();
 
         for (expr * a : m_lits) {
             if (is_internalized(a)) {
@@ -960,7 +976,7 @@ namespace mbp {
 				    ::to_app(mk_app<false>(ch[1]))));
 	    }
 	    if (t->is_eq_neq()) continue;
-            if (!t->is_root())
+            if (!t->is_repr())
                 continue;
             else if (all_equalities)
                 mk_all_equalities (*t, lits);
@@ -994,7 +1010,7 @@ namespace mbp {
 				    ::to_app(mk_app<true>(ch[1]))));
 	  }
 	  if (t->is_eq_neq()) continue;
-	  if (!t->is_root())
+	  if (!t->is_repr())
             continue;
           else
             mk_qe_lite_equalities(*t,lits);
@@ -1005,7 +1021,7 @@ namespace mbp {
   // assumes that ground terms have been computed and picked as root if exist
     void term_graph::gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities) {
 
-      pick_roots();
+      pick_repr();
       for (expr *a : m_lits) {
         if (is_internalized(a)) {
           term *t = get_term(a);
@@ -1028,7 +1044,7 @@ namespace mbp {
 				    ::to_app(mk_app<false>(ch[1]->get_expr()))));
 	}
 	if (t->is_eq_neq()) continue;
-        if (!t->is_root())
+        if (!t->is_repr())
           continue;
         else if(!t->is_ground()) // a root that is not gr; nothing to do
           continue;
@@ -1042,9 +1058,9 @@ namespace mbp {
       // TODO: do for m_deq_distinct?
     }
 
-    expr_ref term_graph::to_expr(bool repick_roots) {
+    expr_ref term_graph::to_expr(bool repick_repr) {
       expr_ref_vector lits(m);
-      to_lits(lits, false, repick_roots);
+      to_lits(lits, false, repick_repr);
       return mk_and(lits);
     }
 
@@ -1784,7 +1800,7 @@ namespace mbp {
       void qe_lite(app_ref_vector &vars, expr_ref &fml) {
         m_tg.compute_non_ground<true>(vars);
         // removes from `vars` the variables that have a ground representative
-        m_tg.pick_roots();
+        m_tg.pick_repr();
 
         expr_ref_vector lits(m);
         // uses mark2 to mark the variables that appear in lits

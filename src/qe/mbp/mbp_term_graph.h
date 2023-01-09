@@ -91,8 +91,8 @@ namespace mbp {
         bool is_internalized(expr *a);
 
         bool term_lt(term const &t1, term const &t2);
-        void pick_root (term &t);
-        void pick_roots();
+        void pick_repr_class (term *t);
+        void pick_repr();
 
         void reset_marks();
         void reset_marks2();
