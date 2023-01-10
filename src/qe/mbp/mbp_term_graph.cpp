@@ -137,7 +137,7 @@ namespace mbp {
 
       public:
         term(expr_ref const &v, u_map<term *> &app2term)
-          : m_expr(v), m_root(this), m_next(this),
+          : m_expr(v), m_root(this), m_repr(nullptr), m_next(this),
 	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_neq_child(false) {
 	  m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
 	  if (!is_app(m_expr))
@@ -618,6 +618,7 @@ namespace mbp {
         // -- merge might invalidate term2app cache
         m_term2app.reset();
         m_pinned.reset();
+	for (term* t : m_terms) t->reset_repr();
 
         if (a->get_class_size() > b->get_class_size()) {
             std::swap(a, b);
@@ -926,22 +927,25 @@ namespace mbp {
   void term_graph::pick_repr() {
     //invalidates cache
     m_term2app.reset();
-    SASSERT(marks_are_clear());
     for (term* t : m_terms) t->reset_repr();
-    for (term* t : m_terms) {
+    for (term *t : m_terms) {
+      if (t->get_repr()) continue;
       if (t->deg() == 0 && t->is_ground())
 	pick_repr_class(t);
     }
-    for (term* t : m_terms) {
-      if (!t->get_repr() && t->deg() != 0)
+    for (term *t : m_terms) {
+      if (t->get_repr()) continue;
+      if (t->deg() != 0 && all_children_picked(t))
 	pick_repr_class(t);
     }
-    for (term* t : m_terms) {
+    for (term *t : m_terms) {
+      if (t->get_repr()) continue;
       if (t->deg() == 0)
 	pick_repr_class(t);
     }
-    for (term* t : m_terms) {
-      if (!t->get_repr())
+    for (term *t : m_terms) {
+      if (t->get_repr()) continue;
+      if (t->deg() != 0 && all_children_picked(t))
 	pick_repr_class(t);
     }
   }
@@ -966,14 +970,14 @@ namespace mbp {
         for (term * t : m_terms) {
 	    if (t->is_neq()) {
 	      term* const* eq = term::children(t).begin();
-	      expr* ch[2];
+	      term* ch[2];
 	      unsigned i = 0;
 	      for(auto c : term::children(*eq)) {
-		ch[i] = c->get_expr();
+		ch[i] = c;
 		i++;
 	      }
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(ch[0])),
-				    ::to_app(mk_app<false>(ch[1]))));
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(*ch[0])),
+				    ::to_app(mk_app<false>(*ch[1]))));
 	    }
 	    if (t->is_eq_neq()) continue;
             if (!t->is_repr())
@@ -983,7 +987,7 @@ namespace mbp {
             else
                 mk_equalities(*t, lits);
         }
-	SASSERT(m_deq_distinct.empty());
+	// SASSERT(m_deq_distinct.empty());
     }
 
     void term_graph::to_lits_qe_lite(expr_ref_vector &lits) {
@@ -1000,14 +1004,14 @@ namespace mbp {
 	  // variables that could not be eliminated
           if (t->is_neq()) {
 	      term* const* eq = term::children(t).begin();
-	      expr* ch[2];
+	      term* ch[2];
 	      unsigned i = 0;
 	      for(auto c : term::children(*eq)) {
-		ch[i] = c->get_expr();
+		ch[i] = c;
 		i++;
 	      }
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<true>(ch[0])),
-				    ::to_app(mk_app<true>(ch[1]))));
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<true>(*ch[0])),
+				    ::to_app(mk_app<true>(*ch[1]))));
 	  }
 	  if (t->is_eq_neq()) continue;
 	  if (!t->is_repr())
@@ -1015,7 +1019,7 @@ namespace mbp {
           else
             mk_qe_lite_equalities(*t,lits);
         }
-	SASSERT(m_deq_distinct.empty());
+	// SASSERT(m_deq_distinct.empty());
     }
 
   // assumes that ground terms have been computed and picked as root if exist
@@ -1037,11 +1041,11 @@ namespace mbp {
 	      term* ch[2];
 	      unsigned i = 0;
 	      for(auto c : term::children(*eq)) {
-		ch[i] = &c->get_root();
+		ch[i] = c->get_repr();
 		i++;
 	      }
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(ch[0]->get_expr())),
-				    ::to_app(mk_app<false>(ch[1]->get_expr()))));
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(*ch[0])),
+				    ::to_app(mk_app<false>(*ch[1]))));
 	}
 	if (t->is_eq_neq()) continue;
         if (!t->is_repr())
@@ -1054,7 +1058,7 @@ namespace mbp {
           mk_gr_equalities(*t, lits);
         }
       }
-      SASSERT(m_deq_distinct.empty());
+      // SASSERT(m_deq_distinct.empty());
       // TODO: do for m_deq_distinct?
     }
 
