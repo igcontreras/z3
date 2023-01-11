@@ -1031,7 +1031,7 @@ namespace mbp {
         if (is_internalized(a)) {
           term *t = get_term(a);
 
-          if (is_ground_app_term(t))
+          if (!t->is_eq_neq() && is_ground_app_term(t))
             lits.push_back(::to_app(mk_app<false>(a)));
         }
       }
