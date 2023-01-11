@@ -511,6 +511,7 @@ namespace mbp {
                       toMerge = false;
                       break;
                     }
+		    ch_cngr_it = std::next(ch_cngr_it, 1);
 		  }
 		  if(toMerge) {
 		    merge(*congr_candidate,*res); // store for merging later
