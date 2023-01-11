@@ -918,8 +918,7 @@ namespace mbp {
     for (term *it = &t->get_next(); it != t; it = &it->get_next()) {
       if (!all_children_picked(it)) continue;
       if ((it->is_ground() && !r->is_ground()) ||
-	  (it->is_ground() && r->is_ground() && term_lt(*it, *r)) ||
-	  term_lt(*it, *r))
+	  (it->is_ground() == r->is_ground() && term_lt(*it, *r)))
 	r = it;
     }
     r->mk_repr();
