@@ -295,10 +295,10 @@ namespace mbp {
 
         std::ostream& display(std::ostream& out) const {
             out << get_id() << ": " << m_expr
-                << (is_repr() ? " R" : "") << " - ";
+                << (is_repr() ? " R" : "") << (is_ground() ? " G" : "") << " deg:" << deg() << " - ";
             term const* r = &this->get_next();
             while (r != this) {
-                out << r->get_id() << " ";
+	      out << r->get_id() << " " << (r->is_ground() ? " G" : "") << " ";
                 r = &r->get_next();
             }
             out << "\n";
@@ -510,7 +510,7 @@ namespace mbp {
                   auto ch_cngr = term::children(congr_candidate);
                   auto ch_cngr_it = ch_cngr.begin();
                   for(auto ch_new : term::children(res)) {
-                    if(&((*ch_cngr_it)->get_root()) != &(ch_new->get_root())) {
+                    if((*ch_cngr_it)->get_root().get_id() != ch_new->get_root().get_id()) {
                       toMerge = false;
                       break;
                     }
