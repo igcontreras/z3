@@ -396,7 +396,7 @@ public:
 	  vars.push_back(v);
       }
       TRACE("qe", tout << "After mbp_tg:\n"
-                       << fml << "\n"
+	    << fml << " models " << mdl.is_true(fml) << "\n"
                        << "Vars: " << vars << "\n";);
     }
     
