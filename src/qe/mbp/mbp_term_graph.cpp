@@ -447,7 +447,7 @@ namespace mbp {
 
     void term_graph::mark2(expr *e) {
       SASSERT(is_internalized(e));
-      term* res;
+      term* res = nullptr;
       m_app2term.find(e->get_id(), res);
       SASSERT(res);
       res->set_mark2(true);

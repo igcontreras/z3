@@ -47,6 +47,25 @@ bool contains_var(expr *e, app_ref var, bool only_arr = false) {
   return false;
 }
 
+void remove_peq(expr* inp, expr_ref& op) {
+  ast_manager& m = op.get_manager();
+  expr_ref_vector fml(m);
+  flatten_and(inp, fml);
+  unsigned i = 0, j = fml.size();
+  expr *lit, *lhs, *rhs;
+  auto is_peq = [] (expr* e) {
+    return is_app(e) && is_partial_eq(to_app(e));
+  };
+  for (;i < j;) {
+    lit = fml.get(i);
+    if ( is_peq(lit) || (m.is_eq(lit, lhs, rhs) && (is_peq(lhs) || is_peq(rhs))) )
+      fml[i] = fml.get(--j);
+    else
+      i++;
+  }
+  fml.shrink(j);
+  op = mk_and(fml);
+}
 class qe_mbp_tg::impl {
 private:
   ast_manager& m;
@@ -117,17 +136,6 @@ private:
 	n_rhs = e2;
       }
       return peq(n_lhs, n_rhs, indices, m);
-  }
-
-  void preprocess_arr(expr_ref_vector& fml) {
-    int j = 0;
-    vector<expr_ref_vector> empty;
-    for(expr* e : fml) {
-      if (should_create_peq(e)) {
-	fml[j] = mk_peq(to_app(e)->get_arg(0), to_app(e)->get_arg(1)).mk_peq();
-      }
-      j++;
-    }
   }
 
   void elimwreq(peq p, mbp::term_graph &tg, model& mdl, bool is_neg) {
@@ -452,6 +460,7 @@ public:
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()););
     tg.compute_non_ground<true>(m_vars);
     inp = tg.to_ground_expr();
+    remove_peq(inp, inp);
     TRACE("mbp_tg", tout << "after mbp tg " << inp;);
   }
 };
