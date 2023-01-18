@@ -534,8 +534,12 @@ namespace mbp {
         merge_flush();
         SASSERT(m_merge.empty());
 	expr* eq = m.mk_eq(a1, a2);
-	expr* eq2 = m.mk_eq(a2, a1);
-	if(!get_term(eq2))
+	term* res = get_term(eq);
+	if (!res)
+	  mk_term(eq);
+	eq = m.mk_eq(a2, a1);
+	res = get_term(eq);
+	if (!res)
 	  mk_term(eq);
     }
 
@@ -553,13 +557,20 @@ namespace mbp {
     void term_graph::internalize_deq(expr *a1, expr *a2) {
       // TODO: what do not add disequalities of interpreted terms? (e.g. 1 != 2)
       add_deq_terms(internalize_term(a1), internalize_term(a2));
-      expr* deq = m.mk_not(m.mk_eq(a1, a2));
-      expr* deq2 = m.mk_not(m.mk_eq(a2, a1));
-      if(!get_term(deq2)) {
-	term* eq_term = mk_term(m.mk_eq(a1, a2));
-	eq_term->set_neq_child();
+      expr* eq = m.mk_eq(a1, a2);
+      term* eq_term = mk_term(eq);
+      eq_term->set_neq_child();
+      expr* deq = m.mk_not(eq);
+      term* res = get_term(deq);
+      if (!res)
 	mk_term(deq);
-      }
+      eq = m.mk_eq(a2, a1);
+      eq_term = mk_term(eq);
+      eq_term->set_neq_child();
+      deq = m.mk_not(eq);
+      res = get_term(deq);
+      if (!res)
+	mk_term(deq);
     }
 
     void term_graph::add_deq_terms(term *t1, term *t2) {
