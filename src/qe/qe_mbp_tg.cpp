@@ -3,6 +3,7 @@
 #include "ast/ast.h"
 #include "ast/ast_util.h"
 #include "ast/for_each_expr.h"
+#include "model/model.h"
 #include "qe/mbp/mbp_term_graph.h"
 #include "qe/mbp/mbp_arrays.h"
 #include "util/debug.h"
@@ -190,11 +191,24 @@ private:
     }
   }
 
-  void elimeq(peq p, mbp::term_graph &tg, app_ref_vector& vars) {
+  void elimeq(peq p, mbp::term_graph &tg, app_ref_vector& vars, model& mdl) {
     app_ref_vector aux_consts(m);
     expr_ref eq(m);
+    expr_ref store(m);
     eq = p.mk_eq(aux_consts, true);
-    for(app* a : aux_consts) vars.push_back(a);
+    vector<expr_ref_vector> indices;
+    p.get_diff_indices(indices);
+    vector<expr_ref_vector>::iterator itr = indices.begin();
+    unsigned i = 0;
+    for(app* a : aux_consts) {
+      vars.push_back(a);
+      auto const& indx =  std::next(itr, i);
+      SASSERT(indx.size() == 1);
+      expr *args[2] = {to_app(p.lhs()), to_app(indx->get(0))};
+      store = m_array_util.mk_select(2, args);
+      mdl.register_decl(a->get_decl(), 	mdl(store));
+      i++;
+    }
     tg.add_lit(eq);
     tg.add_lit(m.mk_true());
     tg.add_eq(p.mk_peq(), m.mk_true());
@@ -366,7 +380,7 @@ private:
 	    tg.mark2(nt);
 	    tg.mark2(term);
 	    progress = true;
-	    elimeq(p, tg, vars);
+	    elimeq(p, tg, vars, mdl);
 	    continue;
 	  }
 	}
