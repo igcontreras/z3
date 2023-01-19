@@ -72,6 +72,17 @@ namespace mbp {
         return true;
     }
 
+  bool term_graph::is_ground(expr *e) {
+    try {
+      is_ground_ns::proc v(m_is_var);
+      quick_for_each_expr(v, e);
+    }
+    catch (const is_ground_ns::found &) {
+      return false;
+    }
+    return true;
+  }
+
     class term {
         // -- an app represented by this term
         expr_ref m_expr; // NSB: to make usable with exprs
@@ -96,6 +107,8 @@ namespace mbp {
         unsigned m_is_neq_child: 1;
 
         // -- the term is a compound term can be rewritten to be ground or it is a ground constant
+        unsigned m_cgr:1;
+        // -- the term is ground
         unsigned m_gr:1;
 
         // -- terms that contain this term as a child (only maintained for root
@@ -138,7 +151,7 @@ namespace mbp {
       public:
         term(expr_ref const &v, u_map<term *> &app2term)
           : m_expr(v), m_root(this), m_repr(nullptr), m_next(this),
-	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_neq_child(false) {
+	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_neq_child(false), m_cgr(0), m_gr(0) {
 	  m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
 	  if (!is_app(m_expr))
             return;
@@ -206,7 +219,10 @@ namespace mbp {
         bool is_marked3() const {return m_mark3;}
         void set_mark3(bool v){m_mark3 = v;}
 
-        bool is_ground() const {return m_gr;}
+        bool is_cgr() const {return m_cgr;}
+        void set_cgr(bool v) {m_cgr = v;}
+
+        bool is_gr() const {return m_gr;}
         void set_gr(bool v) {m_gr = v;}
 
         bool is_class_gr() const { return m_root->m_class_props.m_gr_class; }
@@ -295,10 +311,10 @@ namespace mbp {
 
         std::ostream& display(std::ostream& out) const {
             out << get_id() << ": " << m_expr
-                << (is_repr() ? " R" : "") << (is_ground() ? " G" : "") << " deg:" << deg() << " - ";
+                << (is_repr() ? " R" : "") << (is_gr() ? " G" : "") << (is_cgr() ? " CG" : "") << " deg:" << deg() << " - ";
             term const* r = &this->get_next();
             while (r != this) {
-	      out << r->get_id() << " " << (r->is_ground() ? " G" : "") << " ";
+	      out << r->get_id() << " " << (r->is_cgr() ? " CG" : "") << " ";
                 r = &r->get_next();
             }
             out << "\n";
@@ -464,6 +480,7 @@ namespace mbp {
     term *term_graph::mk_term(expr *a) {
         expr_ref e(a, m);
         term * t = alloc(term, e, m_app2term);
+	t->set_gr(is_ground(a));
         if (t->get_num_args() == 0 && m.is_unique_value(a))
             t->mark_as_interpreted();
 
@@ -807,7 +824,7 @@ namespace mbp {
       expr_ref rep(m);
 
       for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-        if (it->is_ground()) {
+        if (it->is_cgr()) {
           if (!rep) { // make the term if there is another gr term in the equiv.
                       // class
               rep = mk_app<false>(t);
@@ -818,15 +835,16 @@ namespace mbp {
     }
 
     // TODO: review this
+    // Assumes that cgroundness has been computed
     void term_graph::mk_all_gr_equalities(term &t, expr_ref_vector &out) {
       mk_gr_equalities(t, out);
 
       for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-        if (!m_is_var(it->get_expr()) || is_ground_app_term(it))
+        if (!m_is_var(it->get_expr()) || it->is_cgr())
           continue;
         expr *a1 = mk_app_core<false>(it->get_expr());
         for (term *it2 = &it->get_next(); it2 != &t; it2 = &it2->get_next()) {
-          if (!m_is_var(it->get_expr()) || is_ground_app_term(it))
+          if (!m_is_var(it->get_expr()) || it->is_cgr())
             continue;
           expr *a2 = mk_app_core<false>(it2->get_expr());
           out.push_back(m.mk_eq(a1, a2));
@@ -931,8 +949,8 @@ namespace mbp {
     term *r = t;
     for (term *it = &t->get_next(); it != t; it = &it->get_next()) {
       if (!all_children_picked(it)) continue;
-      if ((it->is_ground() && !r->is_ground()) ||
-	  (it->is_ground() == r->is_ground() && term_lt(*it, *r)))
+      if ((it->is_cgr() && !r->is_cgr()) ||
+	  (it->is_cgr() == r->is_cgr() && term_lt(*it, *r)))
 	r = it;
     }
     r->mk_repr();
@@ -944,7 +962,7 @@ namespace mbp {
     for (term* t : m_terms) t->reset_repr();
     for (term *t : m_terms) {
       if (t->get_repr()) continue;
-      if (t->deg() == 0 && t->is_ground())
+      if (t->deg() == 0 && t->is_cgr())
 	pick_repr_class(t);
     }
     for (term *t : m_terms) {
@@ -1044,13 +1062,13 @@ namespace mbp {
         if (is_internalized(a)) {
           term *t = get_term(a);
 
-          if (!t->is_eq_neq() && is_ground_app_term(t))
+          if (!t->is_eq_neq() && t->is_cgr())
             lits.push_back(::to_app(mk_app<false>(a)));
         }
       }
 
       for (term *t : m_terms) {
-	if (t->is_neq()) {
+	if (t->is_neq() && t->is_cgr()) {
 	      term* const* eq = term::children(t).begin();
 	      term* ch[2];
 	      unsigned i = 0;
@@ -1064,7 +1082,7 @@ namespace mbp {
 	if (t->is_eq_neq()) continue;
         if (!t->is_repr())
           continue;
-        else if(!t->is_ground()) // a root that is not gr; nothing to do
+        else if(!t->is_cgr()) // a root that is not gr; nothing to do
           continue;
         else if (all_equalities)
           mk_all_gr_equalities(*t, lits);
@@ -1664,7 +1682,7 @@ namespace mbp {
       }
 
       static bool is_ground_or_const(const term &t) {
-        return t.is_ground() || to_app(t.get_expr())->get_num_args() == 0;
+        return t.is_cgr() || to_app(t.get_expr())->get_num_args() == 0;
       }
 
       // -- Checks if two compatible terms (e.g. f(x,y) f(x,z)) form a split
@@ -1688,7 +1706,7 @@ namespace mbp {
           } else if (term::are_deq(**it1, **it2)) {
             may_be_split = false;
             is_split = false;
-          } else if ((*it1)->is_ground() && (*it2)->is_ground()) {
+          } else if ((*it1)->is_cgr() && (*it2)->is_cgr()) {
             if (store_args) {
               diff_args.push_back({*it1, *it2});
             }
@@ -1808,7 +1826,7 @@ namespace mbp {
       ast_manager &m;
 
       static bool is_ground_or_const(const term &t) {
-        return t.is_ground() || to_app(t.get_expr())->get_num_args() == 0;
+        return t.is_cgr() || to_app(t.get_expr())->get_num_args() == 0;
       }
 
     public:
@@ -2194,7 +2212,7 @@ namespace mbp {
     expr_ref_vector res(m);
     for (auto &t : m_terms) {
       if (t->is_eq_neq()) continue;
-      if(!t->is_ground())
+      if(!t->is_cgr())
          res.push_back(t->get_expr());
     }
     return res;
