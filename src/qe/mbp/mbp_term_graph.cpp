@@ -659,6 +659,7 @@ namespace mbp {
 
         // Insert parents of b's old equivalence class into the cg table
         // bottom-up merge of parents
+	// TODO: reimplement using m_cg_table
         for (term *p : term::parents(b)) {
           if (p->is_marked()) {
             term* p_old = m_cg_table.insert_if_not_there(p);
