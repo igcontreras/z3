@@ -385,7 +385,7 @@ public:
 	else
 	  j++;
       }
-      vars.shrink(j);
+      vars.shrink(i);
       qe_mbp_tg mbptg(m, m_params);
       mbptg(vars_to_elim, fml, mdl);
       m_rw(fml);
