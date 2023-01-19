@@ -26,13 +26,18 @@ Notes:
 #include "util/vector.h"
 
 namespace mbp {
-
+  namespace is_ground_ns {
+    struct proc;
+    struct found;
+  }
     class term;
 
     class term_graph {
         class projector;
         class cover;
         class qe;
+        friend struct is_ground_ns::proc;
+        friend struct is_ground_ns::found;
 
         class is_variable_proc : public ::is_variable_proc {
             bool m_exclude;
@@ -89,6 +94,7 @@ namespace mbp {
         void internalize_deq(expr *a1, expr *a2);
 
         bool is_internalized(expr *a);
+        bool is_ground(expr *e);
 
         bool term_lt(term const &t1, term const &t2);
         void pick_repr_class (term *t);
@@ -215,4 +221,15 @@ namespace mbp {
         void push_parents_propagate_gr(term &t);
         add_deq_proc m_add_deq;
     };
+
+  namespace is_ground_ns {
+    struct found{};
+    struct proc {
+	  term_graph::is_variable_proc &m_is_var;
+      proc(term_graph::is_variable_proc &is_var) : m_is_var(is_var) {}
+      void operator()(var *n) const { }
+      void operator()(app const *n) const {if (m_is_var.contains(n->get_decl())) throw found();}
+      void operator()(quantifier *n) const {}
+    };
+  }
 }
