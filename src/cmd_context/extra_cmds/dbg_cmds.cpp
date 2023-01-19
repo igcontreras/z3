@@ -647,7 +647,6 @@ public:
 	SASSERT(false);
 	// TODO: reimplement using construct_ground
         //tg2.mark_non_ground(vars);
-        tg2.set_prop_ground(true);
         tg2.mb_cover(*mdl);
         expr_ref_vector tglits(m);
         tg2.gr_terms_to_lits(tglits, false);
