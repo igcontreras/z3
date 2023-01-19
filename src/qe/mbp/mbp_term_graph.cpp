@@ -127,7 +127,7 @@ namespace mbp {
           // -- disequality sets that the class belongs to
           term_graph::deqs m_deqs;
 
-          class_props() : m_class_size(1) {}
+          class_props() : m_gr_class(0), m_class_size(1) {}
           void merge(class_props& b) {
             m_class_size += b.m_class_size;
             m_gr_class |= b.m_gr_class;
@@ -153,6 +153,7 @@ namespace mbp {
           : m_expr(v), m_root(this), m_repr(nullptr), m_next(this),
 	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_neq_child(false), m_cgr(0), m_gr(0) {
 	  m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
+	  m_children.reset();
 	  if (!is_app(m_expr))
             return;
           for (expr *e : *to_app(m_expr)) {
@@ -368,7 +369,7 @@ namespace mbp {
     for (auto *d : decls) m_decls.insert(d->get_decl());
   }
 
-  void term_graph::is_variable_proc::add_decl(app_ref d) {
+  void term_graph::is_variable_proc::add_decl(app* d) {
     m_decls.insert(d->get_decl());
   }
 
@@ -394,6 +395,7 @@ namespace mbp {
     term_graph::term_graph(ast_manager &man)
         : m(man), m_lits(m), m_pinned(m), m_projector(nullptr),
           m_cover(nullptr) {
+      m_is_var.reset();
       m_plugins.register_plugin(mbp::mk_basic_solve_plugin(m, m_is_var));
       m_plugins.register_plugin(mbp::mk_arith_solve_plugin(m, m_is_var));
     }
@@ -1776,7 +1778,7 @@ namespace mbp {
         bool merged = true;
         while (merged && !splits.empty()) {
           merged = false;
-          for (int i = 0 ; i < splits.size() ; i++) {
+          for (unsigned i = 0 ; i < splits.size() ; i++) {
             auto p = splits[i];
             if (is_split<false>(*p.first, *p.second, diff_args).first) { // is split
               m_tg.merge(*p.first, *p.second);
@@ -1861,7 +1863,7 @@ namespace mbp {
         // After choosing representatives, more variables could be eliminated,
         // either because they do not appear, or because they have another
         // variable to represent them.
-        for (int i = 0; i < vars.size(); ++i) {
+        for (unsigned i = 0; i < vars.size(); ++i) {
           term * t = m_tg.get_term(vars[i].get());
           SASSERT(t); // if the variable was not in `fml` it was removed earlier
                       // from `vars`
@@ -1893,7 +1895,7 @@ namespace mbp {
       m_is_var.add_decls(vars);
     }
 
-    void term_graph::add_var(app_ref var) {
+    void term_graph::add_var(app* var) {
       m_is_var.add_decl(var);
     }
   
