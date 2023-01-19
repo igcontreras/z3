@@ -72,15 +72,10 @@ namespace mbp {
         plugin_manager<solve_plugin> m_plugins;
         ptr_hashtable<term, term_hash, term_eq> m_cg_table;
         vector<std::pair<term*,term*>> m_merge;
-        bool             m_prop_ground = false; // flag to control whether to
-                                              // propagate groundness after merge
-        ptr_vector<term> m_ground_to_prop;
-        // list of terms that now have a gr representative, to propagate after merge
 
         term_graph::is_variable_proc m_is_var;
 
         void merge(term &t1, term &t2);
-        void propagate_gr(term &t);
         void merge_flush();
 
         term *mk_term(expr *t);
@@ -205,7 +200,6 @@ namespace mbp {
           void operator()(ptr_vector<term> &ts);
         };
 
-        void set_prop_ground(bool v) { m_prop_ground = v; }
         expr_ref_vector non_ground_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
         void mk_gr_equalities(term &t, expr_ref_vector &out);
@@ -217,7 +211,6 @@ namespace mbp {
         void add_deq_terms(ptr_vector<term> &ts);
 
       private:
-        void push_parents_propagate_gr(term &t);
         add_deq_proc m_add_deq;
     };
 

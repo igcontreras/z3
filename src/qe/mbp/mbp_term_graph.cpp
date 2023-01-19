@@ -623,25 +623,7 @@ namespace mbp {
             m_merge.pop_back();
             merge(*t1, *t2);
         }
-
-        if (!m_prop_ground)
-          return;
-
-        // after cc has been computed, propagate groundness
-        while (!m_ground_to_prop.empty()) {
-          term *t = m_ground_to_prop.back();
-          m_ground_to_prop.pop_back();
-          if (!t->is_ground())
-            propagate_gr(*t);
-        }
       }
-
-  void term_graph::push_parents_propagate_gr(term &t) {
-
-    for (term *p : term::parents(t)) {
-      m_ground_to_prop.push_back(p);
-    }
-  }
 
     void term_graph::merge(term &t1, term &t2) {
         term *a = &t1.get_root();
@@ -663,17 +645,6 @@ namespace mbp {
           if (!p->is_marked()) {
             p->set_mark(true);
             m_cg_table.erase(p);
-          }
-        }
-
-        if (m_prop_ground) {
-          // merge class groundness and store to propagation later (only for the
-          // parents of the class that now has a ground representative)
-          if (a->is_class_gr() && !b->is_class_gr()) {
-            push_parents_propagate_gr(*b);
-          } else if (!a->is_class_gr() && b->is_class_gr()) {
-            push_parents_propagate_gr(*a);
-            a->set_class_gr(true);
           }
         }
 
@@ -703,23 +674,6 @@ namespace mbp {
         SASSERT(marks_are_clear());
     }
 
-    void term_graph::propagate_gr(term &t) {
-      bool ground = true;
-      for (const term *c : term::children(t)) {
-        if (!c->is_class_gr()) {
-          ground = false;
-          break;
-        }
-      }
-
-      if(ground) {
-        t.set_gr(true);
-        // if(!t.is_class_gr()) { // the class has now a ground representative
-          t.set_class_gr(true);
-          push_parents_propagate_gr(t);
-        // }
-      }
-    }
 
     template <bool mark> expr *term_graph::mk_app_core(expr *e) {
       if (is_app(e)) {
@@ -812,15 +766,6 @@ namespace mbp {
         }
     }
 
-    static bool is_ground_app_term(term *t) {
-
-      for (auto &it : term::children(t))
-        if (!it->get_root().is_class_gr())
-          return false;
-
-      return true;
-    }
-
     void term_graph::mk_gr_equalities(term &t, expr_ref_vector &out) {
       SASSERT(t.is_repr());
       expr_ref rep(m);
@@ -877,31 +822,6 @@ namespace mbp {
           if (t->is_marked()) return false;
         }
         return true;
-    }
-
-    static bool is_cyclic(term const &t1) {
-      ptr_vector<term> descendants;
-
-      for (auto c : term::children(t1)) {
-        descendants.push_back(c);
-	c->set_mark3(true);
-      }
-
-      term *t1_root = &t1.get_root();
-      term *d;
-      while(!descendants.empty()) {
-        d = descendants.back();
-        descendants.pop_back();
-        if (t1_root->get_id() == d->get_root().get_id())
-          return true;
-        for (auto c : term::children(d->get_root())) {
-	  if (!c->is_marked3()) {
-	    c->set_mark3(true);
-	    descendants.push_back(c);
-	  }
-        }
-      }
-      return false;
     }
 
     /// Order of preference for roots of equivalence classes
