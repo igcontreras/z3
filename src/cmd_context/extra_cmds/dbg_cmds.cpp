@@ -618,7 +618,9 @@ public:
       }
       ctx.regular_stream() << std::endl;
 
-      tg.mark_non_ground(vars);
+      SASSERT(false);
+      // TODO: reimplement using construct_ground
+      // tg.mark_non_ground(vars);
 
       ctx.regular_stream() << "Ground terms before decisions: " << tg.to_ground_expr() << std::endl;
 
@@ -642,7 +644,9 @@ public:
         mbp::term_graph tg2(m);
         tg2.set_vars(vars, true);
         tg2.add_lits(orig_lits);
-        tg2.mark_non_ground(vars);
+	SASSERT(false);
+	// TODO: reimplement using construct_ground
+        //tg2.mark_non_ground(vars);
         tg2.set_prop_ground(true);
         tg2.mb_cover(*mdl);
         expr_ref_vector tglits(m);
