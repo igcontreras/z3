@@ -1101,6 +1101,7 @@ namespace mbp {
     }
 
     expr_ref term_graph::to_ground_expr() {
+      compute_cground();
       expr_ref_vector lits(m);
       gr_terms_to_lits(lits, false);
       return mk_and(lits);
@@ -1834,7 +1835,14 @@ namespace mbp {
 
       // modifies `vars` to keep the variables that could not be eliminated
       void qe_lite(app_ref_vector &vars, expr_ref &fml) {
-        m_tg.compute_non_ground<true>(vars);
+	for(unsigned i = 0; i < vars.size(); i++) {
+	  if (!m_tg.is_internalized(vars.get(i))) {
+	    vars[i] = vars.back();
+	    vars.pop_back();
+	    --i;
+	  }
+	}
+        m_tg.compute_cground();
         // removes from `vars` the variables that have a ground representative
         m_tg.pick_repr();
 
@@ -2067,132 +2075,32 @@ namespace mbp {
         return result;
     }
 
-  static bool all_not_ground_class(term &t) {
-    bool all_not_ground = true;
-    for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-      if (it->is_ground()){
-        all_not_ground = false;
-        break;
-      }
-    }
-    return all_not_ground;
-  }
-
-  void term_graph::mark_non_ground(func_decl_ref_vector &vars) {
-
-    ptr_vector<term> to_propagate;
-    func_decl_ref_vector to_elim(vars);
-
-    // initialize terms to ground and mark non-ground constants
+  void term_graph::compute_cground() {
     for (auto t : m_terms) {
-      t->set_gr(true);
-      t->set_class_gr(true);
-
-      if (!is_app(t->get_expr()))
-        continue;
-
-      // find if it is a constant to eliminate and mark as not ground
-      for (int i = 0; i < to_elim.size(); ++i) {
-        if (t->get_decl_id() == to_elim[i]->get_id()) {
-          t->set_gr(false);
-          to_propagate.push_back(t);
-          // once found, the variable will not be found again, remove
-          to_elim[i] = to_elim.back();
-          --i;
-          to_elim.pop_back();
-          break;
-        }
-      }
+      t->set_cgr(false);
+      t->set_class_gr(false);
     }
 
-    for(int i = 0; i < to_propagate.size(); ++i) {
-      auto t = to_propagate[i];
-      if (t->is_class_gr() && all_not_ground_class(*t)) {
-        t->set_class_gr(false);
-      }
-      else { // remove from propagate if the class has a ground representative
-        to_propagate[i] = to_propagate.back();
-        to_propagate.pop_back();
-        --i;
-      }
-    }
-
-    // propagate non-groundness
-    // invariant: to_propagate contains terms that do not have a ground representative
-    while(!to_propagate.empty()){
-      term *t = to_propagate.back();
-      to_propagate.pop_back();
-
-      // non-ground argument found, mark parents as not gr
-      for (auto &p : term::parents(t)){
-        if (p->is_ground()){ // p cannot be a constant!
-          p->set_gr(false);
-          if (all_not_ground_class(*p)) {
-            p->set_class_gr(false);
-            to_propagate.push_back(p);
-          }
-        }
-      }
-    }
-  }
-
-  template <bool remove> // whether to remove from the input vector
-  void term_graph::compute_non_ground(app_ref_vector &vars) {
-
-    ptr_vector<term> to_propagate;
-
-    // initialize terms to ground and mark non-ground constants
     for (auto t : m_terms) {
-      t->set_gr(true);
-      t->set_class_gr(true);
-    }
-
-    for (int i = 0; i < vars.size(); ++i) {
-      term *t = get_term(vars[i].get());
-      if(t) {
-        t->set_gr(false);
-        to_propagate.push_back(t);
-      }
-      else if(remove) { // the variable does not appear in the formula (no term)
-        vars[i] = vars.back();
-        vars.pop_back();
-        --i;
+      if (t->is_gr()) {
+	t->set_cgr(true);
+	t->set_class_gr(true);
       }
     }
 
-    if(vars.empty())
-      return;
-
-    // find classes that do not have a ground representative
-    for (int i = 0; i < to_propagate.size(); ++i) {
-      auto t = to_propagate[i];
-      // TODO: might be reprocessing a ground class twice, use marks
-      if (t->is_class_gr() && all_not_ground_class(*t)) {
-        t->set_class_gr(false);
+    auto all_children_ground = [](term* t) {
+      if (t->deg() == 0) return false;
+      for (auto c : term::children(t)) {
+	if (!c->is_class_gr()) return false;
       }
-      else { // remove from propagate & vars if the class either has a
-	     // ground representative or has other vars
-        to_propagate[i] = to_propagate.back();
-        to_propagate.pop_back();
-        --i;
-      }
-    }
+      return true;
+    };
 
-    // propagate non-groundness
-    // invariant: to_propagate contains terms that do not have a ground representative
-    while(!to_propagate.empty()){
-      term *t = to_propagate.back();
-      to_propagate.pop_back();
-
-      // non-ground argument found, mark parents as not gr
-      for (auto &p : term::parents(t)){
-        if (p->is_ground()){ // p cannot be a constant!
-          p->set_gr(false);
-          if (all_not_ground_class(*p)) {
-            p->set_class_gr(false);
-            to_propagate.push_back(p);
-          }
-        }
+    for (auto t : m_terms) {
+      if (t->is_cgr()) continue;
+      if (t->deg() > 0 && all_children_ground(t)) {
+	t->set_cgr(true);
+	t->set_class_gr(true);
       }
     }
   }

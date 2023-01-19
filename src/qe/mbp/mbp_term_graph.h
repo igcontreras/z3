@@ -115,6 +115,7 @@ namespace mbp {
         void display(std::ostream &out);
 
         bool is_pure_def(expr* atom, expr *& v);
+        void compute_cground();
 
         // variables (or terms?) to eliminate
         // useful to not pick roots that are in this vector if possible
@@ -204,8 +205,6 @@ namespace mbp {
           void operator()(ptr_vector<term> &ts);
         };
 
-        void mark_non_ground(func_decl_ref_vector &vars);
-        template <bool remove> void compute_non_ground(app_ref_vector &vars);
         void set_prop_ground(bool v) { m_prop_ground = v; }
         expr_ref_vector non_ground_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);

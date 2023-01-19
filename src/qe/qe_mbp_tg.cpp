@@ -447,7 +447,7 @@ public:
     vars.reset();
     expr_ref_vector fml(m);
     mbp::term_graph tg(m);
-    tg.set_prop_ground(true);
+    tg.add_vars(m_vars);
     flatten_and(inp, fml);
     for(expr *e : fml) {
       tg.add_lit(e);
@@ -458,7 +458,6 @@ public:
       progress2 = mbp_adt(fml, tg, mdl, vars);
     } while(progress1 || progress2);
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()););
-    tg.compute_non_ground<true>(m_vars);
     inp = tg.to_ground_expr();
     remove_peq(inp, inp);
     TRACE("mbp_tg", tout << "after mbp tg " << inp;);
