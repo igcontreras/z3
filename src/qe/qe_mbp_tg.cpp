@@ -209,7 +209,12 @@ private:
     vector<expr_ref_vector>::iterator itr = indices.begin();
     unsigned i = 0;
     for(app* a : aux_consts) {
-      vars.push_back(a);
+      if (m_dt_util.is_datatype(a->_get_sort()) || m_array_util.is_array(a)) {
+	m_vars.push_back(a);
+	tg.add_var(a);
+      }
+      else
+	vars.push_back(a);
       auto const& indx =  std::next(itr, i);
       SASSERT(indx.size() == 1);
       expr *args[2] = {to_app(p.lhs()), to_app(indx->get(0))};
@@ -256,21 +261,27 @@ private:
   }
 
   void rm_select(expr* term, mbp::term_graph& tg, model& mdl, app_ref_vector& vars) {
-    expr* v = to_app(term)->get_arg(0);
+    SASSERT(is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0)));
+    expr* v = to_app(term)->get_arg(0), *sel;
     app_ref u(m);
     ptr_vector<func_decl> const* accessors =  m_dt_util.get_constructor_accessors(m_dt_util.get_accessor_constructor(to_app(term)->get_decl()));
     for (unsigned i = 0; i < accessors->size(); i++) {
       func_decl* d = accessors->get(i);
       u = new_var(d->get_range());
-      expr* eq = m.mk_eq(m.mk_app(d, v), u);
-      tg.add_var(u);
+      if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u)) {
+	m_vars.push_back(u);
+	tg.add_var(u);
+      }
+      else
+	vars.push_back(u);
+      sel = m.mk_app(d, v);
+      expr* eq = m.mk_eq(sel, u);
       tg.add_lit(eq);
       tg.mark2(u);
-      tg.mark2(m.mk_app(d, v));
-      vars.push_back(u);
+      tg.mark2(sel);
       if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
 	m_vars.push_back(u);
-      mdl.register_decl(u->get_decl(), to_app(mdl(to_app(term)->get_arg(0)))->get_arg(i));
+      mdl.register_decl(u->get_decl(), mdl(sel));
     }
   }
 
@@ -440,6 +451,11 @@ public:
   void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl) {
     if (vars.empty())
       return;
+    // m_vars are array and ADT variables to be projected vars are
+    // variables that cannot be eliminated after MBP. These are
+    // variables of other sorts introduced by the MBP
+    // procedure. e.g. when eliminating arrays, new variables of index
+    // type are created and added to vars
     for(auto v : vars) {
       SASSERT(m_dt_util.is_datatype(v->_get_sort()) || m_array_util.is_array(v));
       m_vars.push_back(v);
