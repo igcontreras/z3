@@ -259,7 +259,7 @@ private:
       else
 	vars.push_back(a);
       auto const& indx =  std::next(itr, i);
-      SASSERT(indx.size() == 1);
+      SASSERT(indx->size() == 1);
       expr *args[2] = {to_app(p.lhs()), to_app(indx->get(0))};
       store = m_array_util.mk_select(2, args);
       mdl.register_decl(a->get_decl(), 	mdl(store));
@@ -510,13 +510,18 @@ public:
     // variables of other sorts introduced by the MBP
     // procedure. e.g. when eliminating arrays, new variables of index
     // type are created and added to vars
+    app_ref_vector other_vars(m);
     for(auto v : vars) {
-      SASSERT(m_dt_util.is_datatype(v->_get_sort()) || m_array_util.is_array(v));
-      if (!arrIndices.contains(v))
+      if (!m_dt_util.is_datatype(v->_get_sort()) && !m_array_util.is_array(v))
+	other_vars.push_back(v);
+      else if (!arrIndices.contains(v))
 	m_vars.push_back(v);
     }
     vars.reset();
-    for (auto v : arrIndices) vars.push_back(v);
+    for (auto v : arrIndices)
+      vars.push_back(v);
+    for (auto v : other_vars)
+      vars.push_back(v);
     expr_ref_vector fml(m);
     mbp::term_graph tg(m);
     tg.add_vars(m_vars);
