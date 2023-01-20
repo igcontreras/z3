@@ -15,10 +15,10 @@
 namespace check_uninterp_consts_ns {
   struct found {};
   struct proc {
-    app_ref_vector &m_vars;
+    app_ref_vector const &m_vars;
     bool m_only_arr;
     array_util m_arr;
-    proc(app_ref_vector &vars, bool only_arr = false) : m_vars(vars), m_only_arr(only_arr), m_arr(m_vars.get_manager()) {}
+    proc(app_ref_vector const &vars, bool only_arr = false) : m_vars(vars), m_only_arr(only_arr), m_arr(m_vars.get_manager()) {}
     void operator()(expr *n) const {}
     void operator()(app *n) {
       if (is_uninterp_const(n) && m_vars.contains(n) && (!m_only_arr || m_arr.is_array(n))) throw found();
@@ -27,7 +27,7 @@ namespace check_uninterp_consts_ns {
 } // namespace check_uninterp_consts_ns
 
 // check if e contains any apps from vars
-bool contains_vars(expr *e, app_ref_vector &vars, bool only_arr = false) {
+bool contains_vars(expr *e, app_ref_vector const &vars, bool only_arr = false) {
   check_uninterp_consts_ns::proc proc(vars, only_arr);
   try {
     for_each_expr(proc, e);
@@ -47,6 +47,36 @@ bool contains_var(expr *e, app_ref var, bool only_arr = false) {
   return false;
 }
 
+namespace collect_arrInd_ns {
+struct proc {
+  app_ref_vector const& m_vars;
+  app_ref_vector &m_out;
+  ast_manager& m;
+  array_util m_array_util;
+  expr* ind;
+  app_ref v_ref;
+  proc(app_ref_vector const& vars, app_ref_vector &out) : m_vars(vars), m_out(out), m(out.get_manager()), m_array_util(m), v_ref(m) {}
+  void operator()(expr *n) const {}
+  void operator()(app *n) {
+    if (m_array_util.is_select(n)) {
+      ind = to_app(n)->get_arg(1);
+      if (contains_vars(ind, m_vars)) {
+	for (auto v : m_vars) {
+	  v_ref = app_ref(v, m);
+	  if (contains_var(ind, v_ref))
+	    m_out.push_back(v);
+	}
+      }
+    }
+  }
+};
+} // namespace collect_arrInd_ns
+
+// Return all variables in vars that are used to index arrays in fml
+void collect_array_indices(expr *fml, app_ref_vector const& vars, app_ref_vector &out) {
+  collect_arrInd_ns::proc proc(vars, out);
+  for_each_expr(proc, fml);
+}
 void remove_peq(expr* inp, expr_ref& op) {
   ast_manager& m = op.get_manager();
   expr_ref_vector fml(m);
@@ -197,6 +227,19 @@ private:
 	}
       }
     }
+  }
+
+  void add_rdVar(expr* rd, mbp::term_graph &tg, app_ref_vector& vars, model& mdl) {
+    app_ref u = new_var(to_app(rd)->get_sort());
+    if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u)) {
+	m_vars.push_back(u);
+	tg.add_var(u);
+    }
+    else
+      vars.push_back(u);
+    expr* eq = m.mk_eq(u, rd);
+    tg.add_lit(eq);
+    mdl.register_decl(u->get_decl(), mdl(rd));
   }
 
   void elimeq(peq p, mbp::term_graph &tg, app_ref_vector& vars, model& mdl) {
@@ -409,8 +452,17 @@ private:
 	  elimrdwr(term, tg, mdl);
 	  continue;
 	}
+      }
+
+      // iterate over term graph again to collect read terms
+      // irrespective of whether they have been marked or not
+      for (unsigned i = 0; i < terms.size(); i++) {
+	term = terms.get(i);
 	if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars)) {
-	  rdTerms.push_back(term);
+          rdTerms.push_back(term);
+	  if (tg.is_marked2(term)) continue;
+          add_rdVar(term, tg, vars, mdl);
+	  tg.mark2(term);
 	}
       }
 
@@ -451,6 +503,8 @@ public:
   void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl) {
     if (vars.empty())
       return;
+    app_ref_vector arrIndices(m);
+    collect_array_indices(inp, vars, arrIndices);
     // m_vars are array and ADT variables to be projected vars are
     // variables that cannot be eliminated after MBP. These are
     // variables of other sorts introduced by the MBP
@@ -458,9 +512,11 @@ public:
     // type are created and added to vars
     for(auto v : vars) {
       SASSERT(m_dt_util.is_datatype(v->_get_sort()) || m_array_util.is_array(v));
-      m_vars.push_back(v);
+      if (!arrIndices.contains(v))
+	m_vars.push_back(v);
     }
     vars.reset();
+    for (auto v : arrIndices) vars.push_back(v);
     expr_ref_vector fml(m);
     mbp::term_graph tg(m);
     tg.add_vars(m_vars);
