@@ -931,8 +931,8 @@ namespace mbp {
 		ch[i] = c;
 		i++;
 	      }
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(*ch[0])),
-				    ::to_app(mk_app<false>(*ch[1]))));
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(*ch[0]->get_repr())),
+				    ::to_app(mk_app<false>(*ch[1]->get_repr()))));
 	    }
 	    if (t->is_eq_neq()) continue;
             if (!t->is_repr())
@@ -965,8 +965,8 @@ namespace mbp {
 		ch[i] = c;
 		i++;
 	      }
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<true>(*ch[0])),
-				    ::to_app(mk_app<true>(*ch[1]))));
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<true>(*ch[0]->get_repr())),
+				    ::to_app(mk_app<true>(*ch[1]->get_repr()))));
 	  }
 	  if (t->is_eq_neq()) continue;
 	  if (!t->is_repr())
@@ -999,8 +999,8 @@ namespace mbp {
 		ch[i] = c->get_repr();
 		i++;
 	      }
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(*ch[0])),
-				    ::to_app(mk_app<false>(*ch[1]))));
+	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(*ch[0]->get_repr())),
+				    ::to_app(mk_app<false>(*ch[1]->get_repr()))));
 	}
 	if (t->is_eq_neq()) continue;
         if (!t->is_repr())
