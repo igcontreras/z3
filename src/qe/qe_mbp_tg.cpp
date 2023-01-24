@@ -58,7 +58,7 @@ struct proc {
   proc(app_ref_vector const& vars, app_ref_vector &out) : m_vars(vars), m_out(out), m(out.get_manager()), m_array_util(m), v_ref(m) {}
   void operator()(expr *n) const {}
   void operator()(app *n) {
-    if (m_array_util.is_select(n)) {
+    if (m_array_util.is_select(n) || m_array_util.is_store(n)) {
       ind = to_app(n)->get_arg(1);
       if (contains_vars(ind, m_vars)) {
 	for (auto v : m_vars) {
@@ -474,7 +474,7 @@ private:
 	  expr* a2 = to_app(e2)->get_arg(0);
 	  expr* i1 = to_app(e1)->get_arg(1);
 	  expr* i2 = to_app(e2)->get_arg(1);
-	  if (a1->get_id() == a2->get_id() && (has_var(i1) || has_var(i2))) {
+	  if (a1->get_id() == a2->get_id()) {
 	    rdEq = m.mk_eq(i1, i2);
 	    if (!tg.is_marked2(rdEq) && mdl.is_true(rdEq)) {
 	      progress = true;
