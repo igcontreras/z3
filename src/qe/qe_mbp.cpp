@@ -365,11 +365,11 @@ public:
         fml = mk_and(fmls);
     }
 
-    void tg_project(app_ref_vector &vars, model &mdl, expr_ref &fml) {
       // initialize tg
       // do mbp for arrays
       // do mbp for adts
       // do abstraction on all array and adt variables
+  void tg_project(app_ref_vector &vars, model &mdl, expr_ref &fml, bool reduce_all_selects) {
       flatten_and(fml);
       app_ref_vector vars_to_elim(m);
       array_util array_u(m);
@@ -387,7 +387,7 @@ public:
       }
       vars.shrink(i);
       qe_mbp_tg mbptg(m, m_params);
-      mbptg(vars_to_elim, fml, mdl);
+      mbptg(vars_to_elim, fml, mdl, reduce_all_selects);
       m_rw(fml);
       for (app *v : vars_to_elim) {
         SASSERT(!array_u.is_array(v) && !dt_u.is_datatype(v->get_sort()));

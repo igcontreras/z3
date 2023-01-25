@@ -35,5 +35,5 @@ public:
     /**
        Do model based projection
     */
-  void operator()(app_ref_vector& vars, expr_ref& fml, model& mdl);
+  void operator()(app_ref_vector& vars, expr_ref& fml, model& mdl, bool reduce_all_selects = false);
 };

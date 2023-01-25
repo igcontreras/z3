@@ -103,6 +103,7 @@ private:
   datatype_util m_dt_util;
   //TODO: change this, only keep a reference
   app_ref_vector m_vars;
+  bool m_reduce_all_selects;
   
   bool is_arr_write(expr* t) {
     if (!m_array_util.is_store(t)) return false;
@@ -111,7 +112,7 @@ private:
 
   bool is_rd_wr(expr* t) {
     if (!m_array_util.is_select(t) || !m_array_util.is_store(to_app(t)->get_arg(0))) return false;
-    return contains_vars(to_app(to_app(t)->get_arg(0))->get_arg(0), m_vars);
+    return m_reduce_all_selects || contains_vars(to_app(to_app(t)->get_arg(0))->get_arg(0), m_vars);
   }
 
   bool has_var(expr* t) {
@@ -498,11 +499,12 @@ private:
 
 public:
   impl(ast_manager &m, params_ref const &p)
-    : m(m), m_array_util(m), m_dt_util(m), m_vars(m) {}
+    : m(m), m_array_util(m), m_dt_util(m), m_vars(m), m_reduce_all_selects(false) {}
 
-  void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl) {
-    if (vars.empty())
+  void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl, bool reduce_all_selects = false) {
+    if (!reduce_all_selects && vars.empty())
       return;
+    m_reduce_all_selects = reduce_all_selects;
     app_ref_vector arrIndices(m);
     collect_array_indices(inp, vars, arrIndices);
     // m_vars are array and ADT variables to be projected vars are
@@ -547,6 +549,6 @@ qe_mbp_tg::qe_mbp_tg(ast_manager &m, params_ref const &p) {
 
 qe_mbp_tg::~qe_mbp_tg() { dealloc(m_impl); }
 
-void qe_mbp_tg::operator()(app_ref_vector &vars, expr_ref &fml, model& mdl) {
-  (*m_impl)(vars, fml, mdl);
+void qe_mbp_tg::operator()(app_ref_vector &vars, expr_ref &fml, model& mdl, bool reduce_all_selects) {
+  (*m_impl)(vars, fml, mdl, reduce_all_selects);
 }
