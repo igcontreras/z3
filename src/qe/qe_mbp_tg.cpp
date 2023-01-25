@@ -54,18 +54,14 @@ struct proc {
   ast_manager& m;
   array_util m_array_util;
   expr* ind;
-  app_ref v_ref;
-  proc(app_ref_vector const& vars, app_ref_vector &out) : m_vars(vars), m_out(out), m(out.get_manager()), m_array_util(m), v_ref(m) {}
+  proc(app_ref_vector const& vars, app_ref_vector &out) : m_vars(vars), m_out(out), m(out.get_manager()), m_array_util(m) {}
   void operator()(expr *n) const {}
   void operator()(app *n) {
     if (m_array_util.is_select(n) || m_array_util.is_store(n)) {
       ind = to_app(n)->get_arg(1);
-      if (contains_vars(ind, m_vars)) {
-	for (auto v : m_vars) {
-	  v_ref = app_ref(v, m);
-	  if (contains_var(ind, v_ref))
-	    m_out.push_back(v);
-	}
+      for (auto v : m_vars) {
+	if (ind->get_id() == v->get_id())
+	  m_out.push_back(v);
       }
     }
   }
