@@ -409,41 +409,18 @@ public:
         app_ref_vector array_vars(m);
         array_util arr_u(m);
         arith_util ari_u(m);
+	datatype_util dt_u(m);
 
-	tg_project(vars, mdl, fml);
+	do_spacer_qe_lite(vars, fml);
+	tg_project(vars, mdl, fml, m_reduce_all_selects);
         flatten_and(fml);
-
-        while (!vars.empty()) {
-
-            do_spacer_qe_lite(vars, fml);
-
-            do_qe_bool(mdl, vars, fml);
-
-            // sort out vars into bools, arith (int/real), and arrays
-            for (app* v : vars) {
-                if (arr_u.is_array(v)) {
-                    array_vars.push_back(v);
-                }
-                else {
-                    other_vars.push_back(v);
-                }
-            }
-
-            TRACE("qe", tout << "Array vars: " << array_vars << "\n";);
-
-            vars.reset();
-
-            // project arrays
-            mbp::array_project_plugin ap(m);
-            ap(mdl, array_vars, fml, vars, m_reduce_all_selects);
-            SASSERT(array_vars.empty());
-            m_rw(fml);
-            SASSERT(!m.is_false(fml));
-
-            TRACE("qe",
-                tout << "extended model:\n" << mdl;
-                tout << "Vars: " << vars << "\n";);
-        }
+	do_qe_bool(mdl, vars, fml);
+	m_rw(fml);
+	for (app* v : vars) {
+	  CTRACE("qe", arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
+	  if (!arr_u.is_array(v) && !dt_u.is_datatype(v->get_sort()))
+	    other_vars.push_back(v);
+	}
 
         // project reals, ints and other variables.
         if (!other_vars.empty()) {
