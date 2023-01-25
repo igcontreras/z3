@@ -201,13 +201,9 @@ private:
 	eq = m.mk_not(m.mk_eq(j, d));
 	tg.add_lit(eq);
       }
-      if (indices.empty()) {
-	expr_ref_vector setOne(m);
-	setOne.push_back(j);
-	indices.push_back(setOne);
-      }
-      else
-	indices.back().push_back(j);
+      expr_ref_vector setOne(m);
+      setOne.push_back(j);
+      indices.push_back(setOne);
       peq p_new = mk_peq(to_app(p.lhs())->get_arg(0), p.rhs(), indices);
       expr* args[2] = {p.rhs(), j};
       expr* rd = m_array_util.mk_select(2, args);
