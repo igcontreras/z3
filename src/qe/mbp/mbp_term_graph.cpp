@@ -911,6 +911,47 @@ namespace mbp {
 	pick_repr_class(t);
     }
   }
+  // if r is a variable, attempt to pick non-var
+  void term_graph::refine_repr_class(term* t) {
+    SASSERT(t->is_repr());
+    auto is_var = [&] (term *p) {
+      SASSERT(is_app(p->get_expr()));
+      return m_is_var.contains(to_app(p->get_expr())->get_decl());
+    };
+    if (!is_var(t)) return;
+    term *r = t;
+    for (term *it = &t->get_next(); it != t; it = &it->get_next()) {
+      if (makes_cycle(it)) continue;
+      if (is_var(r) && !is_var(it))
+	r = it;
+    }
+    r->mk_repr();
+  }
+
+  bool term_graph::makes_cycle(term* t) {
+    term&  r = t->get_root();
+    ptr_vector<term> todo;
+    for(auto* it : term::children(t)) {
+      todo.push_back(it->get_repr());
+    }
+    term* it;
+    while(!todo.empty()) {
+      it = todo.back();
+      todo.pop_back();
+      if (it->get_root().get_id() == r.get_id()) return true;
+      for(auto* ch : term::children(it)) {
+	todo.push_back(ch->get_repr());
+      }
+    }
+    return false;
+  }
+
+  void term_graph::refine_repr() {
+    for (term* t : m_terms) {
+      if (!t->get_repr()->is_cgr())
+	refine_repr_class(t->get_repr());
+    }
+  }
 
   bool term_graph::has_val_in_class(expr *e) {
 	term* r = get_term(e);
@@ -1786,6 +1827,7 @@ namespace mbp {
         m_tg.compute_cground();
         // removes from `vars` the variables that have a ground representative
         m_tg.pick_repr();
+	m_tg.refine_repr();
 
         expr_ref_vector lits(m);
         // uses mark2 to mark the variables that appear in lits

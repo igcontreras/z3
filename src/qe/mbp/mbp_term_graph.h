@@ -212,6 +212,9 @@ namespace mbp {
       bool has_val_in_class(expr* e);
       private:
         add_deq_proc m_add_deq;
+      void refine_repr_class(term* t);
+      void refine_repr();
+      bool makes_cycle(term* t);
     };
 
   namespace is_ground_ns {
