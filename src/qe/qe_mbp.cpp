@@ -389,15 +389,22 @@ public:
       qe_mbp_tg mbptg(m, m_params);
       mbptg(vars_to_elim, fml, mdl, reduce_all_selects);
       m_rw(fml);
+      // HACK to reduce all slect(store(..)) terms in the rewritten fml
+      if (reduce_all_selects) {
+	app_ref_vector empty(m);
+	qe_mbp_tg mbptg2(m, m_params);
+	mbptg2(empty, fml, mdl, reduce_all_selects);
+      }
+      TRACE("qe", tout << "After mbp_tg:\n"
+	    << fml << " models " << mdl.is_true(fml) << "\n"
+                       << "Vars: " << vars_to_elim << "\n";);
       for (app *v : vars_to_elim) {
         SASSERT(!array_u.is_array(v) && !dt_u.is_datatype(v->get_sort()));
       }
       for (app* v : vars_to_elim) {
 	  vars.push_back(v);
       }
-      TRACE("qe", tout << "After mbp_tg:\n"
-	    << fml << " models " << mdl.is_true(fml) << "\n"
-                       << "Vars: " << vars << "\n";);
+      do_spacer_qe_lite(vars, fml);
     }
     
     void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {
