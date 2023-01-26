@@ -543,6 +543,7 @@ namespace mbp {
               }
             }
         }
+	merge_flush();
         SASSERT(res);
         return res;
     }
