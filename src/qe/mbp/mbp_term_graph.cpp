@@ -463,7 +463,10 @@ namespace mbp {
         return m_app2term.find (a->get_id(), res) ? res : nullptr;
     }
 
-    void term_graph::mark2(expr *e) {
+    void term_graph::mark2(expr *r) {
+      mbp::solve_plugin *pin = m_plugins.get_plugin(get_family_id(m, r));
+      expr_ref e(m);
+      e = (pin && (m.is_eq(r) || (m.is_not(r) && m.is_eq(to_app(r)->get_arg(0))))) ? (*pin)(r) : r;
       SASSERT(is_internalized(e));
       term* res = nullptr;
       m_app2term.find(e->get_id(), res);
@@ -471,9 +474,12 @@ namespace mbp {
       res->set_mark2(true);
     }
 
-    bool term_graph::is_marked2(expr *e) {
+    bool term_graph::is_marked2(expr *r) {
+      mbp::solve_plugin *pin = m_plugins.get_plugin(get_family_id(m, r));
+      expr_ref e(m);
+      e = (pin && (m.is_eq(r) || (m.is_not(r) && m.is_eq(to_app(r)->get_arg(0))))) ? (*pin)(r) : r;
       if (!is_internalized(e)) return false;
-      term *res;
+      term *res = nullptr;
       m_app2term.find(e->get_id(), res);
       SASSERT(res);
       return res->is_marked2();
