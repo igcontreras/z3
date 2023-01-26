@@ -223,6 +223,8 @@ private:
   }
 
   void add_rdVar(expr* rd, mbp::term_graph &tg, app_ref_vector& vars, model& mdl) {
+    //do not assign new variable if rd is already equal to a value
+    if (tg.has_val_in_class(rd)) return;
     app_ref u = new_var(to_app(rd)->get_sort());
     if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u)) {
 	m_vars.push_back(u);

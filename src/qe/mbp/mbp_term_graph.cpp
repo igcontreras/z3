@@ -912,6 +912,17 @@ namespace mbp {
     }
   }
 
+  bool term_graph::has_val_in_class(expr *e) {
+	term* r = get_term(e);
+	if(!r) return false;
+	auto is_val = [&](term* t) {
+	  return m.is_value(t->get_expr());
+	};
+	if (is_val(r)) return true;
+	for(term* it = &r->get_next(); it != r; it = &it->get_next())
+	  if (is_val(it)) return true;
+	return false;
+      }
     void term_graph::display(std::ostream &out) {
         for (term * t : m_terms) {
             out << *t;

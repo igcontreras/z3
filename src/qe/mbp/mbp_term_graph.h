@@ -209,7 +209,7 @@ namespace mbp {
         void mb_cover(model& mdl);
         void add_deq_terms(term *t1, term *t2);
         void add_deq_terms(ptr_vector<term> &ts);
-
+      bool has_val_in_class(expr* e);
       private:
         add_deq_proc m_add_deq;
     };
