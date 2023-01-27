@@ -226,8 +226,10 @@ namespace mbp {
         bool is_gr() const {return m_gr;}
         void set_gr(bool v) {m_gr = v;}
 
-        bool is_class_gr() const { return m_root->m_class_props.m_gr_class; }
-        void set_class_gr(bool v) { m_root->m_class_props.m_gr_class = v; }
+        bool is_class_gr_root() const { SASSERT(is_root()); return m_class_props.m_gr_class; }
+        void set_class_gr_root(bool v) {SASSERT(is_root()); m_class_props.m_gr_class = v;}
+        bool is_class_gr() const { return m_root->is_class_gr_root(); }
+        void set_class_gr(bool v) { m_root->set_class_gr_root(v); }
 
         static bool are_deq(const term &t1, const term &t2) {
           term_graph::deqs const &ds1 = t1.get_root().get_deqs();
