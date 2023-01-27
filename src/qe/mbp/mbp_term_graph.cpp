@@ -2101,13 +2101,12 @@ namespace mbp {
       }
     }
     cgroundPercolateUp(todo);
-    for (auto t : m_terms) {
-      if (t->is_cgr()) continue;
-      if (t->deg() > 0 && all_children_ground(t)) {
-	t->set_cgr(true);
-	t->set_class_gr(true);
-      }
-    }
+    DEBUG_CODE(for (auto t : m_terms) {
+	bool isclsg = true;
+	for (auto c : term::children(t)) isclsg &= c->is_class_gr();
+	SASSERT(t->deg() == 0 || !isclsg || t->is_cgr());
+	SASSERT(t->deg() == 0 || isclsg || !t->is_cgr());
+      });
   }
 
   void term_graph::qe_lite(app_ref_vector &vars, expr_ref &fml) {
