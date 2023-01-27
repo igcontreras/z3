@@ -352,6 +352,7 @@ public:
                          << fml << "\n"
                          << "Vars: " << vars << "\n";);
         SASSERT(!m.is_false(fml)); // TODO: why?
+	m_rw(fml);
     }
 
     void do_qe_bool(model& mdl, app_ref_vector& vars, expr_ref& fml) {
