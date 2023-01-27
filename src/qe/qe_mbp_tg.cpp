@@ -300,9 +300,11 @@ private:
 
   void rm_select(expr* term, mbp::term_graph& tg, model& mdl, app_ref_vector& vars) {
     SASSERT(is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0)));
-    expr* v = to_app(term)->get_arg(0), *sel;
+    expr* v = to_app(term)->get_arg(0), *sel, *eq;
     app_ref u(m);
-    ptr_vector<func_decl> const* accessors =  m_dt_util.get_constructor_accessors(m_dt_util.get_accessor_constructor(to_app(term)->get_decl()));
+    app_ref_vector new_vars(m);
+    func_decl* cons = m_dt_util.get_accessor_constructor(to_app(term)->get_decl());
+    ptr_vector<func_decl> const* accessors =  m_dt_util.get_constructor_accessors(cons);
     for (unsigned i = 0; i < accessors->size(); i++) {
       func_decl* d = accessors->get(i);
       u = new_var(d->get_range());
@@ -312,13 +314,17 @@ private:
       }
       else
 	vars.push_back(u);
+      new_vars.push_back(u);
       sel = m.mk_app(d, v);
-      expr* eq = m.mk_eq(sel, u);
+      eq = m.mk_eq(sel, u);
       tg.add_lit(eq);
       tg.mark2(u);
       tg.mark2(sel);
       mdl.register_decl(u->get_decl(), mdl(sel));
     }
+    eq = m.mk_eq(v, m.mk_app(cons, new_vars));
+    tg.add_lit(eq);
+    tg.mark2(eq);
   }
 
   void deconstruct_eq(expr* cons, expr* rhs, mbp::term_graph& tg) {
