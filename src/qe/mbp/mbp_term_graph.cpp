@@ -526,7 +526,7 @@ namespace mbp {
             auto new_term_chs = term::children(res);
             auto ch_it = new_term_chs.begin();
             if(ch_it != new_term_chs.end()) {
-              for (auto congr_candidate : term::parents(*ch_it)) {
+              for (auto congr_candidate : term::parents((*ch_it)->get_root())) {
                 if (congr_candidate->get_id() == res->get_id()) continue;
                 if(to_app(congr_candidate->get_expr())->get_decl() == to_app(t)->get_decl()
 		   && congr_candidate->deg() == res->deg() // functions like + can take any number of arguments
