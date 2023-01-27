@@ -92,7 +92,7 @@ namespace mbp {
         bool is_ground(expr *e);
 
         bool term_lt(term const &t1, term const &t2);
-        void processQ(ptr_vector<term>& todo);
+        void pickReprPercolateUp(ptr_vector<term>& todo);
         void pick_repr_class (term *t);
         void pick_repr();
 

@@ -872,21 +872,15 @@ namespace mbp {
     return true;
   }
 
-  void term_graph::processQ(ptr_vector<term>& todo) {
-    term* t, *it;
-    auto pick_repr_parents = [&] (term* n) {
-      for (auto p : term::parents(n))
-	  if (all_children_picked(p)) todo.push_back(p);
-    };
+  void term_graph::pickReprPercolateUp(ptr_vector<term>& todo) {
+    term* t;
     while(!todo.empty()) {
       t = todo.back();
       todo.pop_back();
       if (t->get_repr()) continue;
       pick_repr_class(t);
-      pick_repr_parents(t);
-      for (it = &t->get_next(); it != t; it = &it->get_next()) {
-	pick_repr_parents(it);
-      }
+      for (auto it : term::parents(t->get_root()))
+	if (all_children_picked(it)) todo.push_back(it);
     }
   }
 
@@ -913,7 +907,7 @@ namespace mbp {
       if (t->deg() == 0 && t->is_cgr())
 	todo.push_back(t);
     }
-    processQ(todo);
+    pickReprPercolateUp(todo);
     for (term* t : m_terms) SASSERT(!t->is_cgr() || t->get_repr());
 
     for (term *t : m_terms) {
@@ -921,7 +915,7 @@ namespace mbp {
       if (t->deg() == 0)
 	todo.push_back(t);
     }
-    processQ(todo);
+    pickReprPercolateUp(todo);
     for (term* t : m_terms) SASSERT(t->get_repr());
   }
   // if r is a variable, attempt to pick non-var
