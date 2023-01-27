@@ -22,8 +22,7 @@ public:
       for (expr *lit : *to_app(fml))
         tg.add_lit(lit);
     }
-    else { // an equality or a disequality
-      SASSERT(m.is_eq(fml) || m.is_not(fml));
+    else {
       tg.add_lit(fml);
     }
 
