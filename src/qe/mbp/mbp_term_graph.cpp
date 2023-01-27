@@ -2073,27 +2073,38 @@ namespace mbp {
         return result;
     }
 
+  void term_graph::cgroundPercolateUp(ptr_vector<term>& todo) {
+    term *t;
+    auto all_children_ground = [](term* p) {
+      SASSERT(p->deg() != 0);
+      for (auto c : term::children(p)) {
+	if (!c->is_class_gr()) return false;
+      }
+      return true;
+    };
+    while (!todo.empty()) {
+      t = todo.back();
+      todo.pop_back();
+      t->set_cgr(true);
+      t->set_class_gr(true);
+      for (auto p : term::parents(t->get_root()))
+	if (!p->is_cgr() && all_children_ground(p)) todo.push_back(p);
+    }
+  }
+
   void term_graph::compute_cground() {
     for (auto t : m_terms) {
       t->set_cgr(false);
       t->set_class_gr(false);
     }
 
+    ptr_vector<term> todo;
     for (auto t : m_terms) {
       if (t->is_gr()) {
-	t->set_cgr(true);
-	t->set_class_gr(true);
+	todo.push_back(t);
       }
     }
-
-    auto all_children_ground = [](term* t) {
-      if (t->deg() == 0) return false;
-      for (auto c : term::children(t)) {
-	if (!c->is_class_gr()) return false;
-      }
-      return true;
-    };
-
+    cgroundPercolateUp(todo);
     for (auto t : m_terms) {
       if (t->is_cgr()) continue;
       if (t->deg() > 0 && all_children_ground(t)) {

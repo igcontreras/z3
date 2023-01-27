@@ -111,6 +111,7 @@ namespace mbp {
         void display(std::ostream &out);
 
         bool is_pure_def(expr* atom, expr *& v);
+        void cgroundPercolateUp(ptr_vector<term>&);
         void compute_cground();
 
         // variables (or terms?) to eliminate
