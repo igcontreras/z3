@@ -24,12 +24,14 @@ Revision History:
 #include "util/uint_set.h"
 #include "util/params.h"
 #include "ast/simplifiers/dependent_expr_state.h"
+#include "qe/lite/qe_lite_tg.h"
 
 class tactic;
 
 class qe_lite {
     class impl;
     impl * m_impl;
+    qe_lite_tg m_tg;
 public:
     /** 
         use_array_der controls whether equalities over array reads are simplified

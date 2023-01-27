@@ -2383,7 +2383,7 @@ public:
 
 };
 
-qe_lite::qe_lite(ast_manager & m, params_ref const & p, bool use_array_der) {
+qe_lite::qe_lite(ast_manager & m, params_ref const & p, bool use_array_der): m_tg(m, p, false) {
     m_impl = alloc(impl, m, p, use_array_der);
 }
 
@@ -2392,7 +2392,7 @@ qe_lite::~qe_lite() {
 }
 
 void qe_lite::operator()(app_ref_vector& vars, expr_ref& fml) {
-    (*m_impl)(vars, fml);
+  m_tg(vars, fml);
 }
 
 
