@@ -530,6 +530,7 @@ public:
     } while(progress1 || progress2);
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()););
     inp = tg.to_ground_expr();
+    SASSERT(!contains_vars(inp, m_vars));
     remove_peq(inp, inp);
     TRACE("mbp_tg", tout << "after mbp tg " << inp;);
   }
