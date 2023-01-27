@@ -874,6 +874,24 @@ namespace mbp {
     return true;
   }
 
+  void term_graph::processQ(ptr_vector<term>& todo) {
+    term* t, *it;
+    auto pick_repr_parents = [&] (term* n) {
+      for (auto p : term::parents(n))
+	  if (all_children_picked(p)) todo.push_back(p);
+    };
+    while(!todo.empty()) {
+      t = todo.back();
+      todo.pop_back();
+      if (t->get_repr()) continue;
+      pick_repr_class(t);
+      pick_repr_parents(t);
+      for (it = &t->get_next(); it != t; it = &it->get_next()) {
+	pick_repr_parents(it);
+      }
+    }
+  }
+
   void term_graph::pick_repr_class(term *t) {
     SASSERT(all_children_picked(t));
     term *r = t;
@@ -885,31 +903,28 @@ namespace mbp {
     }
     r->mk_repr();
   }
-    /// Choose better repr for equivalence classes
+
+  /// Choose repr for equivalence classes
   void term_graph::pick_repr() {
     //invalidates cache
     m_term2app.reset();
     for (term* t : m_terms) t->reset_repr();
+    ptr_vector<term> todo;
     for (term *t : m_terms) {
       if (t->get_repr()) continue;
       if (t->deg() == 0 && t->is_cgr())
-	pick_repr_class(t);
+	todo.push_back(t);
     }
-    for (term *t : m_terms) {
-      if (t->get_repr()) continue;
-      if (t->deg() != 0 && all_children_picked(t))
-	pick_repr_class(t);
-    }
+    processQ(todo);
+    for (term* t : m_terms) SASSERT(!t->is_cgr() || t->get_repr());
+
     for (term *t : m_terms) {
       if (t->get_repr()) continue;
       if (t->deg() == 0)
-	pick_repr_class(t);
+	todo.push_back(t);
     }
-    for (term *t : m_terms) {
-      if (t->get_repr()) continue;
-      if (t->deg() != 0 && all_children_picked(t))
-	pick_repr_class(t);
-    }
+    processQ(todo);
+    for (term* t : m_terms) SASSERT(t->get_repr());
   }
   // if r is a variable, attempt to pick non-var
   void term_graph::refine_repr_class(term* t) {
