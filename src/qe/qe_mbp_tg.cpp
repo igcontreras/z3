@@ -317,8 +317,6 @@ private:
       tg.add_lit(eq);
       tg.mark2(u);
       tg.mark2(sel);
-      if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
-	m_vars.push_back(u);
       mdl.register_decl(u->get_decl(), mdl(sel));
     }
   }

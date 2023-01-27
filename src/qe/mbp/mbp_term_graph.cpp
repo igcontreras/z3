@@ -300,10 +300,8 @@ namespace mbp {
 
       // -- make this term the repr of its equivalence class
       void mk_repr() {
-	SASSERT(!get_repr());
 	term *curr = this;
 	do {
-	  SASSERT(!curr->get_repr());
 	  curr->set_repr(this);
 	  curr = &curr->get_next();
 	}
@@ -962,6 +960,8 @@ namespace mbp {
   }
 
   void term_graph::refine_repr() {
+    //invalidates cache
+    m_term2app.reset();
     for (term* t : m_terms) {
       if (!t->get_repr()->is_cgr())
 	refine_repr_class(t->get_repr());
