@@ -267,6 +267,15 @@ public:
 	do_spacer_qe_lite(vars, e);
 	fmls.reset();
 	flatten_and(e, fmls);
+	bool change = true;
+        while (change && !vars.empty()) {
+            change = solve(model, vars, fmls);
+            for (auto* p : m_plugins) {
+                if (p && p->solve(model, vars, fmls)) {
+                    change = true;
+                }
+            }
+        }
     }
 
     bool validate_model(model& model, expr_ref_vector const& fmls) {
