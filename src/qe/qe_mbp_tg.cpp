@@ -186,11 +186,10 @@ private:
     }
     if (in) {
       peq p_new = mk_peq(to_app(p.lhs())->get_arg(0), p.rhs(), indices);
-      tg.add_lit(p_new.mk_peq());
-      tg.add_eq(p.mk_peq(), p_new.mk_peq());
       tg.add_lit(eq);
       expr* p_new_expr = is_neg ? m.mk_not(p_new.mk_peq()) : p_new.mk_peq();
       tg.add_lit(p_new_expr);
+      tg.add_lit(m.mk_eq(p_new_expr, p.mk_peq()));
     }
     else {
       for(expr* d : deq) {
@@ -240,7 +239,7 @@ private:
   void elimeq(peq p, mbp::term_graph &tg, app_ref_vector& vars, model& mdl) {
     app_ref_vector aux_consts(m);
     expr_ref eq(m);
-    expr_ref store(m);
+    expr_ref sel(m);
     eq = p.mk_eq(aux_consts, true);
     vector<expr_ref_vector> indices;
     p.get_diff_indices(indices);
@@ -256,8 +255,8 @@ private:
       auto const& indx =  std::next(itr, i);
       SASSERT(indx->size() == 1);
       expr *args[2] = {to_app(p.lhs()), to_app(indx->get(0))};
-      store = m_array_util.mk_select(2, args);
-      mdl.register_decl(a->get_decl(), 	mdl(store));
+      sel = m_array_util.mk_select(2, args);
+      mdl.register_decl(a->get_decl(), mdl(sel));
       i++;
     }
     tg.add_lit(eq);
@@ -423,6 +422,7 @@ private:
 	  progress = true;
 	  e = mk_peq(to_app(term)->get_arg(0), to_app(term)->get_arg(1)).mk_peq();
 	  tg.add_lit(e);
+	  tg.add_lit(m.mk_eq(term, e));
 	  continue;
 	}
 	nt = term;
