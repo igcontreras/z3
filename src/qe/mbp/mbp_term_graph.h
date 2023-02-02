@@ -123,7 +123,7 @@ namespace mbp {
         ~term_graph();
 
       const expr_ref_vector& get_lits() const { return m_lits; }
-      void get_terms(expr_ref_vector& res) const; 
+      void get_terms(expr_ref_vector& res, bool exclude_cground);
       void mark2(expr* e);
       bool is_marked2(expr* e);
       

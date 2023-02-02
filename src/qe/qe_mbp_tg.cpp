@@ -368,7 +368,7 @@ private:
     do {
       TRACE("mbp_tg", tout << "Iterating over terms of tg";);
       progress = false;
-      tg.get_terms(terms);
+      tg.get_terms(terms, !m_reduce_all_selects);
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
 	expr* term = terms.get(i);
@@ -410,7 +410,7 @@ private:
       progress = false;
       terms.reset();
       rdTerms.reset();
-      tg.get_terms(terms);
+      tg.get_terms(terms, !m_reduce_all_selects);
       // initialize sz in first iteration
       sz = sz == 0 ? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {

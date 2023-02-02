@@ -384,7 +384,7 @@ public:
       }
       vars.shrink(i);
       qe_mbp_tg mbptg(m, m_params);
-      mbptg(vars_to_elim, fml, mdl, reduce_all_selects);
+      mbptg(vars_to_elim, fml, mdl, false);
       m_rw(fml);
       // HACK to reduce all slect(store(..)) terms in the rewritten fml
       if (reduce_all_selects) {

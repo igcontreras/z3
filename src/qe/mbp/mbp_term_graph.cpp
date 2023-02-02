@@ -447,10 +447,20 @@ namespace mbp {
         }
     }
 
-  void term_graph::get_terms(expr_ref_vector& res) const {
-    for(term* t: m_terms) {
-      if (!t->is_neq_child())
-	res.push_back(t->get_expr());
+  // optionally, exclude constructively ground nodes
+  void term_graph::get_terms(expr_ref_vector& res, bool exclude_cground) {
+    if (exclude_cground) {
+      compute_cground();
+      for(term* t: m_terms) {
+	if (!t->is_neq_child() && !t->is_cgr())
+	  res.push_back(t->get_expr());
+      }
+    }
+    else {
+      for(term* t: m_terms) {
+	if (!t->is_neq_child())
+	  res.push_back(t->get_expr());
+      }
     }
   }
   
