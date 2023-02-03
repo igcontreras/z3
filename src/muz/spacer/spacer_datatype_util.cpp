@@ -78,7 +78,7 @@ struct get_dt_proc {
         : m(a_m), m_dt(m), m_sorts(res) {}
     void operator()(expr *n) const {}
     void operator()(app *n) {
-        sort *s = m.get_sort(n);
+        sort *s = n->get_sort();
         if (m_dt.is_datatype(s) && !m_sorts.contains(s)) m_sorts.push_back(s);
     }
 };
