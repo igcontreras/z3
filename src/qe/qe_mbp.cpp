@@ -269,6 +269,7 @@ public:
 	flatten_and(e, fmls);
 	bool change = true;
         while (change && !vars.empty()) {
+	    change = false;
             for (auto* p : m_plugins) {
                 if (p && p->solve(model, vars, fmls)) {
                     change = true;
