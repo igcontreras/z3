@@ -270,6 +270,10 @@ public:
 	bool change = true;
         while (change && !vars.empty()) {
 	    change = false;
+	    e = mk_and(fmls);
+	    do_spacer_qe_lite(vars, e);
+	    fmls.reset();
+	    flatten_and(e, fmls);
             for (auto* p : m_plugins) {
                 if (p && p->solve(model, vars, fmls)) {
                     change = true;
