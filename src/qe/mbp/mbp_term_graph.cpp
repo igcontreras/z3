@@ -29,6 +29,7 @@ Notes:
 #include "model/model_evaluator.h"
 #include "qe/mbp/mbp_term_graph.h"
 #include "util/bit_vector.h"
+#include "qe/mbp/mbp_arrays.h"
 
 namespace mbp {
 
@@ -103,6 +104,8 @@ namespace mbp {
         unsigned m_is_eq: 1;
 	// caches whether m_expr is an inequality
         unsigned m_is_neq: 1;
+      	// caches whether m_expr is a partial equality
+        unsigned m_is_peq: 1;
       	// caches whether m_expr is the child of not
         unsigned m_is_neq_child: 1;
 
@@ -151,7 +154,7 @@ namespace mbp {
       public:
         term(expr_ref const &v, u_map<term *> &app2term)
           : m_expr(v), m_root(this), m_repr(nullptr), m_next(this),
-	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_neq_child(false), m_cgr(0), m_gr(0) {
+	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_peq(false), m_is_neq_child(false), m_cgr(0), m_gr(0) {
 	  m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
 	  m_children.reset();
 	  if (!is_app(m_expr))
@@ -161,6 +164,7 @@ namespace mbp {
             t->get_root().m_parents.push_back(this);
             m_children.push_back(t);
           }
+	  m_is_peq = is_partial_eq(to_app(m_expr));
         }
 
         ~term() {}
@@ -207,7 +211,7 @@ namespace mbp {
 
         unsigned deg() const { return m_children.size(); }
         unsigned get_id() const { return m_expr->get_id();}
-        bool is_eq_neq() const { return m_is_eq || m_is_neq; }
+        bool is_eq_neq() const { return m_is_eq || m_is_peq || m_is_neq; }
         bool is_neq() const { return m_is_neq; }
         void set_neq_child() { m_is_neq_child = true; }
         bool is_neq_child() const { return m_is_neq_child; }
@@ -452,7 +456,7 @@ namespace mbp {
     if (exclude_cground) {
       compute_cground();
       for(term* t: m_terms) {
-	if (!t->is_neq_child() && !t->is_cgr())
+	if (!t->is_neq_child() && (t->is_eq_neq() || !t->is_cgr()))
 	  res.push_back(t->get_expr());
       }
     }

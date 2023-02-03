@@ -103,7 +103,7 @@ private:
   
   bool is_arr_write(expr* t) {
     if (!m_array_util.is_store(t)) return false;
-    return contains_vars(to_app(t)->get_arg(0), m_vars);
+    return contains_vars(to_app(t), m_vars);
   }
 
   bool is_rd_wr(expr* t) {
@@ -317,13 +317,10 @@ private:
       sel = m.mk_app(d, v);
       eq = m.mk_eq(sel, u);
       tg.add_lit(eq);
-      tg.mark2(u);
-      tg.mark2(sel);
       mdl.register_decl(u->get_decl(), mdl(sel));
     }
     eq = m.mk_eq(v, m.mk_app(cons, new_vars));
     tg.add_lit(eq);
-    tg.mark2(eq);
   }
 
   void deconstruct_eq(expr* cons, expr* rhs, mbp::term_graph& tg) {

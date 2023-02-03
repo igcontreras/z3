@@ -404,9 +404,6 @@ public:
       TRACE("qe", tout << "After mbp_tg:\n"
 	    << fml << " models " << mdl.is_true(fml) << "\n"
                        << "Vars: " << vars_to_elim << "\n";);
-      for (app *v : vars_to_elim) {
-        SASSERT(!array_u.is_array(v) && !dt_u.is_datatype(v->get_sort()));
-      }
       for (app* v : vars_to_elim) {
 	  vars.push_back(v);
       }
@@ -431,8 +428,7 @@ public:
 	m_rw(fml);
 	for (app* v : vars) {
 	  CTRACE("qe", arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
-	  if (!arr_u.is_array(v) && !dt_u.is_datatype(v->get_sort()))
-	    other_vars.push_back(v);
+	  other_vars.push_back(v);
 	}
 
         // project reals, ints and other variables.
