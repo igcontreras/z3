@@ -349,7 +349,8 @@ private:
       expr* newRhs = to_app(cons)->get_arg(i);
       expr* eq = m.mk_eq(a, newRhs);
       if (mdl.is_false(eq)) {
-	tg.add_lit(m.mk_not(eq));
+        tg.add_lit(m.mk_not(eq));
+        break;
       }
     }
   }

@@ -211,7 +211,8 @@ namespace mbp {
 
         unsigned deg() const { return m_children.size(); }
         unsigned get_id() const { return m_expr->get_id();}
-        bool is_eq_neq() const { return m_is_eq || m_is_peq || m_is_neq; }
+        bool is_eq_neq() const { return m_is_eq || m_is_neq; }
+        bool is_eq_peq() const { return m_is_eq || m_is_peq; }
         bool is_neq() const { return m_is_neq; }
         void set_neq_child() { m_is_neq_child = true; }
         bool is_neq_child() const { return m_is_neq_child; }
@@ -456,7 +457,7 @@ namespace mbp {
     if (exclude_cground) {
       compute_cground();
       for(term* t: m_terms) {
-	if (!t->is_neq_child() && (t->is_eq_neq() || !t->is_cgr()))
+	if (!t->is_neq_child() && (t->is_eq_peq() || !t->is_cgr()))
 	  res.push_back(t->get_expr());
       }
     }
