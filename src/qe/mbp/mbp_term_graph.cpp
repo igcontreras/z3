@@ -154,7 +154,7 @@ namespace mbp {
       public:
         term(expr_ref const &v, u_map<term *> &app2term)
           : m_expr(v), m_root(this), m_repr(nullptr), m_next(this),
-	    m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_peq(false), m_is_neq_child(false), m_cgr(0), m_gr(0) {
+	    m_mark(false), m_mark2(false), m_mark3(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_peq(false), m_is_neq_child(false), m_cgr(0), m_gr(0) {
 	  m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
 	  m_children.reset();
 	  if (!is_app(m_expr))
@@ -478,7 +478,7 @@ namespace mbp {
         return m_app2term.find (a->get_id(), res) ? res : nullptr;
     }
 
-    void term_graph::mark2(expr *r) {
+    void term_graph::mark_seen(expr *r) {
       mbp::solve_plugin *pin = m_plugins.get_plugin(get_family_id(m, r));
       expr_ref e(m);
       e = (pin && (m.is_eq(r) || (m.is_not(r) && m.is_eq(to_app(r)->get_arg(0))))) ? (*pin)(r) : r;
@@ -486,10 +486,10 @@ namespace mbp {
       term* res = nullptr;
       m_app2term.find(e->get_id(), res);
       SASSERT(res);
-      res->set_mark2(true);
+      res->set_mark3(true);
     }
 
-    bool term_graph::is_marked2(expr *r) {
+    bool term_graph::is_seen(expr *r) {
       mbp::solve_plugin *pin = m_plugins.get_plugin(get_family_id(m, r));
       expr_ref e(m);
       e = (pin && (m.is_eq(r) || (m.is_not(r) && m.is_eq(to_app(r)->get_arg(0))))) ? (*pin)(r) : r;
@@ -497,7 +497,7 @@ namespace mbp {
       term *res = nullptr;
       m_app2term.find(e->get_id(), res);
       SASSERT(res);
-      return res->is_marked2();
+      return res->is_marked3();
     }
 
     term *term_graph::mk_term(expr *a) {

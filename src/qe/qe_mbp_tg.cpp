@@ -225,12 +225,10 @@ private:
     //do not assign new variable if rd is already equal to a value
     if (tg.has_val_in_class(rd)) return;
     app_ref u = new_var(to_app(rd)->get_sort());
-    if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u)) {
-	m_vars.push_back(u);
-	tg.add_var(u);
-    }
-    else
-      vars.push_back(u);
+    if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
+      m_vars.push_back(u);
+    tg.add_var(u);
+    vars.push_back(u);
     expr* eq = m.mk_eq(u, rd);
     tg.add_lit(eq);
     mdl.register_decl(u->get_decl(), mdl(rd));
@@ -246,12 +244,10 @@ private:
     vector<expr_ref_vector>::iterator itr = indices.begin();
     unsigned i = 0;
     for(app* a : aux_consts) {
-      if (m_dt_util.is_datatype(a->_get_sort()) || m_array_util.is_array(a)) {
-	m_vars.push_back(a);
-	tg.add_var(a);
-      }
-      else
-	vars.push_back(a);
+      if (m_dt_util.is_datatype(a->_get_sort()) || m_array_util.is_array(a))
+        m_vars.push_back(a);
+      tg.add_var(a);
+      vars.push_back(a);
       auto const& indx =  std::next(itr, i);
       SASSERT(indx->size() == 1);
       expr *args[2] = {to_app(p.lhs()), to_app(indx->get(0))};
@@ -307,12 +303,10 @@ private:
     for (unsigned i = 0; i < accessors->size(); i++) {
       func_decl* d = accessors->get(i);
       u = new_var(d->get_range());
-      if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u)) {
-	m_vars.push_back(u);
-	tg.add_var(u);
-      }
-      else
-	vars.push_back(u);
+      if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
+        m_vars.push_back(u);
+      tg.add_var(u);
+      vars.push_back(u);
       new_vars.push_back(u);
       sel = m.mk_app(d, v);
       eq = m.mk_eq(sel, u);
@@ -369,21 +363,21 @@ private:
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
 	expr* term = terms.get(i);
-	if (tg.is_marked2(term)) continue;
+	if (tg.is_seen(term)) continue;
 	if (is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0))) {
-	  tg.mark2(term);
+	  tg.mark_seen(term);
 	  progress = true;
 	  rm_select(term, tg, mdl, vars);
 	  continue;
 	}
 	if (is_constructor_app(term, cons, rhs)) {
-	  tg.mark2(term);
+	  tg.mark_seen(term);
 	  progress = true;
 	  deconstruct_eq(cons, rhs, tg);
 	  continue;
 	}
 	if (m.is_not(term, f) && is_constructor_app(f, cons, rhs)) {
-	  tg.mark2(term);
+	  tg.mark_seen(term);
           progress = true;
 	  deconstruct_neq(cons, rhs, tg, mdl);
 	  continue;
@@ -412,11 +406,11 @@ private:
       sz = sz == 0 ? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
 	term = terms.get(i);
-	if (tg.is_marked2(term)) continue;
+	if (tg.is_seen(term)) continue;
 	TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
 	if (should_create_peq(term)) {
 	  // rewrite array eq as peq
-	  tg.mark2(term);
+	  tg.mark_seen(term);
 	  progress = true;
 	  e = mk_peq(to_app(term)->get_arg(0), to_app(term)->get_arg(1)).mk_peq();
 	  tg.add_lit(e);
@@ -429,22 +423,32 @@ private:
 	  TRACE("mbp_tg", tout << "processing " << expr_ref(nt, m););
 	  peq p(to_app(nt), m);
 	  if (is_arr_write(p.lhs())) {
-	    tg.mark2(nt);
-	    tg.mark2(term);
+	    tg.mark_seen(nt);
+	    tg.mark_seen(term);
 	    progress = true;
 	    elimwreq(p, tg, mdl, is_neg);
 	    continue;
 	  }
-	  if (is_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m))) {
-	    tg.mark2(nt);
-	    tg.mark2(term);
+	  if (has_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m))) {
+	    tg.mark_seen(nt);
+	    tg.mark_seen(term);
 	    progress = true;
 	    elimeq(p, tg, vars, mdl);
 	    continue;
 	  }
+    if (has_var(p.rhs()) && !contains_var(p.lhs(), app_ref(to_app(p.rhs()), m))) {
+      vector<expr_ref_vector> tmp;
+      p.get_diff_indices(tmp);
+      peq p_new = mk_peq(p.rhs(), p.lhs(), tmp);
+      tg.mark_seen(nt);
+	    tg.mark_seen(term);
+	    progress = true;
+	    elimeq(p_new, tg, vars, mdl);
+	    continue;
+	  }
 	}
 	if (is_rd_wr(term)) {
-	  tg.mark2(term);
+	  tg.mark_seen(term);
 	  progress = true;
 	  elimrdwr(term, tg, mdl);
 	  continue;
@@ -457,9 +461,9 @@ private:
 	term = terms.get(i);
 	if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars)) {
           rdTerms.push_back(term);
-	  if (tg.is_marked2(term)) continue;
+	  if (tg.is_seen(term)) continue;
           add_rdVar(term, tg, vars, mdl);
-	  tg.mark2(term);
+	  tg.mark_seen(term);
 	}
       }
 
@@ -473,17 +477,17 @@ private:
 	  expr* i2 = to_app(e2)->get_arg(1);
 	  if (a1->get_id() == a2->get_id()) {
 	    rdEq = m.mk_eq(i1, i2);
-	    if (!tg.is_marked2(rdEq) && mdl.is_true(rdEq)) {
+      if (!tg.is_seen(rdEq) && mdl.is_true(rdEq)) {
 	      progress = true;
 	      tg.add_lit(rdEq);
-              tg.mark2(rdEq);
+              tg.mark_seen(rdEq);
 	      continue;
 	    }
 	    rdDeq = m.mk_not(rdEq);
-	    if (!tg.is_marked2(rdDeq) && mdl.is_true(rdDeq)) {
+	    if (!tg.is_seen(rdDeq) && mdl.is_true(rdDeq)) {
 	      progress = true;
 	      tg.add_lit(rdDeq);
-              tg.mark2(rdDeq);
+              tg.mark_seen(rdDeq);
 	      continue;
 	    }
 	  }
@@ -501,28 +505,17 @@ public:
     if (!reduce_all_selects && vars.empty())
       return;
     m_reduce_all_selects = reduce_all_selects;
-    app_ref_vector arrIndices(m);
-    collect_array_indices(inp, vars, arrIndices);
-    // m_vars are array and ADT variables to be projected vars are
-    // variables that cannot be eliminated after MBP. These are
-    // variables of other sorts introduced by the MBP
-    // procedure. e.g. when eliminating arrays, new variables of index
-    // type are created and added to vars
-    app_ref_vector other_vars(m);
-    for(auto v : vars) {
-      if (!m_dt_util.is_datatype(v->_get_sort()) && !m_array_util.is_array(v))
-	other_vars.push_back(v);
-      else if (!arrIndices.contains(v))
-	m_vars.push_back(v);
-    }
-    vars.reset();
-    for (auto v : arrIndices)
-      vars.push_back(v);
-    for (auto v : other_vars)
-      vars.push_back(v);
+    // m_vars are array and ADT variables to be projected. MBP rules are applied
+    // only on terms containing m_vars
+    // vars are variables that cannot be eliminated after MBP
+    std::function<bool(app*)> adt_or_arr =
+            [&](app* v) { return m_dt_util.is_datatype(v->_get_sort()) || m_array_util.is_array(v); };
+    m_vars = vars.filter_pure(adt_or_arr);
+
     expr_ref_vector fml(m);
     mbp::term_graph tg(m);
-    tg.add_vars(m_vars);
+    //This add_vars marks vars as non-ground.
+    tg.add_vars(vars);
     flatten_and(inp, fml);
     for(expr *e : fml) {
       tg.add_lit(e);
@@ -533,8 +526,10 @@ public:
       progress2 = mbp_adt(fml, tg, mdl, vars);
     } while(progress1 || progress2);
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()););
-    inp = tg.to_ground_expr();
-    SASSERT(!contains_vars(inp, m_vars));
+
+    //The API uses vars merely to update it according to variables in inp. It
+    //does not add vars to tg
+    tg.qe_lite(vars, inp);
     remove_peq(inp, inp);
     TRACE("mbp_tg", tout << "after mbp tg " << inp;);
   }
