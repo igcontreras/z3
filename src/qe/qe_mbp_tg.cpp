@@ -9,6 +9,7 @@
 #include "util/debug.h"
 #include "util/tptr.h"
 #include "util/vector.h"
+#include "util/obj_pair_hashtable.h"
 #include "ast/rewriter/var_subst.h"
 #include "ast/ast_pp.h"
 
@@ -93,6 +94,7 @@ void remove_peq(expr* inp, expr_ref& op) {
   op = mk_and(fml);
 }
 class qe_mbp_tg::impl {
+  typedef std::pair<expr *, expr *> expr_pair;
 private:
   ast_manager& m;
   array_util m_array_util;
@@ -100,7 +102,8 @@ private:
   //TODO: change this, only keep a reference
   app_ref_vector m_vars;
   bool m_reduce_all_selects;
-  
+  obj_hashtable<expr> m_seen;
+  obj_pair_hashtable<expr, expr> m_seenp;
   bool is_arr_write(expr* t) {
     if (!m_array_util.is_store(t)) return false;
     return contains_vars(to_app(t), m_vars);
@@ -164,6 +167,12 @@ private:
       }
       return peq(n_lhs, n_rhs, indices, m);
   }
+
+
+  void mark_seen(expr* t) {m_seen.insert(t);}
+  bool is_seen(expr* t) {return m_seen.contains(t);}
+  void mark_seen(expr* t1, expr* t2) { m_seenp.insert(expr_pair(t1, t2)); }
+  bool is_seen(expr* t1, expr* t2) { return m_seenp.contains(expr_pair(t1, t2)) || m_seenp.contains(expr_pair(t2, t1)); }
 
   void elimwreq(peq p, mbp::term_graph &tg, model& mdl, bool is_neg) {
     SASSERT(is_arr_write(p.lhs()));
@@ -363,22 +372,22 @@ private:
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
 	expr* term = terms.get(i);
-	if (tg.is_seen(term)) continue;
+	if (is_seen(term)) continue;
 	if (is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0))) {
-	  tg.mark_seen(term);
+	  mark_seen(term);
 	  progress = true;
 	  rm_select(term, tg, mdl, vars);
 	  continue;
 	}
 	if (is_constructor_app(term, cons, rhs)) {
-	  tg.mark_seen(term);
+	  mark_seen(term);
 	  progress = true;
 	  deconstruct_eq(cons, rhs, tg);
 	  continue;
 	}
 	if (m.is_not(term, f) && is_constructor_app(f, cons, rhs)) {
-	  tg.mark_seen(term);
-          progress = true;
+    mark_seen(term);
+    progress = true;
 	  deconstruct_neq(cons, rhs, tg, mdl);
 	  continue;
 	}
@@ -406,11 +415,11 @@ private:
       sz = sz == 0 ? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
 	term = terms.get(i);
-	if (tg.is_seen(term)) continue;
+	if (is_seen(term)) continue;
 	TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
 	if (should_create_peq(term)) {
 	  // rewrite array eq as peq
-	  tg.mark_seen(term);
+	  mark_seen(term);
 	  progress = true;
 	  e = mk_peq(to_app(term)->get_arg(0), to_app(term)->get_arg(1)).mk_peq();
 	  tg.add_lit(e);
@@ -423,15 +432,15 @@ private:
 	  TRACE("mbp_tg", tout << "processing " << expr_ref(nt, m););
 	  peq p(to_app(nt), m);
 	  if (is_arr_write(p.lhs())) {
-	    tg.mark_seen(nt);
-	    tg.mark_seen(term);
+	    mark_seen(nt);
+	    mark_seen(term);
 	    progress = true;
 	    elimwreq(p, tg, mdl, is_neg);
 	    continue;
 	  }
 	  if (has_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m))) {
-	    tg.mark_seen(nt);
-	    tg.mark_seen(term);
+	    mark_seen(nt);
+	    mark_seen(term);
 	    progress = true;
 	    elimeq(p, tg, vars, mdl);
 	    continue;
@@ -440,15 +449,15 @@ private:
       vector<expr_ref_vector> tmp;
       p.get_diff_indices(tmp);
       peq p_new = mk_peq(p.rhs(), p.lhs(), tmp);
-      tg.mark_seen(nt);
-	    tg.mark_seen(term);
+      mark_seen(nt);
+      mark_seen(term);
 	    progress = true;
 	    elimeq(p_new, tg, vars, mdl);
 	    continue;
 	  }
 	}
 	if (is_rd_wr(term)) {
-	  tg.mark_seen(term);
+	  mark_seen(term);
 	  progress = true;
 	  elimrdwr(term, tg, mdl);
 	  continue;
@@ -463,35 +472,34 @@ private:
           rdTerms.push_back(term);
 	  if (tg.is_seen(term)) continue;
           add_rdVar(term, tg, vars, mdl);
-	  tg.mark_seen(term);
+	  mark_seen(term);
 	}
       }
 
       for (unsigned i = 0; i < rdTerms.size(); i++) {
-	for (unsigned j = i+1; j < rdTerms.size(); j++) {
-	  expr* e1 = rdTerms.get(i);
-	  expr* e2 = rdTerms.get(j);
-	  expr* a1 = to_app(e1)->get_arg(0);
-	  expr* a2 = to_app(e2)->get_arg(0);
-	  expr* i1 = to_app(e1)->get_arg(1);
-	  expr* i2 = to_app(e2)->get_arg(1);
-	  if (a1->get_id() == a2->get_id()) {
-	    rdEq = m.mk_eq(i1, i2);
-      if (!tg.is_seen(rdEq) && mdl.is_true(rdEq)) {
-	      progress = true;
-	      tg.add_lit(rdEq);
-              tg.mark_seen(rdEq);
-	      continue;
-	    }
-	    rdDeq = m.mk_not(rdEq);
-	    if (!tg.is_seen(rdDeq) && mdl.is_true(rdDeq)) {
-	      progress = true;
-	      tg.add_lit(rdDeq);
-              tg.mark_seen(rdDeq);
-	      continue;
-	    }
-	  }
-	}
+        for (unsigned j = i+1; j < rdTerms.size(); j++) {
+          expr* e1 = rdTerms.get(i);
+          expr* e2 = rdTerms.get(j);
+          expr* a1 = to_app(e1)->get_arg(0);
+          expr* a2 = to_app(e2)->get_arg(0);
+          expr* i1 = to_app(e1)->get_arg(1);
+          expr* i2 = to_app(e2)->get_arg(1);
+          if (!is_seen(e1, e2) && a1->get_id() == a2->get_id()) {
+            mark_seen(e1, e2);
+            rdEq = m.mk_eq(i1, i2);
+            if (mdl.is_true(rdEq)) {
+              progress = true;
+              tg.add_lit(rdEq);
+              continue;
+            }
+            rdDeq = m.mk_not(rdEq);
+            if (mdl.is_true(rdDeq)) {
+              progress = true;
+              tg.add_lit(rdDeq);
+              continue;
+            }
+          }
+        }
       }
     } while(progress);
     return sz < terms.size();
@@ -502,6 +510,8 @@ public:
     : m(m), m_array_util(m), m_dt_util(m), m_vars(m), m_reduce_all_selects(false) {}
 
   void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl, bool reduce_all_selects = false) {
+    m_seen.reset();
+    m_seenp.reset();
     if (!reduce_all_selects && vars.empty())
       return;
     m_reduce_all_selects = reduce_all_selects;

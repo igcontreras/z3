@@ -478,27 +478,6 @@ namespace mbp {
         return m_app2term.find (a->get_id(), res) ? res : nullptr;
     }
 
-    void term_graph::mark_seen(expr *r) {
-      mbp::solve_plugin *pin = m_plugins.get_plugin(get_family_id(m, r));
-      expr_ref e(m);
-      e = (pin && (m.is_eq(r) || (m.is_not(r) && m.is_eq(to_app(r)->get_arg(0))))) ? (*pin)(r) : r;
-      SASSERT(is_internalized(e));
-      term* res = nullptr;
-      m_app2term.find(e->get_id(), res);
-      SASSERT(res);
-      res->set_mark3(true);
-    }
-
-    bool term_graph::is_seen(expr *r) {
-      mbp::solve_plugin *pin = m_plugins.get_plugin(get_family_id(m, r));
-      expr_ref e(m);
-      e = (pin && (m.is_eq(r) || (m.is_not(r) && m.is_eq(to_app(r)->get_arg(0))))) ? (*pin)(r) : r;
-      if (!is_internalized(e)) return false;
-      term *res = nullptr;
-      m_app2term.find(e->get_id(), res);
-      SASSERT(res);
-      return res->is_marked3();
-    }
 
     term *term_graph::mk_term(expr *a) {
         expr_ref e(a, m);
