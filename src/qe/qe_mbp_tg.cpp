@@ -48,31 +48,10 @@ bool contains_var(expr *e, app_ref var, bool only_arr = false) {
   return false;
 }
 
-namespace collect_arrInd_ns {
 struct proc {
-  app_ref_vector const& m_vars;
-  app_ref_vector &m_out;
-  ast_manager& m;
-  array_util m_array_util;
-  expr* ind;
-  proc(app_ref_vector const& vars, app_ref_vector &out) : m_vars(vars), m_out(out), m(out.get_manager()), m_array_util(m) {}
-  void operator()(expr *n) const {}
-  void operator()(app *n) {
-    if (m_array_util.is_select(n) || m_array_util.is_store(n)) {
-      ind = to_app(n)->get_arg(1);
-      for (auto v : m_vars) {
-	if (ind->get_id() == v->get_id())
-	  m_out.push_back(v);
-      }
     }
-  }
 };
-} // namespace collect_arrInd_ns
 
-// Return all variables in vars that are used to index arrays in fml
-void collect_array_indices(expr *fml, app_ref_vector const& vars, app_ref_vector &out) {
-  collect_arrInd_ns::proc proc(vars, out);
-  for_each_expr(proc, fml);
 }
 void remove_peq(expr* inp, expr_ref& op) {
   ast_manager& m = op.get_manager();
@@ -168,12 +147,26 @@ private:
       return peq(n_lhs, n_rhs, indices, m);
   }
 
+  bool is_constructor_app(expr* e, expr* &cons, expr* &rhs) {
+    if (!m.is_eq(e, cons, rhs)) return false;
+    //TODO: does it matter whether vars in cons appear in rhs?
+    if (is_constructor(cons)) {
+      return true;
+    }
+    else if (is_constructor(rhs)) {
+      cons = rhs;
+      rhs = to_app(e)->get_arg(0);
+      return true;
+    }
+    return false;
+  }
 
   void mark_seen(expr* t) {m_seen.insert(t);}
   bool is_seen(expr* t) {return m_seen.contains(t);}
   void mark_seen(expr* t1, expr* t2) { m_seenp.insert(expr_pair(t1, t2)); }
   bool is_seen(expr* t1, expr* t2) { return m_seenp.contains(expr_pair(t1, t2)) || m_seenp.contains(expr_pair(t2, t1)); }
 
+  /* MBP rules begin */
   void elimwreq(peq p, mbp::term_graph &tg, model& mdl, bool is_neg) {
     SASSERT(is_arr_write(p.lhs()));
     TRACE("mbp_tg", tout << "processing " << expr_ref(p.mk_peq(), m););
@@ -288,20 +281,6 @@ private:
     tg.add_lit(m.mk_eq(term, e));
   }
 
-  bool is_constructor_app(expr* e, expr* &cons, expr* &rhs) {
-    if (!m.is_eq(e, cons, rhs)) return false;
-    //TODO: does it matter whether vars in cons appear in rhs?
-    if (is_constructor(cons)) {
-      return true;
-    }
-    else if (is_constructor(rhs)) {
-      cons = rhs;
-      rhs = to_app(e)->get_arg(0);
-      return true;
-    }
-    return false;
-  }
-
   void rm_select(expr* term, mbp::term_graph& tg, model& mdl, app_ref_vector& vars) {
     SASSERT(is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0)));
     expr* v = to_app(term)->get_arg(0), *sel, *eq;
@@ -357,6 +336,7 @@ private:
       }
     }
   }
+  /* MBP rules end */
 
   //todo are the literals to be processed
   // progress indicates whether mbp_arr added terms to the term graph
