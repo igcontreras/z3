@@ -375,44 +375,22 @@ public:
         fml = mk_and(fmls);
     }
 
-      // initialize tg
-      // do mbp for arrays
-      // do mbp for adts
-      // do abstraction on all array and adt variables
   void tg_project(app_ref_vector &vars, model &mdl, expr_ref &fml, bool reduce_all_selects) {
       flatten_and(fml);
-      app_ref_vector vars_to_elim(m);
-      array_util array_u(m);
-      datatype_util dt_u(m);
-      // sort out vars into bools, arith (int/real), and arrays
-      unsigned j = 0, i = vars.size();
-      for (;j < i;) {
-	app* v = vars.get(j);
-	if (array_u.is_array(v) || dt_u.is_datatype(v->get_sort())) {
-	  vars_to_elim.push_back(v);
-	  vars[j] = vars.get(--i);
-	}
-	else
-	  j++;
-      }
-      vars.shrink(i);
       qe_mbp_tg mbptg(m, m_params);
-      mbptg(vars_to_elim, fml, mdl, false);
+      mbptg(vars, fml, mdl, false);
       m_rw(fml);
       // HACK to reduce all slect(store(..)) terms in the rewritten fml
       if (reduce_all_selects) {
-	app_ref_vector empty(m);
-	qe_mbp_tg mbptg2(m, m_params);
-	mbptg2(empty, fml, mdl, reduce_all_selects);
+          app_ref_vector empty(m);
+          qe_mbp_tg mbptg2(m, m_params);
+          mbptg2(empty, fml, mdl, reduce_all_selects);
       }
       TRACE("qe", tout << "After mbp_tg:\n"
-	    << fml << " models " << mdl.is_true(fml) << "\n"
-                       << "Vars: " << vars_to_elim << "\n";);
-      for (app* v : vars_to_elim) {
-	  vars.push_back(v);
-      }
+            << fml << " models " << mdl.is_true(fml) << "\n"
+            << "Vars: " << vars << "\n";);
       do_spacer_qe_lite(vars, fml);
-    }
+  }
     
     void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {
         TRACE("qe", tout << "Before projection:\n" << fml << "\n" << "Vars: " << vars << "\n";);
@@ -420,20 +398,31 @@ public:
         model_evaluator eval(mdl, m_params);
         eval.set_model_completion(true);
         app_ref_vector other_vars(m);
-        app_ref_vector array_vars(m);
+        app_ref_vector sub_vars(m);
         array_util arr_u(m);
         arith_util ari_u(m);
-	datatype_util dt_u(m);
+        datatype_util dt_u(m);
 
-	do_spacer_qe_lite(vars, fml);
-	tg_project(vars, mdl, fml, m_reduce_all_selects);
+        do_spacer_qe_lite(vars, fml);
+        tg_project(vars, mdl, fml, m_reduce_all_selects);
         flatten_and(fml);
-	do_qe_bool(mdl, vars, fml);
-	m_rw(fml);
-	for (app* v : vars) {
-	  CTRACE("qe", arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
-	  other_vars.push_back(v);
-	}
+        do_qe_bool(mdl, vars, fml);
+        m_rw(fml);
+        for (app* v : vars) {
+            CTRACE("qe", arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
+            if (arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()))
+                sub_vars.push_back(v);
+            else
+                other_vars.push_back(v);
+
+        }
+        if (!sub_vars.empty()) {
+            subst_vars(eval, sub_vars, fml);
+            TRACE("qe", tout << "After substituting remaining arr/adt vars:\n" << fml << "\n";);
+            // an extra round of simplification because subst_vars is not simplifying
+            m_rw(fml);
+            sub_vars.reset();
+        }
 
         // project reals, ints and other variables.
         if (!other_vars.empty()) {
