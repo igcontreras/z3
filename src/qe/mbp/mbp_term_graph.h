@@ -68,6 +68,7 @@ namespace mbp {
         projector*        m_projector;
         cover*            m_cover;
         qe*               m_qe;
+        bool              m_internalize_eq;
         u_map<expr *> m_term2app; // any representative change invalidates this cache
         plugin_manager<solve_plugin> m_plugins;
         ptr_hashtable<term, term_hash, term_eq> m_cg_table;
@@ -200,6 +201,11 @@ namespace mbp {
           void operator()(ptr_vector<term> &ts);
         };
 
+        // -- disequalities added for output
+        vector<std::pair<term*,term*>> m_deq_pairs;
+        // -- maybe they are not necessary since they are in the original formula
+        vector<ptr_vector<term>> m_deq_distinct;
+
         expr_ref_vector non_ground_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
         void mk_gr_equalities(term &t, expr_ref_vector &out);
@@ -207,9 +213,8 @@ namespace mbp {
         expr_ref to_ground_expr();
         void qe_lite(app_ref_vector &vars, expr_ref &fml);
         void mb_cover(model& mdl);
-        void add_deq_terms(term *t1, term *t2);
-        void add_deq_terms(ptr_vector<term> &ts);
       bool has_val_in_class(expr* e);
+        void internalize_eq() {m_internalize_eq = true;}
       private:
         add_deq_proc m_add_deq;
       void refine_repr_class(term* t);

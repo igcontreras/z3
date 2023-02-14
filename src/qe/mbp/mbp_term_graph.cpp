@@ -102,11 +102,13 @@ namespace mbp {
         unsigned m_interpreted:1;
         // caches whether m_expr is an equality
         unsigned m_is_eq: 1;
-	// caches whether m_expr is an inequality
+        // caches whether m_expr is an inequality
         unsigned m_is_neq: 1;
-      	// caches whether m_expr is a partial equality
+        // caches whether m_expr is a distinct
+        unsigned m_is_distinct: 1;
+        // caches whether m_expr is a partial equality
         unsigned m_is_peq: 1;
-      	// caches whether m_expr is the child of not
+        // caches whether m_expr is the child of not
         unsigned m_is_neq_child: 1;
 
         // -- the term is a compound term can be rewritten to be ground or it is a ground constant
@@ -156,6 +158,7 @@ namespace mbp {
           : m_expr(v), m_root(this), m_repr(nullptr), m_next(this),
 	    m_mark(false), m_mark2(false), m_mark3(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_peq(false), m_is_neq_child(false), m_cgr(0), m_gr(0) {
 	  m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
+    m_is_distinct = m_expr.get_manager().is_distinct(m_expr);
 	  m_children.reset();
 	  if (!is_app(m_expr))
             return;
@@ -211,7 +214,7 @@ namespace mbp {
 
         unsigned deg() const { return m_children.size(); }
         unsigned get_id() const { return m_expr->get_id();}
-        bool is_eq_neq() const { return m_is_eq || m_is_neq; }
+        bool is_eq_neq() const { return m_is_eq || m_is_neq || m_is_distinct; }
         bool is_eq_peq() const { return m_is_eq || m_is_peq; }
         bool is_neq() const { return m_is_neq; }
         void set_neq_child() { m_is_neq_child = true; }
@@ -399,7 +402,7 @@ namespace mbp {
 
     term_graph::term_graph(ast_manager &man)
         : m(man), m_lits(m), m_pinned(m), m_projector(nullptr),
-          m_cover(nullptr) {
+          m_cover(nullptr), m_internalize_eq(false) {
       m_is_var.reset();
       m_plugins.register_plugin(mbp::mk_basic_solve_plugin(m, m_is_var));
       m_plugins.register_plugin(mbp::mk_arith_solve_plugin(m, m_is_var));
@@ -553,14 +556,11 @@ namespace mbp {
         merge(*internalize_term(a1), *internalize_term(a2));
         merge_flush();
         SASSERT(m_merge.empty());
-	expr* eq = m.mk_eq(a1, a2);
-	term* res = get_term(eq);
-	if (!res)
-	  mk_term(eq);
-	eq = m.mk_eq(a2, a1);
-	res = get_term(eq);
-	if (!res)
-	  mk_term(eq);
+        if (!m_internalize_eq) return;
+        expr* eq = m.mk_eq(a1, a2);
+        term* res = get_term(eq);
+        if (!res)
+          mk_term(eq);
     }
 
     void term_graph::internalize_distinct(expr *d) {
@@ -568,37 +568,30 @@ namespace mbp {
       ptr_vector<term> ts(a->get_decl()->get_arity());
       auto tsit = ts.begin();
       for (auto arg : *a) {
-        ++*tsit = internalize_term(arg);
+        *tsit = internalize_term(arg);
+        tsit++;
       }
       m_add_deq(ts);
-      SASSERT(false && "internalizing distinct not supported");
+      m_deq_distinct.push_back(ts);
+      if (!m_internalize_eq) return;      
+      term* t  = get_term(d);
+      if (!t) mk_term(d);
     }
 
     void term_graph::internalize_deq(expr *a1, expr *a2) {
       // TODO: what do not add disequalities of interpreted terms? (e.g. 1 != 2)
-      add_deq_terms(internalize_term(a1), internalize_term(a2));
+      term *t1 = internalize_term(a1);
+      term *t2 = internalize_term(a2);
+      m_add_deq(t1, t2);
+      m_deq_pairs.push_back({t1, t2});
+      if (!m_internalize_eq) return;
       expr* eq = m.mk_eq(a1, a2);
       term* eq_term = mk_term(eq);
       eq_term->set_neq_child();
       expr* deq = m.mk_not(eq);
       term* res = get_term(deq);
       if (!res)
-	mk_term(deq);
-      eq = m.mk_eq(a2, a1);
-      eq_term = mk_term(eq);
-      eq_term->set_neq_child();
-      deq = m.mk_not(eq);
-      res = get_term(deq);
-      if (!res)
-	mk_term(deq);
-    }
-
-    void term_graph::add_deq_terms(term *t1, term *t2) {
-      m_add_deq(t1, t2);
-    }
-
-    void term_graph::add_deq_terms(ptr_vector<term>& ts) {
-      m_add_deq(ts);
+        mk_term(deq);
     }
 
   void term_graph::internalize_lit(expr * lit) {
@@ -986,27 +979,28 @@ namespace mbp {
             }
         }
 
-        for (term * t : m_terms) {
-	    if (t->is_neq()) {
-	      term* const* eq = term::children(t).begin();
-	      term* ch[2];
-	      unsigned i = 0;
-	      for(auto c : term::children(*eq)) {
-		ch[i] = c;
-		i++;
-	      }
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(*ch[0]->get_repr())),
-				    ::to_app(mk_app<false>(*ch[1]->get_repr()))));
-	    }
-	    if (t->is_eq_neq()) continue;
-            if (!t->is_repr())
-                continue;
-            else if (all_equalities)
-                mk_all_equalities (*t, lits);
-            else
-                mk_equalities(*t, lits);
+        for (term * t : m_terms) {   
+          if (t->is_eq_neq()) continue;
+          if (!t->is_repr())
+            continue;
+          else if (all_equalities)
+            mk_all_equalities (*t, lits);
+          else
+            mk_equalities(*t, lits);
         }
-	// SASSERT(m_deq_distinct.empty());
+
+        //TODO: use seen to prevent duplicate disequalities
+        for (auto p : m_deq_pairs) {
+          lits.push_back(mk_neq(m, mk_app<false>(p.first->get_expr()),
+                                mk_app<false>(p.second->get_expr())));
+        }
+
+        for (auto t : m_deq_distinct) {
+          ptr_vector<expr> args(t.size());
+          for (auto c : t)
+            args.push_back(mk_app<false>(c->get_expr()));
+          lits.push_back(m.mk_distinct(args.size(), args.data()));
+        }
     }
 
     void term_graph::to_lits_qe_lite(expr_ref_vector &lits) {
@@ -1014,31 +1008,33 @@ namespace mbp {
 
         for (expr *a : m_lits) {
           if (is_internalized(a)) {
-                lits.push_back(::to_app(mk_app<true>(a)));
+                lits.push_back(mk_app<true>(a));
           }
         }
 
-        for (term *t : m_terms) {
-	  // the following are output using representatives, which may contain
-	  // variables that could not be eliminated
-          if (t->is_neq()) {
-	      term* const* eq = term::children(t).begin();
-	      term* ch[2];
-	      unsigned i = 0;
-	      for(auto c : term::children(*eq)) {
-		ch[i] = c;
-		i++;
-	      }
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<true>(*ch[0]->get_repr())),
-				    ::to_app(mk_app<true>(*ch[1]->get_repr()))));
-	  }
-	  if (t->is_eq_neq()) continue;
-	  if (!t->is_repr())
+        for (term *t : m_terms) { 
+          if (t->is_eq_neq()) continue;
+          if (!t->is_repr())
             continue;
           else
             mk_qe_lite_equalities(*t,lits);
         }
-	// SASSERT(m_deq_distinct.empty());
+
+        //TODO: use seen to prevent duplicate disequalities
+        for (auto p : m_deq_pairs) {
+          lits.push_back(mk_neq(m, mk_app<true>(*(p.first->get_repr())),
+                                mk_app<true>(*(p.second->get_repr()))));
+        }
+
+        expr_ref distinct(m);
+        for (auto t : m_deq_distinct) {
+          expr_ref_vector args(m);
+          for (auto c : t)
+            args.push_back(mk_app<true>(*(c->get_repr())));
+          distinct = m.mk_distinct(args.size(), args.data());
+          TRACE("qe_debug", tout << "making distinct " << distinct;);
+          lits.push_back(distinct);
+        }
     }
 
   // assumes that ground terms have been computed and picked as root if exist
@@ -1055,18 +1051,7 @@ namespace mbp {
       }
 
       for (term *t : m_terms) {
-	if (t->is_neq() && t->is_cgr()) {
-	      term* const* eq = term::children(t).begin();
-	      term* ch[2];
-	      unsigned i = 0;
-	      for(auto c : term::children(*eq)) {
-		ch[i] = c->get_repr();
-		i++;
-	      }
-	      lits.push_back(mk_neq(m, ::to_app(mk_app<false>(*ch[0]->get_repr())),
-				    ::to_app(mk_app<false>(*ch[1]->get_repr()))));
-	}
-	if (t->is_eq_neq()) continue;
+        if (t->is_eq_neq()) continue;
         if (!t->is_repr())
           continue;
         else if(!t->is_cgr()) // a root that is not gr; nothing to do
@@ -1077,8 +1062,19 @@ namespace mbp {
           mk_gr_equalities(*t, lits);
         }
       }
-      // SASSERT(m_deq_distinct.empty());
-      // TODO: do for m_deq_distinct?
+
+      //TODO: use seen to prevent duplicate disequalities
+      for (auto p : m_deq_pairs) {
+        lits.push_back(mk_neq(m, mk_app<false>(*(p.first->get_repr())),
+                              mk_app<false>(*(p.second->get_repr()))));
+      }
+
+      for (auto t : m_deq_distinct) {
+        ptr_vector<expr> args;
+        for (auto c : t)
+          args.push_back(mk_app<false>(*(c->get_repr())));
+        lits.push_back(m.mk_distinct(args.size(), args.data()));
+      }
     }
 
     expr_ref term_graph::to_expr(bool repick_repr) {
@@ -1796,7 +1792,7 @@ namespace mbp {
                 SASSERT(p1);
                 SASSERT(p2);
                 if (m.are_distinct(p1, p2)) {
-                  m_tg.add_deq_terms(p.first, p.second);
+                  m_tg.internalize_deq(p.first->get_expr(), p.second->get_expr());
                   // TODO: right now making not equal the first argument that is found different
                   break;
                 }

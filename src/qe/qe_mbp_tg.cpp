@@ -526,6 +526,7 @@ public:
     mbp::term_graph tg(m);
     //This add_vars marks vars as non-ground.
     tg.add_vars(vars);
+    tg.internalize_eq();
     flatten_and(inp, fml);
     for(expr *e : fml) {
       tg.add_lit(e);
