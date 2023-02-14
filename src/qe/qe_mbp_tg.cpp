@@ -467,13 +467,13 @@ private:
       // iterate over term graph again to collect read terms
       // irrespective of whether they have been marked or not
       for (unsigned i = 0; i < terms.size(); i++) {
-	term = terms.get(i);
-	if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars)) {
+        term = terms.get(i);
+        if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars)) {
           rdTerms.push_back(term);
-	  if (tg.is_seen(term)) continue;
+          if (is_seen(term)) continue;
           add_rdVar(term, tg, vars, mdl);
-	  mark_seen(term);
-	}
+          mark_seen(term);
+        }
       }
 
       for (unsigned i = 0; i < rdTerms.size(); i++) {
