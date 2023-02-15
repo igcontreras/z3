@@ -200,7 +200,7 @@ private:
   /* MBP rules begin */
   void elimwreq(peq p, mbp::term_graph &tg, model& mdl, bool is_neg) {
     SASSERT(is_arr_write(p.lhs()));
-    TRACE("mbp_tg", tout << "processing " << expr_ref(p.mk_peq(), m););
+    TRACE("mbp_tg", tout << "applying elimwreq on " << expr_ref(p.mk_peq(), m););
     vector<expr_ref_vector> indices;
     expr* j = to_app(p.lhs())->get_arg(1);
     bool in = false;
@@ -209,12 +209,12 @@ private:
     expr_ref_vector deq(m);
     for(expr_ref_vector& e : indices) {
       for (expr* i : e) {
-	if (mdl.is_true(m.mk_eq(j, i))) {
-	  in = true;
-	  eq = m.mk_eq(j, i);
-	  break;
-	}
-	else deq.push_back(i);
+        if (mdl.is_true(m.mk_eq(j, i))) {
+          in = true;
+          eq = m.mk_eq(j, i);
+          break;
+        }
+        else deq.push_back(i);
       }
     }
     if (in) {
@@ -226,8 +226,8 @@ private:
     }
     else {
       for(expr* d : deq) {
-	eq = m.mk_not(m.mk_eq(j, d));
-	tg.add_lit(eq);
+        eq = m.mk_not(m.mk_eq(j, d));
+        tg.add_lit(eq);
       }
       expr_ref_vector setOne(m);
       setOne.push_back(j);
@@ -237,19 +237,19 @@ private:
       expr* rd = m_array_util.mk_select(2, args);
       eq = m.mk_eq(rd, to_app(p.lhs())->get_arg(2));
       if (!is_neg) {
-	tg.add_lit(p_new.mk_peq());
-	tg.add_lit(eq);
-	tg.add_eq(p.mk_peq(), p_new.mk_peq());
+        tg.add_lit(p_new.mk_peq());
+        tg.add_lit(eq);
+        tg.add_eq(p.mk_peq(), p_new.mk_peq());
       }
       else {
-	SASSERT(mdl.is_false(p_new.mk_peq()) || mdl.is_false(eq));
-	if (mdl.is_false(p_new.mk_peq())) {
-	  tg.add_lit(mk_not(p_new.mk_peq()));
-	  tg.add_eq(p.mk_peq(), p_new.mk_peq());
-	}
-	if (mdl.is_false(eq)) {
-	  tg.add_lit(m.mk_not(eq));
-	}
+        SASSERT(mdl.is_false(p_new.mk_peq()) || mdl.is_false(eq));
+        if (mdl.is_false(p_new.mk_peq())) {
+          tg.add_lit(mk_not(p_new.mk_peq()));
+          tg.add_eq(p.mk_peq(), p_new.mk_peq());
+        }
+        if (mdl.is_false(eq)) {
+          tg.add_lit(m.mk_not(eq));
+        }
       }
     }
   }
@@ -257,6 +257,7 @@ private:
   void add_rdVar(expr* rd, mbp::term_graph &tg, app_ref_vector& vars, model& mdl) {
     //do not assign new variable if rd is already equal to a value
     if (tg.has_val_in_class(rd)) return;
+    TRACE("mbp_tg", tout << "applying add_rdVar on " << expr_ref(rd, m););
     app_ref u = new_var(to_app(rd)->get_sort());
     if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
       m_vars.push_back(u);
@@ -268,6 +269,7 @@ private:
   }
 
   void elimeq(peq p, mbp::term_graph &tg, app_ref_vector& vars, model& mdl) {
+    TRACE("mbp_tg", tout << "applying elimeq on " << expr_ref(p.mk_peq(), m););
     app_ref_vector aux_consts(m);
     expr_ref eq(m);
     expr_ref sel(m);
@@ -296,6 +298,7 @@ private:
 
   void elimrdwr(expr* term, mbp::term_graph &tg, model& mdl) {
     SASSERT(is_rd_wr(term));
+    TRACE("mbp_tg", tout << "applying elimrdwr on " << expr_ref(term, m););
     expr* wr_ind = to_app(to_app(term)->get_arg(0))->get_arg(1);
     expr* rd_ind = to_app(term)->get_arg(1);
     expr *eq = m.mk_eq(wr_ind, rd_ind);
@@ -314,6 +317,7 @@ private:
 
   void rm_select(expr* term, mbp::term_graph& tg, model& mdl, app_ref_vector& vars) {
     SASSERT(is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0)));
+    TRACE("mbp_tg", tout << "applying rm_select on " << expr_ref(term, m););
     expr* v = to_app(term)->get_arg(0), *sel, *eq;
     app_ref u(m);
     app_ref_vector new_vars(m);
@@ -337,6 +341,7 @@ private:
   }
 
   void deconstruct_eq(expr* cons, expr* rhs, mbp::term_graph& tg) {
+    TRACE("mbp_tg", tout << "applying deconstruct_eq on " << expr_ref(cons, m););
     ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
     for (unsigned i = 0; i < accessors->size(); i++) {
       app* a = m.mk_app(accessors->get(i), rhs);
@@ -348,6 +353,7 @@ private:
   }
 
   void deconstruct_neq(expr* cons, expr* rhs, mbp::term_graph& tg, model& mdl) {
+    TRACE("mbp_tg", tout << "applying deconstruct_neq on " << expr_ref(cons, m););
     ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
     func_decl* is_cons = m_dt_util.get_constructor_recognizer(to_app(cons)->get_decl());
     expr* a = m.mk_app(is_cons, rhs);
@@ -371,7 +377,7 @@ private:
 
   //todo are the literals to be processed
   // progress indicates whether mbp_arr added terms to the term graph
-  bool mbp_adt(expr_ref_vector& fml, mbp::term_graph& tg, model& mdl, app_ref_vector &vars) {
+  bool mbp_adt(mbp::term_graph& tg, model& mdl, app_ref_vector &vars) {
     expr* cons, *rhs, *f;
     expr_ref_vector terms(m);
     unsigned sz = 0;
@@ -382,26 +388,26 @@ private:
       tg.get_terms(terms, !m_reduce_all_selects);
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
-	expr* term = terms.get(i);
-	if (is_seen(term)) continue;
-	if (is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0))) {
-	  mark_seen(term);
-	  progress = true;
-	  rm_select(term, tg, mdl, vars);
-	  continue;
-	}
-	if (is_constructor_app(term, cons, rhs)) {
-	  mark_seen(term);
-	  progress = true;
-	  deconstruct_eq(cons, rhs, tg);
-	  continue;
-	}
-	if (m.is_not(term, f) && is_constructor_app(f, cons, rhs)) {
-    mark_seen(term);
-    progress = true;
-	  deconstruct_neq(cons, rhs, tg, mdl);
-	  continue;
-	}
+        expr* term = terms.get(i);
+        if (is_seen(term)) continue;
+        if (is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0))) {
+          mark_seen(term);
+          progress = true;
+          rm_select(term, tg, mdl, vars);
+          continue;
+        }
+        if (is_constructor_app(term, cons, rhs)) {
+          mark_seen(term);
+          progress = true;
+          deconstruct_eq(cons, rhs, tg);
+          continue;
+        }
+        if (m.is_not(term, f) && is_constructor_app(f, cons, rhs)) {
+          mark_seen(term);
+          progress = true;
+          deconstruct_neq(cons, rhs, tg, mdl);
+          continue;
+        }
       }
     } while(progress);
     return sz < terms.size();;
@@ -409,7 +415,7 @@ private:
 
   // todo are the literals to be processed
   // progress indicates whether mbp_arr added terms to the term graph
-  bool mbp_arr(expr_ref_vector& todo, mbp::term_graph& tg, model& mdl, app_ref_vector &vars) {
+  bool mbp_arr(mbp::term_graph& tg, model& mdl, app_ref_vector &vars) {
     vector<expr_ref_vector> indices;
     expr_ref_vector terms(m), rdTerms(m);
     expr_ref e(m), rdEq(m), rdDeq(m);
@@ -425,54 +431,53 @@ private:
       // initialize sz in first iteration
       sz = sz == 0 ? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
-	term = terms.get(i);
-	if (is_seen(term)) continue;
-	TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
-	if (should_create_peq(term)) {
-	  // rewrite array eq as peq
-	  mark_seen(term);
-	  progress = true;
-	  e = mk_peq(to_app(term)->get_arg(0), to_app(term)->get_arg(1)).mk_peq();
-	  tg.add_lit(e);
-	  tg.add_lit(m.mk_eq(term, e));
-	  continue;
-	}
-	nt = term;
-	is_neg = m.is_not(term, nt);
-	if (is_app(nt) && is_partial_eq(to_app(nt))) {
-	  TRACE("mbp_tg", tout << "processing " << expr_ref(nt, m););
-	  peq p(to_app(nt), m);
-	  if (is_arr_write(p.lhs())) {
-	    mark_seen(nt);
-	    mark_seen(term);
-	    progress = true;
-	    elimwreq(p, tg, mdl, is_neg);
-	    continue;
-	  }
-	  if (has_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m))) {
-	    mark_seen(nt);
-	    mark_seen(term);
-	    progress = true;
-	    elimeq(p, tg, vars, mdl);
-	    continue;
-	  }
-    if (has_var(p.rhs()) && !contains_var(p.lhs(), app_ref(to_app(p.rhs()), m))) {
-      vector<expr_ref_vector> tmp;
-      p.get_diff_indices(tmp);
-      peq p_new = mk_peq(p.rhs(), p.lhs(), tmp);
-      mark_seen(nt);
-      mark_seen(term);
-	    progress = true;
-	    elimeq(p_new, tg, vars, mdl);
-	    continue;
-	  }
-	}
-	if (is_rd_wr(term)) {
-	  mark_seen(term);
-	  progress = true;
-	  elimrdwr(term, tg, mdl);
-	  continue;
-	}
+        term = terms.get(i);
+        if (is_seen(term)) continue;
+        TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
+        if (should_create_peq(term)) {
+          // rewrite array eq as peq
+          mark_seen(term);
+          progress = true;
+          e = mk_peq(to_app(term)->get_arg(0), to_app(term)->get_arg(1)).mk_peq();
+          tg.add_lit(e);
+          tg.add_lit(m.mk_eq(term, e));
+          continue;
+        }
+        nt = term;
+        is_neg = m.is_not(term, nt);
+        if (is_app(nt) && is_partial_eq(to_app(nt))) {
+          peq p(to_app(nt), m);
+          if (is_arr_write(p.lhs())) {
+            mark_seen(nt);
+            mark_seen(term);
+            progress = true;
+            elimwreq(p, tg, mdl, is_neg);
+            continue;
+          }
+          if (has_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m))) {
+            mark_seen(nt);
+            mark_seen(term);
+            progress = true;
+            elimeq(p, tg, vars, mdl);
+            continue;
+          }
+          if (has_var(p.rhs()) && !contains_var(p.lhs(), app_ref(to_app(p.rhs()), m))) {
+            vector<expr_ref_vector> tmp;
+            p.get_diff_indices(tmp);
+            peq p_new = mk_peq(p.rhs(), p.lhs(), tmp);
+            mark_seen(nt);
+            mark_seen(term);
+            progress = true;
+            elimeq(p_new, tg, vars, mdl);
+            continue;
+          }
+        }
+        if (is_rd_wr(term)) {
+          mark_seen(term);
+          progress = true;
+          elimrdwr(term, tg, mdl);
+          continue;
+        }
       }
 
       // iterate over term graph again to collect read terms
@@ -544,10 +549,10 @@ public:
     }
     bool progress1 = false, progress2 = false;
     do {
-      progress1 = mbp_arr(fml, tg, mdl, vars);
-      progress2 = mbp_adt(fml, tg, mdl, vars);
+      progress1 = mbp_arr(tg, mdl, vars);
+      progress2 = mbp_adt(tg, mdl, vars);
     } while(progress1 || progress2);
-    TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()););
+    TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()) << " and vars " << vars;);
 
     //The API uses vars merely to update it according to variables in inp. It
     //does not add vars to tg
@@ -566,7 +571,6 @@ public:
     tg.add_red(red_vars);
     tg.qe_lite(vars, inp);
     remove_peq(inp, inp);
-    TRACE("mbp_tg", tout << "after mbp tg " << inp;);
   }
 };
 
