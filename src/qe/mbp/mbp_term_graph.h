@@ -143,9 +143,9 @@ namespace mbp {
 
         // deprecate?
         void to_lits(expr_ref_vector &lits, bool all_equalities = false,
-                     bool repick_roots = true);
+                     bool repick_repr = true);
         void to_lits_qe_lite(expr_ref_vector &lits);
-        expr_ref to_expr(bool repick_roots = true);
+        expr_ref to_expr(bool repick_repr = true);
 
         /**
          * Return literals obtained by projecting added literals

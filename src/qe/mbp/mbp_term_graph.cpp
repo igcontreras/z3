@@ -310,21 +310,21 @@ namespace mbp {
 
       // -- make this term the repr of its equivalence class
       void mk_repr() {
-	term *curr = this;
-	do {
-	  curr->set_repr(this);
-	  curr = &curr->get_next();
-	}
-	while (curr != this);
+        term *curr = this;
+        do {
+          curr->set_repr(this);
+          curr = &curr->get_next();
+        }
+        while (curr != this);
       }
 
         std::ostream& display(std::ostream& out) const {
             out << get_id() << ": " << m_expr
-                << (is_repr() ? " R" : "") << (is_gr() ? " G" : "") << (is_cgr() ? " CG" : "") << " deg:" << deg() << " - ";
+                << (is_repr() ? " R" : "") << (is_gr() ? " G" : "") << (is_class_gr() ? " clsG" : "") << (is_cgr() ? " CG" : "") << " deg:" << deg() << " - ";
             term const* r = &this->get_next();
             while (r != this) {
-	      out << r->get_id() << " " << (r->is_cgr() ? " CG" : "") << " ";
-                r = &r->get_next();
+              out << r->get_id() << " " << (r->is_cgr() ? " CG" : "") << " ";
+              r = &r->get_next();
             }
             out << "\n";
             return out;
@@ -687,7 +687,7 @@ namespace mbp {
     }
 
     template <bool mark> expr_ref term_graph::mk_app(term &r) {
-        SASSERT(r.is_repr());
+      SASSERT(r.is_repr());
         if(mark)
           r.set_mark2(true);
 
@@ -938,7 +938,7 @@ namespace mbp {
       todo.pop_back();
       if (it->get_root().get_id() == r.get_id()) return true;
       for(auto* ch : term::children(it)) {
-	todo.push_back(ch->get_repr());
+        todo.push_back(ch->get_repr());
       }
     }
     return false;
@@ -949,25 +949,22 @@ namespace mbp {
     m_term2app.reset();
     for (term* t : m_terms) {
       if (!t->get_repr()->is_cgr())
-	refine_repr_class(t->get_repr());
+        refine_repr_class(t->get_repr());
     }
   }
 
   bool term_graph::has_val_in_class(expr *e) {
-	term* r = get_term(e);
-	if(!r) return false;
-	auto is_val = [&](term* t) {
-	  return m.is_value(t->get_expr());
-	};
-	if (is_val(r)) return true;
-	for(term* it = &r->get_next(); it != r; it = &it->get_next())
-	  if (is_val(it)) return true;
-	return false;
-      }
-    void term_graph::display(std::ostream &out) {
-        for (term * t : m_terms) {
-            out << *t;
-        }
+    term* r = get_term(e);
+    if(!r) return false;
+    auto is_val = [&](term* t) {
+        return m.is_value(t->get_expr());
+    };
+    if (is_val(r)) return true;
+    for(term* it = &r->get_next(); it != r; it = &it->get_next())
+      if (is_val(it)) return true;
+    return false;
+  }
+
   app* term_graph::get_const_in_class(expr *e) {
     term* r = get_term(e);
     if(!r) return nullptr;
@@ -979,7 +976,12 @@ namespace mbp {
       if (is_val(it)) return ::to_app(it->get_expr());
     return nullptr;
   }
+
+  void term_graph::display(std::ostream &out) {
+    for (term * t : m_terms) {
+      out << *t;
     }
+  }
 
   void term_graph::to_lits(expr_ref_vector & lits, bool all_equalities,
                                bool repick_repr) {
@@ -1015,6 +1017,7 @@ namespace mbp {
           lits.push_back(m.mk_distinct(args.size(), args.data()));
         }
     }
+
 
     void term_graph::to_lits_qe_lite(expr_ref_vector &lits) {
         // it assumes that the roots have been properly picked
@@ -1055,7 +1058,6 @@ namespace mbp {
           }
           if (args.size() == 0) continue;
           distinct = m.mk_distinct(args.size(), args.data());
-          TRACE("qe_debug", tout << "making distinct " << distinct;);
           lits.push_back(distinct);
         }
     }
@@ -1841,17 +1843,17 @@ namespace mbp {
 
       // modifies `vars` to keep the variables that could not be eliminated
       void qe_lite(app_ref_vector &vars, expr_ref &fml) {
-	for(unsigned i = 0; i < vars.size(); i++) {
-	  if (!m_tg.is_internalized(vars.get(i))) {
-	    vars[i] = vars.back();
-	    vars.pop_back();
-	    --i;
-	  }
-	}
+        for(unsigned i = 0; i < vars.size(); i++) {
+          if (!m_tg.is_internalized(vars.get(i))) {
+            vars[i] = vars.back();
+            vars.pop_back();
+            --i;
+          }
+        }
         m_tg.compute_cground();
         // removes from `vars` the variables that have a ground representative
         m_tg.pick_repr();
-	m_tg.refine_repr();
+        m_tg.refine_repr();
 
         expr_ref_vector lits(m);
         // uses mark2 to mark the variables that appear in lits
@@ -2110,7 +2112,6 @@ namespace mbp {
       t->set_cgr(false);
       t->set_class_gr(false);
     }
-
     ptr_vector<term> todo;
     for (auto t : m_terms) {
       if (t->is_gr()) {
