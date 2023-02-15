@@ -215,7 +215,8 @@ namespace mbp {
         expr_ref to_ground_expr();
         void qe_lite(app_ref_vector &vars, expr_ref &fml);
         void mb_cover(model& mdl);
-      bool has_val_in_class(expr* e);
+        bool has_val_in_class(expr* e);
+        app* get_const_in_class(expr* e);
         void internalize_eq() {m_internalize_eq = true;}
       private:
         add_deq_proc m_add_deq;

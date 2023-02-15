@@ -325,13 +325,18 @@ private:
     ptr_vector<func_decl> const* accessors =  m_dt_util.get_constructor_accessors(cons);
     for (unsigned i = 0; i < accessors->size(); i++) {
       func_decl* d = accessors->get(i);
+      sel = m.mk_app(d, v);
+      u = tg.get_const_in_class(sel);
+      if (u) {
+        new_vars.push_back(u);
+        continue;
+      }
       u = new_var(d->get_range());
       if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
         m_vars.push_back(u);
       tg.add_var(u);
       vars.push_back(u);
       new_vars.push_back(u);
-      sel = m.mk_app(d, v);
       eq = m.mk_eq(sel, u);
       tg.add_lit(eq);
       mdl.register_decl(u->get_decl(), mdl(sel));

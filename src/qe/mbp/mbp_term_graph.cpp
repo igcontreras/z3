@@ -968,6 +968,17 @@ namespace mbp {
         for (term * t : m_terms) {
             out << *t;
         }
+  app* term_graph::get_const_in_class(expr *e) {
+    term* r = get_term(e);
+    if(!r) return nullptr;
+    auto is_val = [&](term* t) {
+        return is_uninterp_const(t->get_expr());
+    };
+    if (is_val(r)) return ::to_app(r->get_expr());
+    for(term* it = &r->get_next(); it != r; it = &it->get_next())
+      if (is_val(it)) return ::to_app(it->get_expr());
+    return nullptr;
+  }
     }
 
   void term_graph::to_lits(expr_ref_vector & lits, bool all_equalities,
