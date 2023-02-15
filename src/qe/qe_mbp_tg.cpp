@@ -49,9 +49,23 @@ bool contains_var(expr *e, app_ref var, bool only_arr = false) {
   return false;
 }
 
+namespace collect_uninterp_consts_ns {
 struct proc {
+    expr_ref_vector &m_out;
+    proc(expr_ref_vector &out) : m_out(out) {}
+    void operator()(expr *n) const {}
+    void operator()(app *n) {
+        if (is_uninterp_const(n)) m_out.push_back(n);
     }
 };
+} // namespace collect_uninterp_consts_ns
+
+// Return all uninterpreted constants of \p q
+void collect_uninterp_consts(expr *e, expr_ref_vector &out) {
+    collect_uninterp_consts_ns::proc proc(out);
+    for_each_expr(proc, e);
+}
+
 namespace is_selstore_var_ns {
   struct found {};
   struct proc {
@@ -558,6 +572,12 @@ public:
       progress2 = mbp_adt(tg, mdl, vars);
     } while(progress1 || progress2);
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()) << " and vars " << vars;);
+    TRACE("mbp_tg_verbose",
+          expr_ref_vector vars_tmp(m);
+          collect_uninterp_consts(mk_and(tg.get_lits()), vars_tmp);
+          for(auto a : vars_tmp) tout << mk_pp(to_app(a)->get_decl(), m) << "\n";
+          for(auto b : tg.get_lits()) tout << expr_ref(b, m) << "\n";
+          for(auto a : m_vars) tout << expr_ref(a, m) << " " ;);
 
     //The API uses vars merely to update it according to variables in inp. It
     //does not add vars to tg
