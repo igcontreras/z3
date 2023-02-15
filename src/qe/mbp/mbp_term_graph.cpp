@@ -404,6 +404,7 @@ namespace mbp {
         : m(man), m_lits(m), m_pinned(m), m_projector(nullptr),
           m_cover(nullptr), m_internalize_eq(false) {
       m_is_var.reset();
+      m_is_red.reset();
       m_plugins.register_plugin(mbp::mk_basic_solve_plugin(m, m_is_var));
       m_plugins.register_plugin(mbp::mk_arith_solve_plugin(m, m_is_var));
     }
@@ -750,11 +751,12 @@ namespace mbp {
           if(is_app(e)) {
             app * a = to_app(e);
             if(!m_is_var.contains(a->get_decl())) { // it is not a variable to elim
-              if(!rep)
+              if(!rep) {
                  rep = mk_app<true>(t);
-
+                 if (!is_pure(m_is_red, rep)) return;
+              }
               expr *mem = mk_app_core<true>(e);
-              if(rep != mem)
+              if(rep != mem && is_pure(m_is_red, mem))
                 out.push_back(m.mk_eq(rep, mem));
             }
           }
@@ -1008,6 +1010,9 @@ namespace mbp {
 
         for (expr *a : m_lits) {
           if (is_internalized(a)) {
+            expr_ref r(m);
+            r = mk_app<true>(a);
+            if (is_pure(m_is_red, r))
                 lits.push_back(mk_app<true>(a));
           }
         }
@@ -1016,21 +1021,28 @@ namespace mbp {
           if (t->is_eq_neq()) continue;
           if (!t->is_repr())
             continue;
-          else
-            mk_qe_lite_equalities(*t,lits);
+          mk_qe_lite_equalities(*t,lits);
         }
 
         //TODO: use seen to prevent duplicate disequalities
+        //TODO: prevent calling mk_app twice
+        expr_ref e1(m), e2(m), d(m), distinct(m);
+        expr_ref_vector args(m);
         for (auto p : m_deq_pairs) {
-          lits.push_back(mk_neq(m, mk_app<true>(*(p.first->get_repr())),
-                                mk_app<true>(*(p.second->get_repr()))));
+          e1 = mk_app<true>(*(p.first->get_repr()));
+          e2 = mk_app<true>(*(p.second->get_repr()));
+          if (is_pure(m_is_red, e1) && is_pure(m_is_red, e2))
+            lits.push_back(mk_neq(m, mk_app<true>(*(p.first->get_repr())), mk_app<true>(*(p.second->get_repr()))));
         }
 
-        expr_ref distinct(m);
         for (auto t : m_deq_distinct) {
-          expr_ref_vector args(m);
-          for (auto c : t)
-            args.push_back(mk_app<true>(*(c->get_repr())));
+          args.reset();
+          for (auto c : t) {
+            d = mk_app<true>(*(c->get_repr()));
+            if (is_pure(m_is_red, d))
+              args.push_back(mk_app<true>(*(c->get_repr())));
+          }
+          if (args.size() == 0) continue;
           distinct = m.mk_distinct(args.size(), args.data());
           TRACE("qe_debug", tout << "making distinct " << distinct;);
           lits.push_back(distinct);
@@ -1874,6 +1886,10 @@ namespace mbp {
 
     void term_graph::add_vars(app_ref_vector const &vars) {
       m_is_var.add_decls(vars);
+    }
+
+    void term_graph::add_red(app_ref_vector const &vars) {
+      m_is_red.set_decls(vars, true);
     }
 
     void term_graph::add_var(app* var) {

@@ -7,9 +7,10 @@
 #include "qe/mbp/mbp_term_graph.h"
 #include "qe/mbp/mbp_arrays.h"
 #include "util/debug.h"
+#include "util/obj_hashtable.h"
+#include "util/obj_pair_hashtable.h"
 #include "util/tptr.h"
 #include "util/vector.h"
-#include "util/obj_pair_hashtable.h"
 #include "ast/rewriter/var_subst.h"
 #include "ast/ast_pp.h"
 
@@ -51,8 +52,38 @@ bool contains_var(expr *e, app_ref var, bool only_arr = false) {
 struct proc {
     }
 };
+namespace is_selstore_var_ns {
+  struct found {};
+  struct proc {
+    ast_manager& m;
+    app_ref m_var;
+    array_util m_array_util;
+    proc(app* var, ast_manager& man) : m(man), m_var(var, m), m_array_util(m) {}
+    void operator()(expr *n) const {}
+    void operator()(app *n) {
+      if (m_array_util.is_select(n)) {
+        if (contains_var(n->get_arg(1), m_var)) throw is_selstore_var_ns::found();
+      }
+      else if (m_array_util.is_store(n)) {
+        if (contains_var(n->get_arg(1), m_var)) throw is_selstore_var_ns::found();
+        if (contains_var(n->get_arg(2), m_var)) throw is_selstore_var_ns::found();
+      }
+    }
+  };
+} // namespace is_selstore_vars_ns
 
+// Check if var appears inside store or select
+bool is_selstore_var(expr *fml, app*  var, ast_manager& m) {
+  is_selstore_var_ns::proc proc(var, m);
+  try {
+    quick_for_each_expr(proc, fml);
+    return false;
+  }
+  catch(is_selstore_var_ns::found) {
+    return true;
+  }
 }
+
 void remove_peq(expr* inp, expr_ref& op) {
   ast_manager& m = op.get_manager();
   expr_ref_vector fml(m);
@@ -161,8 +192,8 @@ private:
     return false;
   }
 
-  void mark_seen(expr* t) {m_seen.insert(t);}
-  bool is_seen(expr* t) {return m_seen.contains(t);}
+  void mark_seen(expr* t) { m_seen.insert(t); }
+  bool is_seen(expr* t) { return m_seen.contains(t); }
   void mark_seen(expr* t1, expr* t2) { m_seenp.insert(expr_pair(t1, t2)); }
   bool is_seen(expr* t1, expr* t2) { return m_seenp.contains(expr_pair(t1, t2)) || m_seenp.contains(expr_pair(t2, t1)); }
 
@@ -520,6 +551,19 @@ public:
 
     //The API uses vars merely to update it according to variables in inp. It
     //does not add vars to tg
+    tg.qe_lite(vars, inp);
+    std::function<bool(app*)> is_red =
+            [&](app* v) {
+              if (!m_dt_util.is_datatype(v->get_sort()) && !m_array_util.is_array(v)) return false;
+              if (is_selstore_var(inp, v, m)) return false;
+              return true;
+            };
+    app_ref_vector red_vars(m);
+    red_vars = vars.filter_pure(is_red);
+    CTRACE("mbp_tg", red_vars.size() < m_vars.size(),
+           tout << "vars not redundant ";
+           for (auto v : m_vars) if (!red_vars.contains(v)) tout << " " << app_ref(v, m); tout <<"\n";);
+    tg.add_red(red_vars);
     tg.qe_lite(vars, inp);
     remove_peq(inp, inp);
     TRACE("mbp_tg", tout << "after mbp tg " << inp;);
