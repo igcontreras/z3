@@ -403,6 +403,7 @@ private:
     do {
       TRACE("mbp_tg", tout << "Iterating over terms of tg";);
       progress = false;
+      terms.reset();
       tg.get_terms(terms);
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
