@@ -125,7 +125,6 @@ private:
   datatype_util m_dt_util;
   //TODO: change this, only keep a reference
   app_ref_vector m_vars;
-  bool m_reduce_all_selects;
   obj_hashtable<expr> m_seen;
   obj_pair_hashtable<expr, expr> m_seenp;
   bool is_arr_write(expr* t) {
@@ -133,9 +132,9 @@ private:
     return contains_vars(to_app(t), m_vars);
   }
 
-  bool is_rd_wr(expr* t) {
+  bool is_rd_wr(expr* t, bool all = false) {
     if (!m_array_util.is_select(t) || !m_array_util.is_store(to_app(t)->get_arg(0))) return false;
-    return m_reduce_all_selects || contains_vars(to_app(to_app(t)->get_arg(0))->get_arg(0), m_vars);
+    return all || contains_vars(to_app(to_app(t)->get_arg(0))->get_arg(0), m_vars);
   }
 
   bool has_var(expr* t) {
@@ -311,7 +310,7 @@ private:
   }
 
   void elimrdwr(expr* term, mbp::term_graph &tg, model& mdl) {
-    SASSERT(is_rd_wr(term));
+    SASSERT(is_rd_wr(term, true));
     TRACE("mbp_tg", tout << "applying elimrdwr on " << expr_ref(term, m););
     expr* wr_ind = to_app(to_app(term)->get_arg(0))->get_arg(1);
     expr* rd_ind = to_app(term)->get_arg(1);
@@ -404,7 +403,7 @@ private:
     do {
       TRACE("mbp_tg", tout << "Iterating over terms of tg";);
       progress = false;
-      tg.get_terms(terms, !m_reduce_all_selects);
+      tg.get_terms(terms);
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
         expr* term = terms.get(i);
@@ -434,7 +433,7 @@ private:
 
   // todo are the literals to be processed
   // progress indicates whether mbp_arr added terms to the term graph
-  bool mbp_arr(mbp::term_graph& tg, model& mdl, app_ref_vector &vars) {
+  bool mbp_arr(mbp::term_graph& tg, model& mdl, app_ref_vector &vars, bool reduce_all_selects = false) {
     vector<expr_ref_vector> indices;
     expr_ref_vector terms(m), rdTerms(m);
     expr_ref e(m), rdEq(m), rdDeq(m);
@@ -446,7 +445,7 @@ private:
       progress = false;
       terms.reset();
       rdTerms.reset();
-      tg.get_terms(terms, !m_reduce_all_selects);
+      tg.get_terms(terms, !reduce_all_selects);
       // initialize sz in first iteration
       sz = sz == 0 ? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
@@ -491,7 +490,7 @@ private:
             continue;
           }
         }
-        if (is_rd_wr(term)) {
+        if (is_rd_wr(term, reduce_all_selects)) {
           mark_seen(term);
           progress = true;
           elimrdwr(term, tg, mdl);
@@ -542,14 +541,13 @@ private:
 
 public:
   impl(ast_manager &m, params_ref const &p)
-    : m(m), m_array_util(m), m_dt_util(m), m_vars(m), m_reduce_all_selects(false) {}
+    : m(m), m_array_util(m), m_dt_util(m), m_vars(m) {}
 
   void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl, bool reduce_all_selects = false) {
     m_seen.reset();
     m_seenp.reset();
     if (!reduce_all_selects && vars.empty())
       return;
-    m_reduce_all_selects = reduce_all_selects;
     // m_vars are array and ADT variables to be projected. MBP rules are applied
     // only on terms containing m_vars
     // vars are variables that cannot be eliminated after MBP
@@ -579,6 +577,11 @@ public:
           for(auto b : tg.get_lits()) tout << expr_ref(b, m) << "\n";
           for(auto a : m_vars) tout << expr_ref(a, m) << " " ;);
 
+    if (reduce_all_selects) {
+        m_seen.reset();
+        m_vars.reset();
+        mbp_arr(tg, mdl, vars, true);
+    }
     //The API uses vars merely to update it according to variables in inp. It
     //does not add vars to tg
     tg.qe_lite(vars, inp);

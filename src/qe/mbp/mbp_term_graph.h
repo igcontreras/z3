@@ -125,7 +125,7 @@ namespace mbp {
         ~term_graph();
 
       const expr_ref_vector& get_lits() const { return m_lits; }
-      void get_terms(expr_ref_vector& res, bool exclude_cground);
+      void get_terms(expr_ref_vector& res, bool exclude_cground = true);
       
         void set_vars(func_decl_ref_vector const& decls, bool exclude);
         void set_vars(app_ref_vector const &vars, bool exclude);

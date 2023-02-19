@@ -378,14 +378,8 @@ public:
   void tg_project(app_ref_vector &vars, model &mdl, expr_ref &fml, bool reduce_all_selects) {
       flatten_and(fml);
       qe_mbp_tg mbptg(m, m_params);
-      mbptg(vars, fml, mdl, false);
+      mbptg(vars, fml, mdl, reduce_all_selects);
       m_rw(fml);
-      // HACK to reduce all slect(store(..)) terms in the rewritten fml
-      if (reduce_all_selects) {
-          app_ref_vector empty(m);
-          qe_mbp_tg mbptg2(m, m_params);
-          mbptg2(empty, fml, mdl, reduce_all_selects);
-      }
       TRACE("qe", tout << "After mbp_tg:\n"
             << fml << " models " << mdl.is_true(fml) << "\n"
             << "Vars: " << vars << "\n";);
