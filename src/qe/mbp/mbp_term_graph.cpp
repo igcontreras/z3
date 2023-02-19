@@ -843,7 +843,7 @@ namespace mbp {
         if (t1.get_num_args() == t2.get_num_args()) {
           if (m.is_value(t1.get_expr()) == m.is_value(t2.get_expr()))
             return t1.get_id() < t2.get_id();
-          return m.is_value(t1.get_expr());
+          return m.is_value(t2.get_expr());
         }
         return t1.get_num_args() < t2.get_num_args();
       }
