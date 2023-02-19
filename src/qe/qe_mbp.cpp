@@ -402,6 +402,12 @@ public:
         flatten_and(fml);
         do_qe_bool(mdl, vars, fml);
         m_rw(fml);
+        //flatten nested ites
+        expr_ref_vector fmls(m);
+        flatten_and(fml, fmls);
+        extract_literals(mdl, vars, fmls);
+        fml = mk_and(fmls);
+
         for (app* v : vars) {
             CTRACE("qe", arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
             if (arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()))
