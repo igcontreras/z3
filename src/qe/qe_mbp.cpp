@@ -262,18 +262,18 @@ public:
 
     void preprocess_solve(model& model, app_ref_vector& vars, expr_ref_vector& fmls) {
         extract_literals(model, vars, fmls);
-	expr_ref e(m);
-	e = mk_and(fmls);
-	do_spacer_qe_lite(vars, e);
-	fmls.reset();
-	flatten_and(e, fmls);
-	bool change = true;
+        expr_ref e(m);
+        e = mk_and(fmls);
+        do_tg_qe_lite(vars, e);
+        fmls.reset();
+        flatten_and(e, fmls);
+        bool change = true;
         while (change && !vars.empty()) {
-	    change = false;
-	    e = mk_and(fmls);
-	    do_spacer_qe_lite(vars, e);
-	    fmls.reset();
-	    flatten_and(e, fmls);
+            change = false;
+            e = mk_and(fmls);
+            do_tg_qe_lite(vars, e);
+            fmls.reset();
+            flatten_and(e, fmls);
             for (auto* p : m_plugins) {
                 if (p && p->solve(model, vars, fmls)) {
                     change = true;
@@ -356,7 +356,7 @@ public:
     }
 
     // requires that `fml` is a cube
-    void do_spacer_qe_lite(app_ref_vector &vars, expr_ref &fml) {
+    void do_tg_qe_lite(app_ref_vector &vars, expr_ref &fml) {
         // SASSERT(is_cube(fml));
         qe_lite_tg qe(m, m_params, false);
         qe(vars, fml);
@@ -396,10 +396,10 @@ public:
         arith_util ari_u(m);
         datatype_util dt_u(m);
 
-        do_spacer_qe_lite(vars, fml);
+        do_tg_qe_lite(vars, fml);
         tg_project(vars, mdl, fml, m_reduce_all_selects);
         flatten_and(fml);
-        do_spacer_qe_lite(vars, fml);
+        do_tg_qe_lite(vars, fml);
         do_qe_bool(mdl, vars, fml);
         m_rw(fml);
         //flatten nested ites
