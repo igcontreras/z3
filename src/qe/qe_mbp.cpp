@@ -29,6 +29,8 @@ Revision History:
 #include "ast/occurs.h"
 #include "ast/rewriter/expr_safe_replace.h"
 #include "ast/rewriter/th_rewriter.h"
+#include "ast/rewriter/rewriter.h"
+#include "ast/rewriter/rewriter_def.h"
 #include "ast/scoped_proof.h"
 #include "model/model_evaluator.h"
 #include "model/model_pp.h"
@@ -42,6 +44,34 @@ Revision History:
 
 using namespace qe;
 
+namespace  {
+    struct app_const_arr_rewriter : public default_rewriter_cfg {
+            ast_manager &m;
+            array_util m_arr;
+            model_evaluator m_eval;
+            expr_ref val;
+
+            app_const_arr_rewriter(ast_manager& man, model& mdl): m(man), m_arr(m), m_eval(mdl), val(m) {
+                m_eval.set_model_completion(false);
+            }
+            br_status reduce_app(func_decl *f, unsigned num, expr *const *args,
+                                 expr_ref &result, proof_ref &result_pr) {
+                if (m_arr.is_const(f) && !m.is_value(args[0])) {
+                    val = m_eval(args[0]);
+                    SASSERT(m.is_value(val));
+                    result = m_arr.mk_const_array(f->get_range(), val);
+                    return BR_DONE;
+                }
+                return BR_FAILED;
+            }
+    };
+}
+
+void rewrite_as_const_arr(expr* in, model& mdl, expr_ref& out) {
+    app_const_arr_rewriter cfg(out.m(), mdl);
+    rewriter_tpl<app_const_arr_rewriter> rw(out.m(), false, cfg);
+    rw(in, out);
+}
 
 class mbproj::impl {
     ast_manager& m;
@@ -280,6 +310,11 @@ public:
                 }
             }
         }
+        //rewrite as_const_arr terms
+        expr_ref fml(m);
+        fml = mk_and(fmls);
+        rewrite_as_const_arr(fml, model, fml);
+        flatten_and(fml, fmls);
     }
 
     bool validate_model(model& model, expr_ref_vector const& fmls) {
@@ -407,6 +442,7 @@ public:
         flatten_and(fml, fmls);
         extract_literals(mdl, vars, fmls);
         fml = mk_and(fmls);
+        rewrite_as_const_arr(fml, mdl, fml);
 
         for (app* v : vars) {
             CTRACE("qe", arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
@@ -500,3 +536,4 @@ opt::inf_eps mbproj::maximize(expr_ref_vector const& fmls, model& mdl, app* t, e
     scoped_no_proof _sp(fmls.get_manager());
     return m_impl->maximize(fmls, mdl, t, ge, gt);
 }
+template class rewriter_tpl<app_const_arr_rewriter>;
