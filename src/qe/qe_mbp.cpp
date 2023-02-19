@@ -383,7 +383,6 @@ public:
       TRACE("qe", tout << "After mbp_tg:\n"
             << fml << " models " << mdl.is_true(fml) << "\n"
             << "Vars: " << vars << "\n";);
-      do_spacer_qe_lite(vars, fml);
   }
     
     void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {
@@ -400,6 +399,7 @@ public:
         do_spacer_qe_lite(vars, fml);
         tg_project(vars, mdl, fml, m_reduce_all_selects);
         flatten_and(fml);
+        do_spacer_qe_lite(vars, fml);
         do_qe_bool(mdl, vars, fml);
         m_rw(fml);
         //flatten nested ites
