@@ -1,3 +1,22 @@
+/*++
+
+  Module Name:
+
+    qe_lite_tg.cpp
+
+Abstract:
+
+    Light weight partial quantifier-elimination for cubes using term graphs
+
+Author:
+
+    Isabel Garcia (igcontreras)
+    Hari Govind V K (hgvk94)
+
+Revision History:
+
+
+--*/
 #include "qe/lite/qe_lite_tg.h"
 #include "qe/mbp/mbp_term_graph.h"
 
@@ -5,11 +24,9 @@ class qe_lite_tg::impl {
 private:
     ast_manager& m;
 
-    bool m_use_array_der;
-
 public:
-  impl(ast_manager &m, params_ref const &p, bool use_array_der)
-      : m(m), m_use_array_der(use_array_der) {}
+  impl(ast_manager &m, params_ref const &p)
+      : m(m) {}
 
   void operator()(app_ref_vector &vars, expr_ref &fml) {
     if (vars.empty())
@@ -18,21 +35,16 @@ public:
     mbp::term_graph tg(m);
     tg.set_vars(vars, true /*exclude*/);
 
-    if(m.is_and(fml)) {
-      for (expr *lit : *to_app(fml))
-        tg.add_lit(lit);
-    }
-    else {
-      tg.add_lit(fml);
-    }
-
+    expr_ref_vector fmls(m);
+    flatten_and(fml, fmls);
+    for (expr* e : fmls) tg.add_lit(e);
     tg.qe_lite(vars, fml);
     }
 
 };
 
-qe_lite_tg::qe_lite_tg(ast_manager &m, params_ref const &p, bool use_array_der) {
-  m_impl = alloc(impl, m, p, use_array_der);
+qe_lite_tg::qe_lite_tg(ast_manager &m, params_ref const &p) {
+  m_impl = alloc(impl, m, p);
 }
 
 qe_lite_tg::~qe_lite_tg() { dealloc(m_impl); }

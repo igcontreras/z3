@@ -11,6 +11,7 @@ Abstract:
 Author:
 
     Isabel Garcia (igcontreras)
+    Hari Govind V K (hgvk94)
 
 Revision History:
 
@@ -20,6 +21,7 @@ Revision History:
 #pragma once
 
 #include "ast/ast.h"
+#include "ast/ast_util.h"
 #include "util/uint_set.h"
 #include "util/params.h"
 
@@ -28,7 +30,7 @@ class qe_lite_tg {
     impl * m_impl;
 public:
 
-    qe_lite_tg(ast_manager& m, params_ref const & p, bool use_array_der = true);
+    qe_lite_tg(ast_manager& m, params_ref const & p);
 
     ~qe_lite_tg();
 

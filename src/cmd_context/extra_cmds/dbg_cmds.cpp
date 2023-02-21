@@ -833,7 +833,7 @@ public:
       params_ref pa;
 
       // the following is the same code as in qe_mbp in spacer
-      qe_lite_tg qe(m, pa, false);
+      qe_lite_tg qe(m, pa);
       qe(vars_apps, fml);
       ctx.regular_stream() << "[tg] After: " << fml << std::endl
                            << "[tg] Vars: ";

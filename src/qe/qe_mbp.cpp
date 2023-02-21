@@ -392,15 +392,13 @@ public:
 
     // requires that `fml` is a cube
     void do_tg_qe_lite(app_ref_vector &vars, expr_ref &fml) {
-        // SASSERT(is_cube(fml));
-        qe_lite_tg qe(m, m_params, false);
+        qe_lite_tg qe(m, m_params);
         qe(vars, fml);
-        // m_rw(fml);
+        m_rw(fml);
         TRACE("qe", tout << "After qe_lite_tg:\n"
                          << fml << "\n"
                          << "Vars: " << vars << "\n";);
-        SASSERT(!m.is_false(fml)); // TODO: why?
-	m_rw(fml);
+        SASSERT(!m.is_false(fml));
     }
 
     void do_qe_bool(model& mdl, app_ref_vector& vars, expr_ref& fml) {

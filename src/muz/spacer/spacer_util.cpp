@@ -51,7 +51,7 @@ Notes:
 #include "model/model_smt2_pp.h"
 #include "smt/params/smt_params.h"
 
-#include "qe/lite/qe_lite.h"
+#include "qe/lite/qe_lite_tg.h"
 #include "qe/mbp/mbp_plugin.h"
 #include "qe/mbp/mbp_term_graph.h"
 #include "qe/qe_mbp.h"
@@ -173,7 +173,7 @@ void qe_project_spacer(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
 
     while (true) {
         params_ref p;
-        qe_lite qe(m, p, false);
+        qe_lite_tg qe(m, p);
         qe(vars, fml);
         rw(fml);
 
