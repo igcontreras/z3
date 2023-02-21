@@ -430,7 +430,6 @@ public:
         arith_util ari_u(m);
         datatype_util dt_u(m);
 
-        do_tg_qe_lite(vars, fml);
         tg_project(vars, mdl, fml, m_reduce_all_selects);
         flatten_and(fml);
         do_tg_qe_lite(vars, fml);
