@@ -44,6 +44,7 @@ Revision History:
 
 using namespace qe;
 
+// rewrite all occurrences of (as const arr c) to (as const arr v) where v = m_eval(c)
 namespace  {
     struct app_const_arr_rewriter : public default_rewriter_cfg {
             ast_manager &m;
@@ -390,7 +391,7 @@ public:
         SASSERT(!m.is_false(fml));
     }
 
-    // requires that `fml` is a cube
+
     void do_tg_qe_lite(app_ref_vector &vars, expr_ref &fml) {
         qe_lite_tg qe(m, m_params);
         qe(vars, fml);
@@ -442,6 +443,7 @@ public:
         fml = mk_and(fmls);
         rewrite_as_const_arr(fml, mdl, fml);
 
+        //substitute all remaining array and adt variables
         for (app* v : vars) {
             CTRACE("qe", arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
             if (arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()))

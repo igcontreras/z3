@@ -12,6 +12,12 @@ Abstract:
 Author:
 
     Arie Gurfinkel
+    Isabel Garcia (igcontreras)
+    Hari Govind V K (hgvk94)
+
+Revision History:
+
+    Added implementation of qe_lite using term graph
 
 Notes:
 

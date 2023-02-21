@@ -1,3 +1,21 @@
+/*++
+
+  Module Name:
+
+    qe_mbp_tg.cpp
+
+Abstract:
+
+    Model Based Projection based on term graph
+
+Author:
+
+    Hari Govind V K (hgvk94) 2022-07-12
+
+Revision History:
+
+
+--*/
 #include "qe/qe_mbp_tg.h"
 #include "ast/array_decl_plugin.h"
 #include "ast/ast.h"
@@ -51,51 +69,44 @@ bool contains_var(expr *e, app_ref var, bool only_arr = false) {
 
 namespace collect_uninterp_consts_ns {
 struct proc {
-    expr_ref_vector &m_out;
-    proc(expr_ref_vector &out) : m_out(out) {}
+    obj_hashtable<app> &m_out;
+    proc(obj_hashtable<app> &out) : m_out(out) {}
     void operator()(expr *n) const {}
     void operator()(app *n) {
-        if (is_uninterp_const(n)) m_out.push_back(n);
+        if (is_uninterp_const(n)) m_out.insert(n);
     }
 };
 } // namespace collect_uninterp_consts_ns
 
 // Return all uninterpreted constants of \p q
-void collect_uninterp_consts(expr *e, expr_ref_vector &out) {
+void collect_uninterp_consts(expr *e, obj_hashtable<app> &out) {
     collect_uninterp_consts_ns::proc proc(out);
     for_each_expr(proc, e);
 }
 
-namespace is_selstore_var_ns {
-  struct found {};
+namespace collect_selstore_vars_ns {
   struct proc {
     ast_manager& m;
-    app_ref m_var;
+    obj_hashtable<app>& m_vars;
     array_util m_array_util;
-    proc(app* var, ast_manager& man) : m(man), m_var(var, m), m_array_util(m) {}
+    proc(obj_hashtable<app>& vars, ast_manager& man) : m(man), m_vars(vars), m_array_util(m) {}
     void operator()(expr *n) const {}
     void operator()(app *n) {
       if (m_array_util.is_select(n)) {
-        if (contains_var(n->get_arg(1), m_var)) throw is_selstore_var_ns::found();
+        collect_uninterp_consts(n->get_arg(1), m_vars);
       }
       else if (m_array_util.is_store(n)) {
-        if (contains_var(n->get_arg(1), m_var)) throw is_selstore_var_ns::found();
-        if (contains_var(n->get_arg(2), m_var)) throw is_selstore_var_ns::found();
+        collect_uninterp_consts(n->get_arg(1), m_vars);
+        collect_uninterp_consts(n->get_arg(2), m_vars);
       }
     }
   };
 } // namespace is_selstore_vars_ns
 
-// Check if var appears inside store or select
-bool is_selstore_var(expr *fml, app*  var, ast_manager& m) {
-  is_selstore_var_ns::proc proc(var, m);
-  try {
-    quick_for_each_expr(proc, fml);
-    return false;
-  }
-  catch(is_selstore_var_ns::found) {
-    return true;
-  }
+// collect all uninterpreted consts used as array indices or values
+void collect_selstore_vars(expr *fml, obj_hashtable<app>&  vars, ast_manager& man) {
+  collect_selstore_vars_ns::proc proc(vars, man);
+  quick_for_each_expr(proc, fml);
 }
 
 void remove_peq(expr* inp, expr_ref& op) {
@@ -432,7 +443,7 @@ private:
     return sz < terms.size();;
   }
 
-  // todo are the literals to be processed
+  // TODO: are the literals to be processed
   // progress indicates whether mbp_arr added terms to the term graph
   bool mbp_arr(mbp::term_graph& tg, model& mdl, app_ref_vector &vars, bool reduce_all_selects = false) {
     vector<expr_ref_vector> indices;
@@ -572,9 +583,9 @@ public:
     } while(progress1 || progress2);
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()) << " and vars " << vars;);
     TRACE("mbp_tg_verbose",
-          expr_ref_vector vars_tmp(m);
+          obj_hashtable<app> vars_tmp;
           collect_uninterp_consts(mk_and(tg.get_lits()), vars_tmp);
-          for(auto a : vars_tmp) tout << mk_pp(to_app(a)->get_decl(), m) << "\n";
+          for(auto a : vars_tmp) tout << mk_pp(a->get_decl(), m) << "\n";
           for(auto b : tg.get_lits()) tout << expr_ref(b, m) << "\n";
           for(auto a : m_vars) tout << expr_ref(a, m) << " " ;);
 
@@ -586,17 +597,22 @@ public:
     //The API uses vars merely to update it according to variables in inp. It
     //does not add vars to tg
     tg.qe_lite(vars, inp);
+
+    // Variables that appear as array indices or values cannot be eliminated if
+    // they are not c-ground. They are core variables
+    // All other Array/ADT variables can be eliminated, they are redundant.
+    obj_hashtable<app> core_vars;
+    collect_selstore_vars(inp, core_vars, m);
     std::function<bool(app*)> is_red =
             [&](app* v) {
               if (!m_dt_util.is_datatype(v->get_sort()) && !m_array_util.is_array(v)) return false;
-              if (is_selstore_var(inp, v, m)) return false;
-              return true;
+              return !core_vars.contains(v);
             };
     app_ref_vector red_vars(m);
     red_vars = vars.filter_pure(is_red);
-    CTRACE("mbp_tg", red_vars.size() < m_vars.size(),
+    CTRACE("mbp_tg", !core_vars.empty(),
            tout << "vars not redundant ";
-           for (auto v : m_vars) if (!red_vars.contains(v)) tout << " " << app_ref(v, m); tout <<"\n";);
+           for (auto v : core_vars) tout << " " << app_ref(v, m); tout <<"\n";);
     tg.add_red(red_vars);
     tg.qe_lite(vars, inp);
     remove_peq(inp, inp);
