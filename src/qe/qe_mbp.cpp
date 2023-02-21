@@ -38,9 +38,9 @@ Revision History:
 #include "qe/lite/qe_lite_tg.h"
 #include "qe/mbp/mbp_arith.h"
 #include "qe/mbp/mbp_arrays.h"
+#include "qe/mbp/mbp_tg.h"
 #include "qe/mbp/mbp_datatypes.h"
 #include "util/debug.h"
-#include "qe/qe_mbp_tg.h"
 
 using namespace qe;
 

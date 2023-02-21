@@ -16,7 +16,6 @@ Revision History:
 
 
 --*/
-#include "qe/qe_mbp_tg.h"
 #include "ast/array_decl_plugin.h"
 #include "ast/ast.h"
 #include "ast/ast_util.h"
@@ -24,6 +23,7 @@ Revision History:
 #include "model/model.h"
 #include "qe/mbp/mbp_term_graph.h"
 #include "qe/mbp/mbp_arrays.h"
+#include "qe/mbp/mbp_tg.h"
 #include "util/debug.h"
 #include "util/obj_hashtable.h"
 #include "util/obj_pair_hashtable.h"

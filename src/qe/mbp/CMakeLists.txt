@@ -3,6 +3,7 @@ z3_add_component(mbp
     mbp_arith.cpp    
     mbp_arrays.cpp
     mbp_datatypes.cpp
+    mbp_tg.cpp
     mbp_plugin.cpp
     mbp_solve_plugin.cpp
     mbp_term_graph.cpp

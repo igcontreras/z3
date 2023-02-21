@@ -35,7 +35,7 @@ Notes:
 #include "qe/qe_mbp.h"
 #include "qe/qe_mbi.h"
 #include "qe/mbp/mbp_term_graph.h"
-#include "qe/qe_mbp_tg.h"
+#include "qe/mbp/mbp_tg.h"
 #include "qe/lite/qe_lite.h"
 #include "qe/lite/qe_lite_tg.h"
 

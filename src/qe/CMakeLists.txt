@@ -12,7 +12,6 @@ z3_add_component(qe
     qe_dl_plugin.cpp
     qe_mbi.cpp
     qe_mbp.cpp
-    qe_mbp_tg.cpp
     qe_tactic.cpp
     qsat.cpp
   COMPONENT_DEPENDENCIES
