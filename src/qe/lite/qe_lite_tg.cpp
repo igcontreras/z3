@@ -35,9 +35,9 @@ public:
     mbp::term_graph tg(m);
     tg.set_vars(vars, true /*exclude*/);
 
-    expr_ref_vector fmls(m);
-    flatten_and(fml, fmls);
-    for (expr* e : fmls) tg.add_lit(e);
+    expr_ref_vector lits(m);
+    flatten_and(fml, lits);
+    tg.add_lits(lits);
     tg.qe_lite(vars, fml);
     }
 

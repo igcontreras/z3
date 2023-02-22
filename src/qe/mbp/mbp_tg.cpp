@@ -32,6 +32,27 @@ Revision History:
 #include "ast/rewriter/var_subst.h"
 #include "ast/ast_pp.h"
 
+
+namespace contains_peq_ns {
+  struct found {};
+  struct proc {
+    void operator()(expr *n) const {}
+    void operator()(app *n) {
+      if (is_partial_eq(n)) throw found();
+    }
+  };
+} // namespace contains_peq_ns
+
+// check if e contains any partial equalities
+bool contains_peq(expr *e) {
+  contains_peq_ns::proc proc;
+  try {
+    for_each_expr(proc, e);
+  }
+  catch (const contains_peq_ns::found &) { return true; }
+  return false;
+}
+
 namespace check_uninterp_consts_ns {
   struct found {};
   struct proc {
@@ -109,20 +130,14 @@ void collect_selstore_vars(expr *fml, obj_hashtable<app>&  vars, ast_manager& ma
   quick_for_each_expr(proc, fml);
 }
 
+// eliminate all occurrences of peq from inp
 void remove_peq(expr* inp, expr_ref& op) {
   ast_manager& m = op.get_manager();
   expr_ref_vector fml(m);
   flatten_and(inp, fml);
-  expr *lhs, *rhs;
-
-  std::function<bool(expr*)> is_peq = [&] (expr* e) {
-    return (is_app(e) && is_partial_eq(to_app(e))) ||
-      (m.is_eq(e, lhs, rhs) && (is_peq(lhs) || is_peq(rhs)));
-  };
-
   unsigned j = 0;
   for (auto& t : fml)
-    if (!is_peq(t))
+    if (!contains_peq(t))
       fml.set(j++, t);
   fml.shrink(j);
   op = mk_and(fml);
@@ -559,6 +574,12 @@ private:
     m_vars.reset();
   }
 
+  void collect_adt_arr_vars(app_ref_vector const& vars) {
+    std::function<bool(app*)> adt_or_arr =
+      [&](app* v) { return m_dt_util.is_datatype(v->get_sort()) || m_array_util.is_array(v); };
+    for(auto v : vars) if (adt_or_arr(v)) m_vars.insert(v);
+  }
+
 public:
   impl(ast_manager &m, params_ref const &p)
     : m(m), m_array_util(m), m_dt_util(m) { }
@@ -567,20 +588,19 @@ public:
     if (!reduce_all_selects && vars.empty())
       return;
     reset();
-    // vars are variables that cannot be eliminated after MBP
-    std::function<bool(app*)> adt_or_arr =
-            [&](app* v) { return m_dt_util.is_datatype(v->get_sort()) || m_array_util.is_array(v); };
-    for(auto v : vars) if (adt_or_arr(v)) m_vars.insert(v);
+    collect_adt_arr_vars(vars);
+
+    mbp::term_graph tg(m);
+    // mark vars as non-ground.
+    tg.add_vars(vars);
+    // treat eq literals as term in the egraph
+    tg.internalize_eq();
 
     expr_ref_vector fml(m);
-    mbp::term_graph tg(m);
-    //This add_vars marks vars as non-ground.
-    tg.add_vars(vars);
-    tg.internalize_eq();
     flatten_and(inp, fml);
-    for(expr *e : fml) {
-      tg.add_lit(e);
-    }
+    tg.add_lits(fml);
+
+    //Apply MBP rules till saturation
     bool progress1 = false, progress2 = false;
     do {
       progress1 = mbp_arr(tg, mdl, vars);
@@ -598,8 +618,8 @@ public:
     // variables DOES not always remove the original read_over_write term but
     // introduces equalities and disequalities where necessary
     if (reduce_all_selects) {
-        reset();
-        mbp_arr(tg, mdl, vars, true);
+      reset();
+      mbp_arr(tg, mdl, vars, true);
     }
 
     // 1. Apply qe_lite to remove all c-ground variables
@@ -629,6 +649,8 @@ public:
 
     //Step 3.
     tg.qe_lite(vars, inp);
+
+    //remove all occurrences of partial equalities from inp
     remove_peq(inp, inp);
   }
 };
