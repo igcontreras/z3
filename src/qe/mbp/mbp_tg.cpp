@@ -35,10 +35,10 @@ Revision History:
 namespace check_uninterp_consts_ns {
   struct found {};
   struct proc {
-    app_ref_vector const &m_vars;
+    obj_hashtable<app> const &m_vars;
     bool m_only_arr;
     array_util m_arr;
-    proc(app_ref_vector const &vars, bool only_arr = false) : m_vars(vars), m_only_arr(only_arr), m_arr(m_vars.get_manager()) {}
+    proc(obj_hashtable<app> const &vars, ast_manager& man,bool only_arr = false) : m_vars(vars), m_only_arr(only_arr), m_arr(man) {}
     void operator()(expr *n) const {}
     void operator()(app *n) {
       if (is_uninterp_const(n) && m_vars.contains(n) && (!m_only_arr || m_arr.is_array(n))) throw found();
@@ -47,8 +47,8 @@ namespace check_uninterp_consts_ns {
 } // namespace check_uninterp_consts_ns
 
 // check if e contains any apps from vars
-bool contains_vars(expr *e, app_ref_vector const &vars, bool only_arr = false) {
-  check_uninterp_consts_ns::proc proc(vars, only_arr);
+bool contains_vars(expr *e, obj_hashtable<app> const &vars, ast_manager& man, bool only_arr = false) {
+  check_uninterp_consts_ns::proc proc(vars, man, only_arr);
   try {
     for_each_expr(proc, e);
   }
@@ -56,10 +56,10 @@ bool contains_vars(expr *e, app_ref_vector const &vars, bool only_arr = false) {
   return false;
 }
 
-bool contains_var(expr *e, app_ref var, bool only_arr = false) {
-  app_ref_vector vars(var.get_manager());
-  vars.push_back(var);
-  check_uninterp_consts_ns::proc proc(vars, only_arr);
+bool contains_var(expr *e, app_ref var, ast_manager& man, bool only_arr = false) {
+  obj_hashtable<app> vars;
+  vars.insert(var);
+  check_uninterp_consts_ns::proc proc(vars, man, only_arr);
   try {
     for_each_expr(proc, e);
   }
@@ -113,47 +113,44 @@ void remove_peq(expr* inp, expr_ref& op) {
   ast_manager& m = op.get_manager();
   expr_ref_vector fml(m);
   flatten_and(inp, fml);
-  unsigned i = 0, j = fml.size();
-  expr *lit, *lhs, *rhs;
-  auto is_peq = [] (expr* e) {
-    return is_app(e) && is_partial_eq(to_app(e));
+  expr *lhs, *rhs;
+
+  std::function<bool(expr*)> is_peq = [&] (expr* e) {
+    return (is_app(e) && is_partial_eq(to_app(e))) ||
+      (m.is_eq(e, lhs, rhs) && (is_peq(lhs) || is_peq(rhs)));
   };
-  for (;i < j;) {
-    lit = fml.get(i);
-    if ( is_peq(lit) || (m.is_eq(lit, lhs, rhs) && (is_peq(lhs) || is_peq(rhs))) )
-      fml[i] = fml.get(--j);
-    else
-      i++;
-  }
+
+  unsigned j = 0;
+  for (auto& t : fml)
+    if (!is_peq(t))
+      fml.set(j++, t);
   fml.shrink(j);
   op = mk_and(fml);
 }
+
 class qe_mbp_tg::impl {
   typedef std::pair<expr *, expr *> expr_pair;
 private:
   ast_manager& m;
   array_util m_array_util;
   datatype_util m_dt_util;
-  //TODO: change this, only keep a reference
-  app_ref_vector m_vars;
+  obj_hashtable<app> m_vars; // array and ADT variables to be projected
+
+  //Utilities to keep track of which terms have been processed
   obj_hashtable<expr> m_seen;
   obj_pair_hashtable<expr, expr> m_seenp;
-  bool is_arr_write(expr* t) {
-    if (!m_array_util.is_store(t)) return false;
-    return contains_vars(to_app(t), m_vars);
-  }
+  void mark_seen(expr* t) { m_seen.insert(t); }
+  bool is_seen(expr* t) { return m_seen.contains(t); }
+  void mark_seen(expr* t1, expr* t2) { m_seenp.insert(expr_pair(t1, t2)); }
+  bool is_seen(expr* t1, expr* t2) { return m_seenp.contains(expr_pair(t1, t2)) || m_seenp.contains(expr_pair(t2, t1)); }
 
-  bool is_rd_wr(expr* t, bool all = false) {
-    if (!m_array_util.is_select(t) || !m_array_util.is_store(to_app(t)->get_arg(0))) return false;
-    return all || contains_vars(to_app(to_app(t)->get_arg(0))->get_arg(0), m_vars);
-  }
-
+  /* START: utility methods to check precondition of MBP rules */
   bool has_var(expr* t) {
-    return contains_vars(t, m_vars);
+    return contains_vars(t, m_vars, m);
   }
 
   bool has_arr_var(expr* t) {
-    return contains_vars(t, m_vars, true);
+    return contains_vars(t, m_vars, m, true);
   }
 
   bool is_var(expr* t) {
@@ -176,6 +173,16 @@ private:
     return (is_arr_write(rhs) && !is_arr_write(lhs));
   }
 
+  bool is_arr_write(expr* t) {
+    if (!m_array_util.is_store(t)) return false;
+    return contains_vars(to_app(t), m_vars, m);
+  }
+
+  bool is_rd_wr(expr* t, bool all = false) {
+    if (!m_array_util.is_select(t) || !m_array_util.is_store(to_app(t)->get_arg(0))) return false;
+    return all || contains_vars(to_app(to_app(t)->get_arg(0))->get_arg(0), m_vars, m);
+  }
+
   bool should_create_peq(expr* e) {
     return m.is_eq(e) && should_create_peq(to_app(e)->get_arg(0), to_app(e)->get_arg(1));
   }
@@ -192,14 +199,14 @@ private:
   peq mk_peq(expr* e1, expr* e2, vector<expr_ref_vector>& indices) {
     expr* n_lhs, *n_rhs;
     if (is_wr_on_rhs(e1, e2)) {
-	n_lhs = e2;
-	n_rhs = e1;
-      }
-      else {
-	n_lhs = e1;
-	n_rhs = e2;
-      }
-      return peq(n_lhs, n_rhs, indices, m);
+      n_lhs = e2;
+      n_rhs = e1;
+    }
+    else {
+      n_lhs = e1;
+      n_rhs = e2;
+    }
+    return peq(n_lhs, n_rhs, indices, m);
   }
 
   bool is_constructor_app(expr* e, expr* &cons, expr* &rhs) {
@@ -215,11 +222,6 @@ private:
     }
     return false;
   }
-
-  void mark_seen(expr* t) { m_seen.insert(t); }
-  bool is_seen(expr* t) { return m_seen.contains(t); }
-  void mark_seen(expr* t1, expr* t2) { m_seenp.insert(expr_pair(t1, t2)); }
-  bool is_seen(expr* t1, expr* t2) { return m_seenp.contains(expr_pair(t1, t2)) || m_seenp.contains(expr_pair(t2, t1)); }
 
   /* MBP rules begin */
   void elimwreq(peq p, mbp::term_graph &tg, model& mdl, bool is_neg) {
@@ -284,7 +286,7 @@ private:
     TRACE("mbp_tg", tout << "applying add_rdVar on " << expr_ref(rd, m););
     app_ref u = new_var(to_app(rd)->get_sort());
     if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
-      m_vars.push_back(u);
+      m_vars.insert(u);
     tg.add_var(u);
     vars.push_back(u);
     expr* eq = m.mk_eq(u, rd);
@@ -304,7 +306,7 @@ private:
     unsigned i = 0;
     for(app* a : aux_consts) {
       if (m_dt_util.is_datatype(a->_get_sort()) || m_array_util.is_array(a))
-        m_vars.push_back(a);
+        m_vars.insert(a);
       tg.add_var(a);
       vars.push_back(a);
       auto const& indx =  std::next(itr, i);
@@ -357,7 +359,7 @@ private:
       }
       u = new_var(d->get_range());
       if (m_dt_util.is_datatype(u->_get_sort()) || m_array_util.is_array(u))
-        m_vars.push_back(u);
+        m_vars.insert(u);
       tg.add_var(u);
       vars.push_back(u);
       new_vars.push_back(u);
@@ -404,7 +406,7 @@ private:
   }
   /* MBP rules end */
 
-  //todo are the literals to be processed
+
   // progress indicates whether mbp_arr added terms to the term graph
   bool mbp_adt(mbp::term_graph& tg, model& mdl, app_ref_vector &vars) {
     expr* cons, *rhs, *f;
@@ -443,7 +445,6 @@ private:
     return sz < terms.size();;
   }
 
-  // TODO: are the literals to be processed
   // progress indicates whether mbp_arr added terms to the term graph
   bool mbp_arr(mbp::term_graph& tg, model& mdl, app_ref_vector &vars, bool reduce_all_selects = false) {
     vector<expr_ref_vector> indices;
@@ -484,17 +485,17 @@ private:
             elimwreq(p, tg, mdl, is_neg);
             continue;
           }
-          if (has_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m))) {
+          if (has_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m), m)) {
             mark_seen(nt);
             mark_seen(term);
             progress = true;
             elimeq(p, tg, vars, mdl);
             continue;
           }
-          if (has_var(p.rhs()) && !contains_var(p.lhs(), app_ref(to_app(p.rhs()), m))) {
-            vector<expr_ref_vector> tmp;
-            p.get_diff_indices(tmp);
-            peq p_new = mk_peq(p.rhs(), p.lhs(), tmp);
+          //eliminate eq when the variable is on the rhs
+          if (has_var(p.rhs()) && !contains_var(p.lhs(), app_ref(to_app(p.rhs()), m), m)) {
+            p.get_diff_indices(indices);
+            peq p_new = mk_peq(p.rhs(), p.lhs(), indices);
             mark_seen(nt);
             mark_seen(term);
             progress = true;
@@ -514,7 +515,7 @@ private:
       // irrespective of whether they have been marked or not
       for (unsigned i = 0; i < terms.size(); i++) {
         term = terms.get(i);
-        if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars)) {
+        if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars, m)) {
           rdTerms.push_back(term);
           if (is_seen(term)) continue;
           add_rdVar(term, tg, vars, mdl);
@@ -522,14 +523,15 @@ private:
         }
       }
 
+      expr *e1, *e2, *a1, *a2, *i1, *i2;
       for (unsigned i = 0; i < rdTerms.size(); i++) {
+        e1 = rdTerms.get(i);
+        a1 = to_app(e1)->get_arg(0);
+        i1 = to_app(e1)->get_arg(1);
         for (unsigned j = i+1; j < rdTerms.size(); j++) {
-          expr* e1 = rdTerms.get(i);
-          expr* e2 = rdTerms.get(j);
-          expr* a1 = to_app(e1)->get_arg(0);
-          expr* a2 = to_app(e2)->get_arg(0);
-          expr* i1 = to_app(e1)->get_arg(1);
-          expr* i2 = to_app(e2)->get_arg(1);
+          e2 = rdTerms.get(j);
+          a2 = to_app(e2)->get_arg(0);
+          i2 = to_app(e2)->get_arg(1);
           if (!is_seen(e1, e2) && a1->get_id() == a2->get_id()) {
             mark_seen(e1, e2);
             rdEq = m.mk_eq(i1, i2);
@@ -551,21 +553,24 @@ private:
     return sz < terms.size();
   }
 
-public:
-  impl(ast_manager &m, params_ref const &p)
-    : m(m), m_array_util(m), m_dt_util(m), m_vars(m) {}
-
-  void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl, bool reduce_all_selects = false) {
+  void reset() {
     m_seen.reset();
     m_seenp.reset();
+    m_vars.reset();
+  }
+
+public:
+  impl(ast_manager &m, params_ref const &p)
+    : m(m), m_array_util(m), m_dt_util(m) { }
+
+  void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl, bool reduce_all_selects = false) {
     if (!reduce_all_selects && vars.empty())
       return;
-    // m_vars are array and ADT variables to be projected. MBP rules are applied
-    // only on terms containing m_vars
+    reset();
     // vars are variables that cannot be eliminated after MBP
     std::function<bool(app*)> adt_or_arr =
-            [&](app* v) { return m_dt_util.is_datatype(v->_get_sort()) || m_array_util.is_array(v); };
-    m_vars = vars.filter_pure(adt_or_arr);
+            [&](app* v) { return m_dt_util.is_datatype(v->get_sort()) || m_array_util.is_array(v); };
+    for(auto v : vars) if (adt_or_arr(v)) m_vars.insert(v);
 
     expr_ref_vector fml(m);
     mbp::term_graph tg(m);
@@ -589,15 +594,22 @@ public:
           for(auto b : tg.get_lits()) tout << expr_ref(b, m) << "\n";
           for(auto a : m_vars) tout << expr_ref(a, m) << " " ;);
 
+    // apply the read_over_write rule to all terms, including those without
+    // variables DOES not always remove the original read_over_write term but
+    // introduces equalities and disequalities where necessary
     if (reduce_all_selects) {
-        m_seen.reset();
-        m_vars.reset();
+        reset();
         mbp_arr(tg, mdl, vars, true);
     }
-    //The API uses vars merely to update it according to variables in inp. It
-    //does not add vars to tg
+
+    // 1. Apply qe_lite to remove all c-ground variables
+    // 2. Collect all core variables in the output (variables used as array indices/values)
+    // 3. Re-apply qe_lite to remove non-core variables
+
+    //Step 1.
     tg.qe_lite(vars, inp);
 
+    //Step 2.
     // Variables that appear as array indices or values cannot be eliminated if
     // they are not c-ground. They are core variables
     // All other Array/ADT variables can be eliminated, they are redundant.
@@ -614,6 +626,8 @@ public:
            tout << "vars not redundant ";
            for (auto v : core_vars) tout << " " << app_ref(v, m); tout <<"\n";);
     tg.add_red(red_vars);
+
+    //Step 3.
     tg.qe_lite(vars, inp);
     remove_peq(inp, inp);
   }
