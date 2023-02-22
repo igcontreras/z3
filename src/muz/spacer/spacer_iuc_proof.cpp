@@ -210,12 +210,16 @@ void iuc_proof::display_dot(std::ostream& out) {
         ids.insert(std::make_pair(curr->get_id(), last_id));
 
         std::string color = "white";
-        if (this->is_a_marked(curr) && !this->is_b_marked(curr))
-            color = "red";
-        else if (!this->is_a_marked(curr) && this->is_b_marked(curr))
-            color = "blue";
-        else if (this->is_a_marked(curr) && this->is_b_marked(curr) )
-            color = "purple";
+        if (is_a_marked(curr) && !is_b_marked(curr))
+            color = "lightcoral";
+        else if (is_b_marked(curr) && !is_h_marked(curr) && !is_a_marked(curr))
+            color = "cadetblue2";
+        else if (is_a_marked(curr) && is_b_marked(curr) )
+            color = "plum";
+        else if (is_h_marked(curr) && is_b_marked(curr))
+            color = "palegreen1";
+        else if (is_h_marked(curr))
+            color = "khaki";
 
         // compute node label
         std::ostringstream label_ostream;
@@ -232,7 +236,7 @@ void iuc_proof::display_dot(std::ostream& out) {
                 break;
             case PR_HYPOTHESIS:
                 edge_label = "hyp:";
-                color = "grey";
+                // color = "grey";
                 break;
             case PR_TH_LEMMA:
                 if (is_farkas_lemma(m, curr))
