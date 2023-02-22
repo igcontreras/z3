@@ -424,7 +424,7 @@ private:
 
   // progress indicates whether mbp_arr added terms to the term graph
   bool mbp_adt(mbp::term_graph& tg, model& mdl, app_ref_vector &vars) {
-    expr* cons, *rhs, *f;
+    expr *cons, *rhs, *f, *term;
     expr_ref_vector terms(m);
     unsigned sz = 0;
     bool progress = false;
@@ -435,7 +435,7 @@ private:
       tg.get_terms(terms);
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
-        expr* term = terms.get(i);
+        term = terms.get(i);
         if (is_seen(term)) continue;
         if (is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0))) {
           mark_seen(term);
