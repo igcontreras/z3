@@ -25,6 +25,7 @@ Notes:
 #include"muz/spacer/spacer_unsat_core_learner.h"
 #include"muz/spacer/spacer_unsat_core_plugin.h"
 #include "muz/spacer/spacer_iuc_proof.h"
+#include "muz/spacer/spacer_iuc_learner.h"
 
 namespace spacer {
     void iuc_solver::push () {
@@ -306,24 +307,6 @@ namespace spacer {
             // -- new hypothesis reducer
             else
                 {
-#if 0
-                    static unsigned bcnt = 0;
-                    {
-                        bcnt++;
-                        TRACE("spacer", tout << "Dumping pf bcnt: " << bcnt << "\n";);
-                        if (bcnt == 123) {
-                            std::ofstream ofs;
-                            ofs.open("/tmp/bpf_" + std::to_string(bcnt) + ".dot");
-                            iuc_proof iuc_pf_before(m, res.get(), core_lits);
-                            iuc_pf_before.display_dot(ofs);
-                            ofs.close();
-                            
-                            proof_checker pc(m);
-                            expr_ref_vector side(m);
-                            ENSURE(pc.check(res, side));
-                        }
-                    }
-#endif
                     scoped_watch _t_ (m_hyp_reduce2_sw);
                     
                     // pre-process proof for better iuc extraction
@@ -355,27 +338,9 @@ namespace spacer {
                         iuc_after.dump_farkas_stats();
                     }
                 }
-            
+
             iuc_proof iuc_pf(m, res, core_lits);
-            
-#if 0
-            static unsigned cnt = 0;
-            {
-                cnt++;
-                TRACE("spacer", tout << "Dumping pf cnt: " << cnt << "\n";);
-                if (cnt == 123) {
-                    std::ofstream ofs;
-                    ofs.open("/tmp/pf_" + std::to_string(cnt) + ".dot");
-                    iuc_pf.display_dot(ofs);
-                    ofs.close();
-                    proof_checker pc(m);
-                    expr_ref_vector side(m);
-                    ENSURE(pc.check(res, side));
-                }
-            }
-#endif
-            unsat_core_learner learner(m, iuc_pf);
-            
+            iuc_learner learner(m, iuc_pf);
             unsat_core_plugin* plugin;
             // -- register iuc plugins
             switch (m_iuc_arith) {
@@ -400,12 +365,14 @@ namespace spacer {
                 UNREACHABLE();
                 break;
             }
-            
+            // new euf plugin
+            // learner.register_plugin(alloc(unsat_core_plugin_euf, learner, m));
+
             switch (m_iuc) {
             case 1:
                 // -- iuc based on the lowest cut in the proof
-                plugin = alloc(unsat_core_plugin_lemma, learner);
-                learner.register_plugin(plugin);
+                // plugin = alloc(unsat_core_plugin_lemma, learner); // IG: default reasoning
+                // learner.register_plugin(plugin);
                 break;
             case 2:
                 // -- iuc based on the smallest cut in the proof
@@ -416,22 +383,21 @@ namespace spacer {
                 UNREACHABLE();
                 break;
             }
-            
+
             {
                 scoped_watch _t_ (m_learn_core_sw);
                 // compute interpolating unsat core
                 learner.compute_unsat_core(core);
             }
-            
+
             elim_proxies (core);
             // AG: this should be taken care of by minimizing the iuc cut
             simplify_bounds (core);
         }
-        
-        IF_VERBOSE(2,
-                   verbose_stream () << "IUC Core:\n" << core << "\n";);
+
+        IF_VERBOSE(2, verbose_stream () << "IUC Core: " << core << "\n";);
     }
-    
+
     void iuc_solver::refresh () {
         // only refresh in non-pushed state
         SASSERT (m_defs.empty());
@@ -439,7 +405,7 @@ namespace spacer {
         for (unsigned i = 0, e = m_solver.get_num_assertions(); i < e; ++i) {
             expr* a = m_solver.get_assertion (i);
             if (!m_base_defs.is_proxy_def(a)) { assertions.push_back(a); }
-            
+
         }
         m_base_defs.reset ();
         NOT_IMPLEMENTED_YET ();
@@ -448,5 +414,5 @@ namespace spacer {
         for (unsigned i = 0, e = assertions.size (); i < e; ++i)
             { m_solver.assert_expr(assertions.get(i)); }
     }
-    
+
 }
