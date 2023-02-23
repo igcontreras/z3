@@ -568,6 +568,9 @@ namespace mbp {
         to_lits(lits);
         return mk_and(lits);
     }
+    void term_graph::to_expr(expr_ref_vector &lits) {
+        to_lits(lits);
+    }
 
     void term_graph::reset() {
         m_term2app.reset();

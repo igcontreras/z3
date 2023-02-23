@@ -15,6 +15,7 @@ z3_add_component(spacer
   spacer_legacy_mbp.cpp
   spacer_proof_utils.cpp
   spacer_unsat_core_learner.cpp
+  spacer_iuc_learner.cpp
   spacer_unsat_core_plugin.cpp
   spacer_matrix.cpp
   spacer_antiunify.cpp

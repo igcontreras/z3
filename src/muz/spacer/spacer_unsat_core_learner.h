@@ -29,6 +29,7 @@ namespace spacer {
     class unsat_core_plugin;
     class iuc_proof;
     class unsat_core_learner {
+    protected:
         typedef obj_hashtable<expr> expr_set;
 
         ast_manager& m;
@@ -67,7 +68,7 @@ namespace spacer {
         /*
          * compute unsat core using the registered unsat-core-plugins
          */
-        void compute_unsat_core(expr_ref_vector& unsat_core);
+        virtual void compute_unsat_core(expr_ref_vector &unsat_core);
 
         /*
          * getter/setter methods for data structures exposed to plugins
@@ -82,9 +83,9 @@ namespace spacer {
         /*
          * adds a lemma to the unsat core
          */
-        void add_lemma_to_core(expr* lemma);
+        virtual void add_lemma_to_core(expr* lemma);
 
-    private:
+    protected:
 
         /*
          * computes partial core for step by delegating computation to plugins

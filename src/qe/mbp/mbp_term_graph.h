@@ -86,7 +86,7 @@ namespace mbp {
         void display(std::ostream &out);
 
         bool is_pure_def(expr* atom, expr *& v);
-        
+
     public:
         term_graph(ast_manager &m);
         ~term_graph();
@@ -103,6 +103,8 @@ namespace mbp {
 
         // deprecate?
         void to_lits(expr_ref_vector &lits, bool all_equalities = false);
+
+        void to_expr(expr_ref_vector &lits);
         expr_ref to_expr();
 
         /**
