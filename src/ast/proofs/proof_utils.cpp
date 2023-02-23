@@ -73,23 +73,98 @@ proof* proof_post_order::next() {
 }
 
 
+proof_pre_order::proof_pre_order(proof* root, ast_manager& manager) : m(manager) {
+    m_todo.push_back(root);
+}
+
+bool proof_pre_order::hasNext() {
+    return !m_todo.empty();
+}
+
+/*
+ * iterative pre-order depth-first search (DFS) through the proof DAG
+ */
+proof* proof_pre_order::next() {
+    while (!m_todo.empty()) {
+        proof* currentNode = m_todo.back();
+        m_todo.pop_back();
+        // if we haven't already visited the current unit
+        if (!m_visited.is_marked(currentNode)) {
+          // add children to the queue and return current node
+
+            for (unsigned i = m.get_num_parents(currentNode) - 1;
+                 i >= 0 ; --i) {
+                SASSERT(m.is_proof(currentNode->get_arg(i)));
+                proof* premise = to_app(currentNode->get_arg(i));
+
+                // if we haven't visited the current premise yet
+                if (!m_visited.is_marked(premise)) {
+                    // add it to the stack
+                    m_todo.push_back(premise);
+                }
+            }
+
+            return currentNode;
+        }
+    }
+    // we have already iterated through all inferences
+    return nullptr;
+}
+
+
+proof_visitor::proof_visitor(proof* root, ast_manager& manager) : m(manager) {
+    m_todo.push_back(root);
+}
+
+bool proof_visitor::hasNext() { return !m_todo.empty(); }
+
+/*
+ * iterative pre-order depth-first search (DFS) through the proof DAG
+ */
+proof *proof_visitor::next() {
+    while (!m_todo.empty()) {
+        proof* curr = m_todo.back();
+        m_todo.pop_back();
+        // if we haven't already visited the current unit
+        if (!m_visited.is_marked(curr)) {
+          // add children to the queue and return current node
+          m_curr = curr;
+          return curr;
+        }
+    }
+    // we have already iterated through all inferences
+    return nullptr;
+}
+
+void proof_visitor::visit_parents() {
+  for (unsigned i = 0; i < m.get_num_parents(m_curr); ++i) {
+    SASSERT(m.is_proof(m_curr->get_arg(i)));
+    proof *premise = to_app(m_curr->get_arg(i));
+
+    // if we haven't visited the current premise yet
+    if (!m_visited.is_marked(premise)) {
+      // add it to the stack
+      m_todo.push_back(premise);
+    }
+  }
+}
+
 class reduce_hypotheses {
     ast_manager &m;
     // tracking all created expressions
     expr_ref_vector m_pinned;
 
     // cache for the transformation
-    obj_map<proof, proof*> m_cache;
+    obj_map<proof, proof *> m_cache;
 
     // map from unit literals to their hypotheses-free derivations
-    obj_map<expr, proof*> m_units;
+    obj_map<expr, proof *> m_units;
 
     // -- all hypotheses in the proof
     obj_hashtable<expr> m_hyps;
 
     // marks hypothetical proofs
     ast_mark m_hypmark;
-
 
     // stack
     ptr_vector<proof> m_todo;
@@ -117,7 +192,7 @@ class reduce_hypotheses {
         return hyp_mark;
     }
 
-    void compute_marks(proof* pr)  {
+    void compute_marks(proof *pr) {
         proof *p;
         proof_post_order pit(pr, m);
         while (pit.hasNext()) {
@@ -125,23 +200,22 @@ class reduce_hypotheses {
             if (m.is_hypothesis(p)) {
                 m_hypmark.mark(p, true);
                 m_hyps.insert(m.get_fact(p));
-            } 
-            else {
+            } else {
                 bool hyp_mark = compute_mark1(p);
-                // collect units that are hyp-free and are used as hypotheses somewhere
-                if (!hyp_mark && m.has_fact(p) && m_hyps.contains(m.get_fact(p))) { 
-                    m_units.insert(m.get_fact(p), p); 
+                // collect units that are hyp-free and are used as
+                // hypotheses somewhere
+                if (!hyp_mark && m.has_fact(p) &&
+                    m_hyps.contains(m.get_fact(p))) {
+                    m_units.insert(m.get_fact(p), p);
                 }
             }
         }
     }
-    void find_units(proof *pr)
-    {
+    void find_units(proof *pr) {
         // optional. not implemented yet.
     }
 
-    void reduce(proof* pf, proof_ref &out)
-    {
+    void reduce(proof *pf, proof_ref &out) {
         proof *res = nullptr;
 
         m_todo.reset();
@@ -173,32 +247,44 @@ class reduce_hypotheses {
                 }
             }
 
-            if (todo_sz < m_todo.size()) { continue; }
-            else { m_todo.pop_back(); }
+            if (todo_sz < m_todo.size()) {
+                continue;
+            } else {
+                m_todo.pop_back();
+            }
 
             if (m.is_hypothesis(p)) {
                 // hyp: replace by a corresponding unit
                 if (m_units.find(m.get_fact(p), tmp)) {
                     res = tmp;
-                } else { res = p; }
+                } else {
+                    res = p;
+                }
             }
 
-            else if (!dirty) { res = p; }
+            else if (!dirty) {
+                res = p;
+            }
 
             else if (m.is_lemma(p)) {
-                //lemma: reduce the premise; remove reduced consequences from conclusion
+                // lemma: reduce the premise; remove reduced consequences
+                // from conclusion
                 SASSERT(args.size() == 1);
                 res = mk_lemma_core(args.get(0), m.get_fact(p));
                 compute_mark1(res);
             } else if (m.is_unit_resolution(p)) {
-                // unit: reduce units; reduce the first premise; rebuild unit resolution
+                // unit: reduce units; reduce the first premise; rebuild
+                // unit resolution
                 res = mk_unit_resolution_core(args.size(), args.data());
                 compute_mark1(res);
-            } else  {
+            } else {
                 // other: reduce all premises; reapply
-                if (m.has_fact(p)) { args.push_back(to_app(m.get_fact(p))); }
+                if (m.has_fact(p)) {
+                    args.push_back(to_app(m.get_fact(p)));
+                }
                 SASSERT(p->get_decl()->get_arity() == args.size());
-                res = m.mk_app(p->get_decl(), args.size(), (expr * const*)args.data());
+                res = m.mk_app(p->get_decl(), args.size(),
+                               (expr *const *)args.data());
                 compute_mark1(res);
             }
 
@@ -206,59 +292,60 @@ class reduce_hypotheses {
             m_pinned.push_back(res);
             m_cache.insert(p, res);
 
-            if (m.has_fact(res) && m.is_false(m.get_fact(res))) { break; }
+            if (m.has_fact(res) && m.is_false(m.get_fact(res))) {
+                break;
+            }
         }
 
         out = res;
     }
 
     // returns true if (hypothesis (not a)) would be reduced
-    bool is_reduced(expr *a)
-    {
+    bool is_reduced(expr *a) {
         expr_ref e(mk_not(m, a), m);
         return m_units.contains(e);
     }
 
-    proof *mk_lemma_core(proof *pf, expr *fact)
-    {
+    proof *mk_lemma_core(proof *pf, expr *fact) {
         ptr_buffer<expr> args;
         expr_ref lemma(m);
 
         if (m.is_or(fact)) {
-            for (expr* a : *to_app(fact)) {
+            for (expr *a : *to_app(fact)) {
                 if (!is_reduced(a))
-                    args.push_back(a); 
+                    args.push_back(a);
             }
-        } 
-        else if (!is_reduced(fact)) { 
-            args.push_back(fact); 
+        } else if (!is_reduced(fact)) {
+            args.push_back(fact);
         }
 
-
-        if (args.empty()) { 
-            return pf; 
+        if (args.empty()) {
+            return pf;
         }
         lemma = mk_or(m, args.size(), args.data());
-        proof* res = m.mk_lemma(pf, lemma);
+        proof *res = m.mk_lemma(pf, lemma);
         m_pinned.push_back(res);
 
-        if (m_hyps.contains(lemma))
-        { m_units.insert(lemma, res); }
+        if (m_hyps.contains(lemma)) {
+            m_units.insert(lemma, res);
+        }
         return res;
     }
 
-    proof *mk_unit_resolution_core(unsigned num_args, proof* const *args)
-    {
+    proof *mk_unit_resolution_core(unsigned num_args, proof *const *args) {
 
         ptr_buffer<proof> pf_args;
-        pf_args.push_back(args [0]);
+        pf_args.push_back(args[0]);
 
         app *cls_fact = to_app(m.get_fact(args[0]));
         ptr_buffer<expr> cls;
         if (m.is_or(cls_fact)) {
-            for (unsigned i = 0, sz = cls_fact->get_num_args(); i < sz; ++i)
-            { cls.push_back(cls_fact->get_arg(i)); }
-        } else { cls.push_back(cls_fact); }
+            for (unsigned i = 0, sz = cls_fact->get_num_args(); i < sz; ++i) {
+                cls.push_back(cls_fact->get_arg(i));
+            }
+        } else {
+            cls.push_back(cls_fact);
+        }
 
         // construct new resovent
         ptr_buffer<expr> new_fact_cls;
@@ -267,9 +354,9 @@ class reduce_hypotheses {
         for (unsigned i = 0, sz = cls.size(); i < sz; ++i) {
             found = false;
             for (unsigned j = 1; j < num_args; ++j) {
-                if (m.is_complement(cls.get(i), m.get_fact(args [j]))) {
+                if (m.is_complement(cls.get(i), m.get_fact(args[j]))) {
                     found = true;
-                    pf_args.push_back(args [j]);
+                    pf_args.push_back(args[j]);
                     break;
                 }
             }
@@ -283,14 +370,15 @@ class reduce_hypotheses {
         new_fact = mk_or(m, new_fact_cls.size(), new_fact_cls.data());
 
         // create new proof step
-        proof *res = m.mk_unit_resolution(pf_args.size(), pf_args.data(), new_fact);
+        proof *res =
+            m.mk_unit_resolution(pf_args.size(), pf_args.data(), new_fact);
         m_pinned.push_back(res);
         return res;
     }
 
-    // reduce all units, if any unit reduces to false return true and put its proof into out
-    bool reduce_units(proof_ref &out)
-    {
+    // reduce all units, if any unit reduces to false return true and put
+    // its proof into out
+    bool reduce_units(proof_ref &out) {
         proof_ref res(m);
         for (auto entry : m_units) {
             reduce(entry.get_value(), res);
@@ -303,30 +391,25 @@ class reduce_hypotheses {
         return false;
     }
 
-
-public:
+  public:
     reduce_hypotheses(ast_manager &m) : m(m), m_pinned(m) {}
 
-
-    void operator()(proof_ref &pr)
-    {
+    void operator()(proof_ref &pr) {
         compute_marks(pr);
         if (!reduce_units(pr)) {
             reduce(pr.get(), pr);
         }
         reset();
     }
-};
+    };
 
-void reduce_hypotheses(proof_ref &pr) {
-    ast_manager &m = pr.get_manager();
-    class reduce_hypotheses hypred(m);
-    hypred(pr);
-    DEBUG_CODE(proof_checker pc(m);
-               expr_ref_vector side(m);
-               SASSERT(pc.check(pr, side));
-              );
-}
+    void reduce_hypotheses(proof_ref & pr) {
+        ast_manager &m = pr.get_manager();
+        class reduce_hypotheses hypred(m);
+        hypred(pr);
+        DEBUG_CODE(proof_checker pc(m); expr_ref_vector side(m);
+                   SASSERT(pc.check(pr, side)););
+    }
 
 
 

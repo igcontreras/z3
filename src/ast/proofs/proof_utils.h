@@ -39,6 +39,33 @@ private:
     ast_manager&      m;
 };
 
+class proof_pre_order {
+  public:
+    proof_pre_order(proof *refutation, ast_manager &manager);
+    bool hasNext();
+    proof *next();
+
+  private:
+    ptr_vector<proof> m_todo;
+    ast_mark m_visited; // the proof nodes we have already visited
+    ast_manager &m;
+};
+
+class proof_visitor {
+  public:
+    proof_visitor(proof *refutation, ast_manager &manager);
+    bool hasNext();
+    proof *next();
+    void visit_parents(); // schedule the parents to be visited
+
+  private:
+    ptr_vector<proof> m_todo;
+    ast_mark m_visited; // the proof nodes we have already visited
+    ast_manager &m;
+    proof * m_curr;
+};
+
+
 void reduce_hypotheses(proof_ref &pr);
 
 
