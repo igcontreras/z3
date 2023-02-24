@@ -1771,13 +1771,13 @@ namespace mbp {
 
       // modifies `vars` to keep the variables that could not be eliminated
       void qe_lite(app_ref_vector &vars, expr_ref &fml) {
-        for(unsigned i = 0; i < vars.size(); i++) {
-          if (!m_tg.is_internalized(vars.get(i))) {
-            vars[i] = vars.back();
-            vars.pop_back();
-            --i;
+        unsigned i = 0;
+        for(auto v : vars) {
+          if (m_tg.is_internalized(v)) {
+            vars[i++] = v;
           }
         }
+        vars.shrink(i);
         // removes from `vars` the variables that have a ground representative
         m_tg.pick_repr();
         m_tg.refine_repr();
