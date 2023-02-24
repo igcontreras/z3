@@ -55,6 +55,13 @@ namespace mbp {
                 return a->get_sort()->get_id() < b->get_sort()->get_id();
             }
         };
+      struct mark_all_sub_expr {
+        expr_mark& m_mark;
+        mark_all_sub_expr(expr_mark& mark): m_mark(mark) {}
+        void operator()(var *n) const {}
+        void operator()(app const *n) const {m_mark.mark(n);}
+        void operator()(quantifier *n) const {}
+      };
     }
 
     namespace is_pure_ns {
@@ -656,12 +663,12 @@ namespace mbp {
     }
 
 
-    template <bool mark> expr *term_graph::mk_app_core(expr *e) {
+    expr *term_graph::mk_app_core(expr *e) {
       if (is_app(e)) {
           expr_ref_buffer kids(m);
           app *a = ::to_app(e);
           for (expr *arg : *a) {
-            kids.push_back(mk_app<mark>(arg));
+            kids.push_back(mk_app(arg));
           }
           app *res = m.mk_app(a->get_decl(), a->get_num_args(), kids.data());
           m_pinned.push_back(res);
@@ -671,10 +678,8 @@ namespace mbp {
       }
     }
 
-    template <bool mark> expr_ref term_graph::mk_app(term &r) {
+    expr_ref term_graph::mk_app(term &r) {
       SASSERT(r.is_repr());
-        if(mark)
-          r.set_mark2(true);
 
         if (r.get_num_args() == 0) {
             return expr_ref(r.get_expr(), m);
@@ -685,27 +690,27 @@ namespace mbp {
             return expr_ref(res, m);
         }
 
-        res = mk_app_core<mark> (r.get_expr());
+        res = mk_app_core(r.get_expr());
         m_term2app.insert(r.get_id(), res);
         return expr_ref(res, m);
     }
 
-    template<bool mark> expr_ref term_graph::mk_app(expr *a) {
+    expr_ref term_graph::mk_app(expr *a) {
       term *t = get_term(a);
       if (!t)
         return expr_ref(a, m);
       else {
         SASSERT(t->get_repr());
-        return mk_app<mark>(*t->get_repr());
+        return mk_app(*t->get_repr());
       }
     }
 
     void term_graph::mk_equalities(term &t, expr_ref_vector &out) {
         SASSERT(t.is_repr());
         if(t.get_class_size() == 1) return;
-        expr_ref rep(mk_app<false>(t), m);
+        expr_ref rep(mk_app(t), m);
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-            expr* mem = mk_app_core<false>(it->get_expr());
+            expr* mem = mk_app_core(it->get_expr());
             out.push_back (m.mk_eq (rep, mem));
         }
     }
@@ -717,9 +722,9 @@ namespace mbp {
         mk_equalities(t, out);
 
         for (term *it = &t.get_next(); it != &t; it = &it->get_next ()) {
-            expr* a1 = mk_app_core<false> (it->get_expr());
+            expr* a1 = mk_app_core(it->get_expr());
             for (term *it2 = &it->get_next(); it2 != &t; it2 = &it2->get_next()) {
-              expr *a2 = mk_app_core<false>(it2->get_expr());
+              expr *a2 = mk_app_core(it2->get_expr());
               out.push_back(m.mk_eq(a1, a2));
             }
         }
@@ -730,16 +735,14 @@ namespace mbp {
         if (t.get_class_size() == 1)
             return;
 
-        expr_ref rep(m); // delay output until an equality is found
+        expr_ref rep(m);
+        rep = mk_app(t);
+        if (!is_pure(m_is_red, rep)) return;
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
           expr * e = it->get_expr();
           if(is_app(e)) {
             app * a = to_app(e);
             if(!m_is_var.contains(a->get_decl())) { // it is not a variable to elim
-              if(!rep) {
-                 rep = mk_app<true>(t);
-                 if (!is_pure(m_is_red, rep)) return;
-              }
               expr *mem = mk_app_core<true>(e);
               if(rep != mem && is_pure(m_is_red, mem))
                 out.push_back(m.mk_eq(rep, mem));
@@ -938,7 +941,7 @@ namespace mbp {
 
         for (expr * a : m_lits) {
             if (is_internalized(a)) {
-                lits.push_back (::to_app(mk_app<false>(a)));
+              lits.push_back (::to_app(mk_app(a)));
             }
         }
 
@@ -954,14 +957,14 @@ namespace mbp {
 
         //TODO: use seen to prevent duplicate disequalities
         for (auto p : m_deq_pairs) {
-          lits.push_back(mk_neq(m, mk_app<false>(p.first->get_expr()),
-                                mk_app<false>(p.second->get_expr())));
+          lits.push_back(mk_neq(m, mk_app(p.first->get_expr()),
+                                mk_app(p.second->get_expr())));
         }
 
         for (auto t : m_deq_distinct) {
           ptr_vector<expr> args(t.size());
           for (auto c : t)
-            args.push_back(mk_app<false>(c->get_expr()));
+            args.push_back(mk_app(c->get_expr()));
           lits.push_back(m.mk_distinct(args.size(), args.data()));
         }
     }
@@ -973,9 +976,9 @@ namespace mbp {
         for (expr *a : m_lits) {
           if (is_internalized(a)) {
             expr_ref r(m);
-            r = mk_app<true>(a);
+            r = mk_app(a);
             if (is_pure(m_is_red, r))
-                lits.push_back(mk_app<true>(a));
+                lits.push_back(r);
           }
         }
 
@@ -990,8 +993,8 @@ namespace mbp {
         expr_ref e1(m), e2(m), d(m), distinct(m);
         expr_ref_vector args(m);
         for (auto p : m_deq_pairs) {
-          e1 = mk_app<true>(*(p.first->get_repr()));
-          e2 = mk_app<true>(*(p.second->get_repr()));
+          e1 = mk_app(*(p.first->get_repr()));
+          e2 = mk_app(*(p.second->get_repr()));
           if (is_pure(m_is_red, e1) && is_pure(m_is_red, e2))
             lits.push_back(mk_neq(m, e1, e2));
         }
@@ -999,7 +1002,7 @@ namespace mbp {
         for (auto t : m_deq_distinct) {
           args.reset();
           for (auto c : t) {
-            d = mk_app<true>(*(c->get_repr()));
+            d = mk_app(*(c->get_repr()));
             if (is_pure(m_is_red, d))
               args.push_back(d);
           }
@@ -1752,8 +1755,6 @@ namespace mbp {
         m_tg.refine_repr();
 
         expr_ref_vector lits(m);
-        // uses mark2 to mark the variables that appear in lits
-        m_tg.reset_marks2();
         m_tg.to_lits_qe_lite(lits);
         if (lits.size() == 0)
           fml = m.mk_true();
@@ -1762,26 +1763,16 @@ namespace mbp {
         else
           fml = m.mk_and(lits);
 
-        // After choosing representatives, more variables could be eliminated,
-        // either because they do not appear, or because they have another
-        // variable to represent them.
-        for (unsigned i = 0; i < vars.size(); ++i) {
-          term * t = m_tg.get_term(vars[i].get());
-          SASSERT(t); // if the variable was not in `fml` it was removed earlier
-                      // from `vars`
-          if (!t->is_marked2() || !occurs(vars[i].get(),fml)) {
-            // the var is not in the output
-
-            // XXX the second check is expensive and can only happen for
-            // formulas like exists a,b . f(a) = f(b) && a = b, were we have 2
-            // terms in the equivalence class that are equal after rewriting
-            // them by their representatives. If so, we do not output them. This
-            // can be disabled and the second check is not needed.
-            vars[i] = vars.back();
-            vars.pop_back();
-            --i;
-          }
+        // Remove all variables that are do not apprear in the formula
+        expr_mark mark;
+        mark_all_sub_expr marker(mark);
+        quick_for_each_expr(marker, fml);
+        i = 0;
+        for (auto v : vars) {
+          if (mark.is_marked(v))
+            vars[i++] = v;
         }
+        vars.shrink(i);
       }
     };
 

@@ -108,10 +108,10 @@ namespace mbp {
         void reset_marks2();
         bool marks_are_clear();
 
-        template <bool mark> expr *mk_app_core(expr *a);
-        template <bool mark> expr_ref mk_app(term &t);
+        expr *mk_app_core(expr *a);
+        expr_ref mk_app(term &t);
         expr* mk_pure(term& t);
-        template <bool mark> expr_ref mk_app(expr *a);
+        expr_ref mk_app(expr *a);
         void mk_equalities(term &t, expr_ref_vector &out);
         void mk_all_equalities(term &t, expr_ref_vector &out);
         void mk_qe_lite_equalities(term &t, expr_ref_vector &out);
