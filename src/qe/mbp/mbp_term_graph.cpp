@@ -491,7 +491,11 @@ namespace mbp {
     term *term_graph::mk_term(expr *a) {
         expr_ref e(a, m);
         term * t = alloc(term, e, m_app2term);
-	t->set_gr(is_ground(a));
+        if (is_ground(a)) {
+          t->set_gr(true);
+          t->set_cgr(true);
+        }
+
         if (t->get_num_args() == 0 && m.is_unique_value(a))
             t->mark_as_interpreted();
 
@@ -654,8 +658,10 @@ namespace mbp {
             it->set_root(*a);
         }
 
+        bool prop_cgroundness = b->is_class_gr() != a->is_class_gr();
         // merge equivalence classes
         a->merge_eq_class(*b);
+        if (prop_cgroundness) cgroundPercolateUp(a);
 
         // Insert parents of b's old equivalence class into the cg table
         // bottom-up merge of parents
@@ -1772,7 +1778,6 @@ namespace mbp {
             --i;
           }
         }
-        m_tg.compute_cground();
         // removes from `vars` the variables that have a ground representative
         m_tg.pick_repr();
         m_tg.refine_repr();
@@ -2009,6 +2014,20 @@ namespace mbp {
         TRACE("qe", tout << result << "\n";);
         return result;
     }
+
+  void term_graph::cgroundPercolateUp(term* t) {
+    SASSERT(t->is_class_gr());
+    term* it = t;
+    //there is a cgr term in all ground classes
+    while(!it->is_cgr()) {
+      it = &it->get_next();
+      SASSERT(it != t);
+    }
+
+    ptr_vector<term> todo;
+    todo.push_back(it);
+    cgroundPercolateUp(todo);
+  }
 
   void term_graph::cgroundPercolateUp(ptr_vector<term>& todo) {
     term *t;
