@@ -252,10 +252,11 @@ namespace mbp {
           return tmp != 0;
         }
 
-      static void set_deq(term_graph::deqs& ds, unsigned idx) {
-        ds.resize(idx+1);
-        ds.set(idx);
-      }
+        static void set_deq(term_graph::deqs& ds, unsigned idx) {
+          ds.resize(idx+1);
+          ds.set(idx);
+        }
+
         bool all_children_ground() {
           SASSERT(deg() != 0);
           for (auto c :m_children) {
@@ -264,10 +265,9 @@ namespace mbp {
           return true;
         }
 
-      void set_mark2_terms_class(bool v) { // TODO: remove
+        void set_mark2_terms_class(bool v) { // TODO: remove
           if (is_marked2())
             return;
-
           term *curr = this;
           do {
             curr->set_mark2(v);
@@ -287,9 +287,9 @@ namespace mbp {
         term *get_repr() { return m_repr; }
         bool is_repr() const {return m_repr == this;}
         void set_repr(term *t) {
-	  SASSERT(get_root().get_id() == t->get_root().get_id());
-	  m_repr = t;
-	}
+          SASSERT(get_root().get_id() == t->get_root().get_id());
+          m_repr = t;
+        }
         void reset_repr() { m_repr = nullptr; }
         term &get_next() const {return *m_next;}
         void add_parent(term* p) { m_parents.push_back(p); }
@@ -301,87 +301,71 @@ namespace mbp {
           m_class_props.merge(b.m_class_props);
         }
 
-        // -- make this term the root of its equivalence class
-        void mk_root() {
-            if (is_root()) return;
-
-            term *curr = this;
-            do {
-                if (curr->is_root()) {
-                    // found previous root
-                    SASSERT(curr != this);
-                    m_class_props.transfer(curr->m_class_props);
-                }
-                curr->set_root(*this);
-                curr = &curr->get_next();
-            }
-            while (curr != this);
+        // -- make this term the repr of its equivalence class
+        void mk_repr() {
+          term *curr = this;
+          do {
+            curr->set_repr(this);
+            curr = &curr->get_next();
+          }
+          while (curr != this);
         }
-
-      // -- make this term the repr of its equivalence class
-      void mk_repr() {
-        term *curr = this;
-        do {
-          curr->set_repr(this);
-          curr = &curr->get_next();
-        }
-        while (curr != this);
-      }
 
         std::ostream& display(std::ostream& out) const {
-            out << get_id() << ": " << m_expr
-                << (is_repr() ? " R" : "") << (is_gr() ? " G" : "") << (is_class_gr() ? " clsG" : "") << (is_cgr() ? " CG" : "") << " deg:" << deg() << " - ";
-            term const* r = &this->get_next();
-            while (r != this) {
-              out << r->get_id() << " " << (r->is_cgr() ? " CG" : "") << " ";
-              r = &r->get_next();
-            }
-            out << "\n";
-            return out;
+          out << get_id() << ": " << m_expr
+              << (is_repr() ? " R" : "") << (is_gr() ? " G" : "") << (is_class_gr() ? " clsG" : "") << (is_cgr() ? " CG" : "") << " deg:" << deg() << " - ";
+          term const* r = &this->get_next();
+          while (r != this) {
+            out << r->get_id() << " " << (r->is_cgr() ? " CG" : "") << " ";
+            r = &r->get_next();
+          }
+          out << "\n";
+          return out;
         }
+
         term_graph::deqs &get_deqs() { return m_class_props.m_deqs; }
     };
 
-    static std::ostream& operator<<(std::ostream& out, term const& t) {
-        return t.display(out);
-    }
+  static std::ostream& operator<<(std::ostream& out, term const& t) {
+    return t.display(out);
+  }
 
-    // t1 != t2
-    void term_graph::add_deq_proc::operator()(term *t1, term *t2) {
-      ptr_vector<term> ts(2);
-      ts[0] = t1;
-      ts[1] = t2;
-      (*this)(ts);
-    }
+  // t1 != t2
+  void term_graph::add_deq_proc::operator()(term *t1, term *t2) {
+    ptr_vector<term> ts(2);
+    ts[0] = t1;
+    ts[1] = t2;
+    (*this)(ts);
+  }
 
-    // distinct(ts)
-    void term_graph::add_deq_proc::operator()(ptr_vector<term> &ts) {
+  // distinct(ts)
+  void term_graph::add_deq_proc::operator()(ptr_vector<term> &ts) {
 
-      for (auto t : ts) {
-        term::set_deq(t->get_root().get_deqs(), m_deq_cnt);
-      }
-      m_deq_cnt++;
+    for (auto t : ts) {
+      term::set_deq(t->get_root().get_deqs(), m_deq_cnt);
     }
+    m_deq_cnt++;
+  }
 
-    bool term_graph::is_variable_proc::operator()(const expr * e) const {
-        if (!is_app(e)) return false;
-        const app *a = ::to_app(e);
-        TRACE("qe_verbose", tout << a->get_family_id() << " " << m_solved.contains(a->get_decl()) << " " << m_decls.contains(a->get_decl()) << "\n";);
-        return
-            a->get_family_id() == null_family_id &&
-            !m_solved.contains(a->get_decl()) &&
-            m_exclude == m_decls.contains(a->get_decl());
-    }
+  bool term_graph::is_variable_proc::operator()(const expr * e) const {
+    if (!is_app(e)) return false;
+    const app *a = ::to_app(e);
+    TRACE("qe_verbose", tout << a->get_family_id() << " " << m_solved.contains(a->get_decl()) << " " << m_decls.contains(a->get_decl()) << "\n";);
+    return
+      a->get_family_id() == null_family_id &&
+      !m_solved.contains(a->get_decl()) &&
+      m_exclude == m_decls.contains(a->get_decl());
+  }
 
-    bool term_graph::is_variable_proc::operator()(const term &t) const {
-        return (*this)(t.get_expr());
-    }
+  bool term_graph::is_variable_proc::operator()(const term &t) const {
+    return (*this)(t.get_expr());
+  }
 
-    void term_graph::is_variable_proc::set_decls(const func_decl_ref_vector &decls, bool exclude) {
-        reset();
-        m_exclude = exclude;
-        for (auto *d : decls) m_decls.insert(d);
-    }
+  void term_graph::is_variable_proc::set_decls(const func_decl_ref_vector &decls, bool exclude) {
+    reset();
+    m_exclude = exclude;
+    for (auto *d : decls) m_decls.insert(d);
+  }
 
   void term_graph::is_variable_proc::add_decls(const app_ref_vector &decls) {
     for (auto *d : decls) m_decls.insert(d->get_decl());
@@ -391,22 +375,22 @@ namespace mbp {
     m_decls.insert(d->get_decl());
   }
 
-    void
-    term_graph::is_variable_proc::set_decls(const app_ref_vector &vars,
-                                            bool exclude) {
-        reset();
-        m_exclude = exclude;
-        for (auto *v : vars)
-        m_decls.insert(v->get_decl());
-    }
+  void
+  term_graph::is_variable_proc::set_decls(const app_ref_vector &vars,
+                                          bool exclude) {
+    reset();
+    m_exclude = exclude;
+    for (auto *v : vars)
+      m_decls.insert(v->get_decl());
+  }
 
-    void term_graph::is_variable_proc::mark_solved(const expr *e) {
-        if ((*this)(e) && is_app(e))
-            m_solved.insert(::to_app(e)->get_decl());
-    }
+  void term_graph::is_variable_proc::mark_solved(const expr *e) {
+    if ((*this)(e) && is_app(e))
+      m_solved.insert(::to_app(e)->get_decl());
+  }
 
 
-    unsigned term_graph::term_hash::operator()(term const* t) const { return t->get_hash(); }
+  unsigned term_graph::term_hash::operator()(term const* t) const { return t->get_hash(); }
 
     bool term_graph::term_eq::operator()(term const* a, term const* b) const { return term::cg_eq(a, b); }
 
@@ -703,9 +687,9 @@ namespace mbp {
     template<bool mark> expr_ref term_graph::mk_app(expr *a) {
       term *t = get_term(a);
       if (!t)
-	return expr_ref(a, m);
+        return expr_ref(a, m);
       else {
-	SASSERT(t->get_repr());
+        SASSERT(t->get_repr());
         return mk_app<mark>(*t->get_repr());
       }
     }
@@ -1710,12 +1694,12 @@ namespace mbp {
 
         // now add disequalities
         for (auto it = m_tg.m_terms.begin(); it != m_tg.m_terms.end() - 1; it++) {
-	  if ((*it)->is_eq_neq()) continue;
-	  if (is_ground_or_const(**it))
+          if ((*it)->is_eq_neq()) continue;
+          if (is_ground_or_const(**it))
             continue;
 
           for (auto it2 = it + 1; it2 != m_tg.m_terms.end(); it2++) {
-	    if ((*it2)->is_eq_neq()) continue;
+            if ((*it2)->is_eq_neq()) continue;
             if (is_ground_or_const(**it2))
               continue;
             if (have_same_top_operand((*it)->get_expr(), (*it2)->get_expr()) &&
@@ -1746,13 +1730,10 @@ namespace mbp {
       term_graph &m_tg;
       ast_manager &m;
 
-      static bool is_ground_or_const(const term &t) {
-        return t.is_cgr() || to_app(t.get_expr())->get_num_args() == 0;
-      }
-
     public:
       qe(term_graph &tg) : m_tg(tg), m(m_tg.m) {}
 
+      // removes from `vars` the variables that have a ground representative
       // modifies `vars` to keep the variables that could not be eliminated
       void qe_lite(app_ref_vector &vars, expr_ref &fml) {
         unsigned i = 0;
@@ -1762,7 +1743,6 @@ namespace mbp {
           }
         }
         vars.shrink(i);
-        // removes from `vars` the variables that have a ground representative
         m_tg.pick_repr();
         m_tg.refine_repr();
 
