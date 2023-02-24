@@ -580,7 +580,7 @@ namespace mbp {
       }
       m_add_deq(ts);
       m_deq_distinct.push_back(ts);
-      if (!m_internalize_eq) return;      
+      if (!m_internalize_eq) return;
       term* t  = get_term(d);
       if (!t) mk_term(d);
     }
@@ -635,7 +635,7 @@ namespace mbp {
         // -- merge might invalidate term2app cache
         m_term2app.reset();
         m_pinned.reset();
-	for (term* t : m_terms) t->reset_repr();
+        for (term* t : m_terms) t->reset_repr();
 
         if (a->get_class_size() > b->get_class_size()) {
             std::swap(a, b);
@@ -877,7 +877,7 @@ namespace mbp {
       if (t->get_repr()) continue;
       pick_repr_class(t);
       for (auto it : term::parents(t->get_root()))
-	if (all_children_picked(it)) todo.push_back(it);
+        if (all_children_picked(it)) todo.push_back(it);
     }
   }
 
@@ -887,8 +887,8 @@ namespace mbp {
     for (term *it = &t->get_next(); it != t; it = &it->get_next()) {
       if (!all_children_picked(it)) continue;
       if ((it->is_cgr() && !r->is_cgr()) ||
-	  (it->is_cgr() == r->is_cgr() && term_lt(*it, *r)))
-	r = it;
+          (it->is_cgr() == r->is_cgr() && term_lt(*it, *r)))
+        r = it;
     }
     r->mk_repr();
   }
@@ -902,20 +902,21 @@ namespace mbp {
     for (term *t : m_terms) {
       if (t->get_repr()) continue;
       if (t->deg() == 0 && t->is_cgr())
-	todo.push_back(t);
+        todo.push_back(t);
     }
     pickReprPercolateUp(todo);
-    for (term* t : m_terms) SASSERT(!t->is_cgr() || t->get_repr());
+    DEBUG_CODE(for (term* t : m_terms) SASSERT(!t->is_cgr() || t->get_repr()););
 
     for (term *t : m_terms) {
       if (t->get_repr()) continue;
       if (t->deg() == 0)
-	todo.push_back(t);
+        todo.push_back(t);
     }
     pickReprPercolateUp(todo);
-    for (term* t : m_terms) SASSERT(t->get_repr());
+    DEBUG_CODE(for (term* t : m_terms) SASSERT(t->get_repr()););
   }
-  // if r is a variable, attempt to pick non-var
+
+  // if t is a variable, attempt to pick non-var
   void term_graph::refine_repr_class(term* t) {
     SASSERT(t->is_repr());
     auto is_var = [&] (term *p) {
@@ -927,7 +928,7 @@ namespace mbp {
     for (term *it = &t->get_next(); it != t; it = &it->get_next()) {
       if (makes_cycle(it)) continue;
       if (is_var(r) && !is_var(it))
-	r = it;
+        r = it;
     }
     r->mk_repr();
   }
@@ -2099,7 +2100,7 @@ namespace mbp {
     auto all_children_ground = [](term* p) {
       SASSERT(p->deg() != 0);
       for (auto c : term::children(p)) {
-	if (!c->is_class_gr()) return false;
+        if (!c->is_class_gr()) return false;
       }
       return true;
     };
@@ -2109,7 +2110,7 @@ namespace mbp {
       t->set_cgr(true);
       t->set_class_gr(true);
       for (auto p : term::parents(t->get_root()))
-	if (!p->is_cgr() && all_children_ground(p)) todo.push_back(p);
+        if (!p->is_cgr() && all_children_ground(p)) todo.push_back(p);
     }
   }
 
@@ -2121,16 +2122,16 @@ namespace mbp {
     ptr_vector<term> todo;
     for (auto t : m_terms) {
       if (t->is_gr()) {
-	todo.push_back(t);
+        todo.push_back(t);
       }
     }
     cgroundPercolateUp(todo);
     DEBUG_CODE(for (auto t : m_terms) {
-	bool isclsg = true;
-	for (auto c : term::children(t)) isclsg &= c->is_class_gr();
-	SASSERT(t->deg() == 0 || !isclsg || t->is_cgr());
-	SASSERT(t->deg() == 0 || isclsg || !t->is_cgr());
-      });
+      bool isclsg = true;
+      for (auto c : term::children(t)) isclsg &= c->is_class_gr();
+      SASSERT(t->deg() == 0 || !isclsg || t->is_cgr());
+      SASSERT(t->deg() ==0 || isclsg || !t->is_cgr());
+    });
   }
 
   void term_graph::qe_lite(app_ref_vector &vars, expr_ref &fml) {

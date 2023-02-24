@@ -54,8 +54,8 @@ namespace mbp {
 
             void set_decls(const func_decl_ref_vector &decls, bool exclude);
             void set_decls(const app_ref_vector &vars, bool exclude);
-	  void add_decls(const app_ref_vector &vars);
-	  void add_decl(app* var);
+            void add_decls(const app_ref_vector &vars);
+            void add_decl(app* var);
             void mark_solved(const expr *e);
             void reset_solved() {m_solved.reset();}
             void reset() {m_decls.reset(); m_solved.reset(); m_exclude = true;}
@@ -75,7 +75,7 @@ namespace mbp {
         cover*            m_cover;
         qe*               m_qe;
         bool              m_internalize_eq;
-        u_map<expr *> m_term2app; // any representative change invalidates this cache
+        u_map<expr *>     m_term2app; // any representative change invalidates this cache
         plugin_manager<solve_plugin> m_plugins;
         ptr_hashtable<term, term_hash, term_eq> m_cg_table;
         vector<std::pair<term*,term*>> m_merge;
