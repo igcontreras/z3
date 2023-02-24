@@ -106,7 +106,6 @@ namespace mbp {
 
         void reset_marks();
         void reset_marks2();
-        void reset_marks3();
         bool marks_are_clear();
 
         template <bool mark> expr *mk_app_core(expr *a);
@@ -216,9 +215,6 @@ namespace mbp {
 
         expr_ref_vector non_ground_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
-        void mk_gr_equalities(term &t, expr_ref_vector &out);
-        void mk_all_gr_equalities(term &t, expr_ref_vector &out);
-        expr_ref to_ground_expr();
         void qe_lite(app_ref_vector &vars, expr_ref &fml);
         void mb_cover(model& mdl);
         bool has_val_in_class(expr* e);

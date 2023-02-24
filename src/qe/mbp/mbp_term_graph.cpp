@@ -103,7 +103,6 @@ namespace mbp {
         unsigned m_mark:1;
         // -- general purpose second mark
         unsigned m_mark2:1;
-        unsigned m_mark3:1;
         // -- is an interpreted constant
         unsigned m_interpreted:1;
         // caches whether m_expr is an equality
@@ -162,18 +161,18 @@ namespace mbp {
       public:
         term(expr_ref const &v, u_map<term *> &app2term)
           : m_expr(v), m_root(this), m_repr(nullptr), m_next(this),
-	    m_mark(false), m_mark2(false), m_mark3(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_peq(false), m_is_neq_child(false), m_cgr(0), m_gr(0) {
-	  m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
-    m_is_distinct = m_expr.get_manager().is_distinct(m_expr);
-	  m_children.reset();
-	  if (!is_app(m_expr))
+            m_mark(false), m_mark2(false), m_interpreted(false), m_is_eq(m_expr.get_manager().is_eq(m_expr)), m_is_peq(false), m_is_neq_child(false), m_cgr(0), m_gr(0) {
+          m_is_neq =  m_expr.get_manager().is_not(m_expr) && m_expr.get_manager().is_eq(to_app(m_expr)->get_arg(0));
+          m_is_distinct = m_expr.get_manager().is_distinct(m_expr);
+          m_children.reset();
+          if (!is_app(m_expr))
             return;
           for (expr *e : *to_app(m_expr)) {
             term *t = app2term[e->get_id()];
             t->get_root().m_parents.push_back(this);
             m_children.push_back(t);
           }
-	  m_is_peq = is_partial_eq(to_app(m_expr));
+          m_is_peq = is_partial_eq(to_app(m_expr));
         }
 
         ~term() {}
@@ -231,8 +230,6 @@ namespace mbp {
         void set_mark(bool v){m_mark = v;}
         bool is_marked2() const {return m_mark2;} // NSB: where is this used?
         void set_mark2(bool v){m_mark2 = v;}      // NSB: where is this used?
-        bool is_marked3() const {return m_mark3;}
-        void set_mark3(bool v){m_mark3 = v;}
 
         bool is_cgr() const {return m_cgr;}
         void set_cgr(bool v) {m_cgr = v;}
@@ -555,7 +552,7 @@ namespace mbp {
               }
             }
         }
-	merge_flush();
+        merge_flush();
         SASSERT(res);
         return res;
     }
@@ -771,39 +768,6 @@ namespace mbp {
         }
     }
 
-    void term_graph::mk_gr_equalities(term &t, expr_ref_vector &out) {
-      SASSERT(t.is_repr());
-      expr_ref rep(m);
-
-      for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-        if (it->is_cgr()) {
-          if (!rep) { // make the term if there is another gr term in the equiv.
-                      // class
-              rep = mk_app<false>(t);
-          }
-          out.push_back(m.mk_eq(rep, mk_app_core<false>(it->get_expr())));
-        }
-      }
-    }
-
-    // TODO: review this
-    // Assumes that cgroundness has been computed
-    void term_graph::mk_all_gr_equalities(term &t, expr_ref_vector &out) {
-      mk_gr_equalities(t, out);
-
-      for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
-        if (!m_is_var(it->get_expr()) || it->is_cgr())
-          continue;
-        expr *a1 = mk_app_core<false>(it->get_expr());
-        for (term *it2 = &it->get_next(); it2 != &t; it2 = &it2->get_next()) {
-          if (!m_is_var(it->get_expr()) || it->is_cgr())
-            continue;
-          expr *a2 = mk_app_core<false>(it2->get_expr());
-          out.push_back(m.mk_eq(a1, a2));
-        }
-      }
-    }
-
     void term_graph::reset_marks() {
         for (term * t : m_terms) {
             t->set_mark(false);
@@ -816,11 +780,6 @@ namespace mbp {
         }
     }
 
-    void term_graph::reset_marks3() {
-        for (term *t : m_terms) {
-            t->set_mark3(false);
-        }
-    }
 
     bool term_graph::marks_are_clear() {
         for (term * t : m_terms) {
@@ -1071,58 +1030,12 @@ namespace mbp {
         }
     }
 
-  // assumes that ground terms have been computed and picked as root if exist
-    void term_graph::gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities) {
-
-      pick_repr();
-      for (expr *a : m_lits) {
-        if (is_internalized(a)) {
-          term *t = get_term(a);
-
-          if (!t->is_eq_neq() && t->is_cgr())
-            lits.push_back(::to_app(mk_app<false>(a)));
-        }
-      }
-
-      for (term *t : m_terms) {
-        if (t->is_eq_neq()) continue;
-        if (!t->is_repr())
-          continue;
-        else if(!t->is_cgr()) // a root that is not gr; nothing to do
-          continue;
-        else if (all_equalities)
-          mk_all_gr_equalities(*t, lits);
-        else{
-          mk_gr_equalities(*t, lits);
-        }
-      }
-
-      //TODO: use seen to prevent duplicate disequalities
-      for (auto p : m_deq_pairs) {
-        lits.push_back(mk_neq(m, mk_app<false>(*(p.first->get_repr())),
-                              mk_app<false>(*(p.second->get_repr()))));
-      }
-
-      for (auto t : m_deq_distinct) {
-        ptr_vector<expr> args;
-        for (auto c : t)
-          args.push_back(mk_app<false>(*(c->get_repr())));
-        lits.push_back(m.mk_distinct(args.size(), args.data()));
-      }
-    }
-
     expr_ref term_graph::to_expr(bool repick_repr) {
       expr_ref_vector lits(m);
       to_lits(lits, false, repick_repr);
       return mk_and(lits);
     }
 
-    expr_ref term_graph::to_ground_expr() {
-      compute_cground();
-      expr_ref_vector lits(m);
-      gr_terms_to_lits(lits, false);
-      return mk_and(lits);
-    }
 
     void term_graph::reset() {
         m_term2app.reset();
