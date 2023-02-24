@@ -486,7 +486,10 @@ namespace mbp {
           t->set_gr(true);
           t->set_cgr(true);
         }
-
+        else if (t->deg() > 0 && t->all_children_ground()) {
+            t->set_cgr(true);
+            t->set_class_gr(true);
+        }
         if (t->get_num_args() == 0 && m.is_unique_value(a))
             t->mark_as_interpreted();
 
@@ -517,10 +520,12 @@ namespace mbp {
             if (sz < todo.size()) continue;
             todo.pop_back();
             res = mk_term(t);
+
             // the term was not internalized in this syntactic form, but it
             // could be congruent with some other term, if that is the case, we
             // need to merge them.
             term* res_old = m_cg_table.insert_if_not_there(res);
+            SASSERT(res_old->is_cgr() == res->is_cgr());
             if (res_old->get_root().get_id() != res->get_root().get_id()) {
               m_merge.push_back(std::make_pair(res, res_old));
             }
