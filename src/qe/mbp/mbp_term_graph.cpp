@@ -986,14 +986,13 @@ namespace mbp {
         }
 
         //TODO: use seen to prevent duplicate disequalities
-        //TODO: prevent calling mk_app twice
         expr_ref e1(m), e2(m), d(m), distinct(m);
         expr_ref_vector args(m);
         for (auto p : m_deq_pairs) {
           e1 = mk_app<true>(*(p.first->get_repr()));
           e2 = mk_app<true>(*(p.second->get_repr()));
           if (is_pure(m_is_red, e1) && is_pure(m_is_red, e2))
-            lits.push_back(mk_neq(m, mk_app<true>(*(p.first->get_repr())), mk_app<true>(*(p.second->get_repr()))));
+            lits.push_back(mk_neq(m, e1, e2));
         }
 
         for (auto t : m_deq_distinct) {
@@ -1001,7 +1000,7 @@ namespace mbp {
           for (auto c : t) {
             d = mk_app<true>(*(c->get_repr()));
             if (is_pure(m_is_red, d))
-              args.push_back(mk_app<true>(*(c->get_repr())));
+              args.push_back(d);
           }
           if (args.size() == 0) continue;
           distinct = m.mk_distinct(args.size(), args.data());
