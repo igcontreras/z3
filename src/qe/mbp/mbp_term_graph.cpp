@@ -256,6 +256,13 @@ namespace mbp {
         ds.resize(idx+1);
         ds.set(idx);
       }
+        bool all_children_ground() {
+          SASSERT(deg() != 0);
+          for (auto c :m_children) {
+            if (!c->is_class_gr()) return false;
+          }
+          return true;
+        }
 
       void set_mark2_terms_class(bool v) { // TODO: remove
           if (is_marked2())
@@ -2008,20 +2015,14 @@ namespace mbp {
 
   void term_graph::cgroundPercolateUp(ptr_vector<term>& todo) {
     term *t;
-    auto all_children_ground = [](term* p) {
-      SASSERT(p->deg() != 0);
-      for (auto c : term::children(p)) {
-        if (!c->is_class_gr()) return false;
-      }
-      return true;
-    };
+
     while (!todo.empty()) {
       t = todo.back();
       todo.pop_back();
       t->set_cgr(true);
       t->set_class_gr(true);
       for (auto p : term::parents(t->get_root()))
-        if (!p->is_cgr() && all_children_ground(p)) todo.push_back(p);
+        if (!p->is_cgr() && p->all_children_ground()) todo.push_back(p);
     }
   }
 
