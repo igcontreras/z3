@@ -464,19 +464,21 @@ namespace mbp {
 
   // optionally, exclude constructively ground nodes
   void term_graph::get_terms(expr_ref_vector& res, bool exclude_cground) {
+    std::function<bool(term*)> fil = nullptr;
     if (exclude_cground) {
-      compute_cground();
-      for(term* t: m_terms) {
-	if (!t->is_neq_child() && (t->is_eq_peq() || !t->is_cgr()))
-	  res.push_back(t->get_expr());
-      }
+      fil = [](term* t) {
+        return !t->is_neq_child() && (t->is_eq_peq() || !t->is_cgr());
+      };
     }
     else {
-      for(term* t: m_terms) {
-	if (!t->is_neq_child())
-	  res.push_back(t->get_expr());
-      }
+      fil = [](term* t) {
+        return !t->is_neq_child();
+      };
     }
+    auto terms = m_terms.filter_pure(fil);
+    res.resize(terms.size());
+    unsigned i = 0;
+    for (term* t : terms) res[i++] = t->get_expr();
   }
   
   bool term_graph::is_internalized(expr *a) {

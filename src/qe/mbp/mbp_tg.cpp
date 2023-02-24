@@ -431,7 +431,7 @@ private:
     do {
       TRACE("mbp_tg", tout << "Iterating over terms of tg";);
       progress = false;
-      terms.reset();
+      //Not resetting terms because get_terms calls resize on terms
       tg.get_terms(terms);
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
@@ -471,8 +471,7 @@ private:
     do {
       TRACE("mbp_tg", tout << "Iterating over terms of tg";);
       progress = false;
-      terms.reset();
-      rdTerms.reset();
+      //Not resetting terms because get_terms calls resize on terms
       tg.get_terms(terms, !reduce_all_selects);
       // initialize sz in first iteration
       sz = sz == 0 ? terms.size() : sz;
@@ -528,6 +527,7 @@ private:
 
       // iterate over term graph again to collect read terms
       // irrespective of whether they have been marked or not
+      rdTerms.reset();
       for (unsigned i = 0; i < terms.size(); i++) {
         term = terms.get(i);
         if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars, m)) {
