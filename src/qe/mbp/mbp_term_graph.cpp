@@ -528,32 +528,10 @@ namespace mbp {
             res = mk_term(t);
             // the term was not internalized in this syntactic form, but it
             // could be congruent with some other term, if that is the case, we
-            // need to merge them. Checking it for the parents of one of the
-            // arguments is enough
-            auto new_term_chs = term::children(res);
-            auto ch_it = new_term_chs.begin();
-            if(ch_it != new_term_chs.end()) {
-              for (auto congr_candidate : term::parents((*ch_it)->get_root())) {
-                if (congr_candidate->get_id() == res->get_id()) continue;
-                if(to_app(congr_candidate->get_expr())->get_decl() == to_app(t)->get_decl()
-		   && congr_candidate->deg() == res->deg() // functions like + can take any number of arguments
-		   ) {
-                  bool toMerge = true;
-                  auto ch_cngr = term::children(congr_candidate);
-                  auto ch_cngr_it = ch_cngr.begin();
-                  for(auto ch_new : term::children(res)) {
-                    if((*ch_cngr_it)->get_root().get_id() != ch_new->get_root().get_id()) {
-                      toMerge = false;
-                      break;
-                    }
-		    ch_cngr_it = std::next(ch_cngr_it, 1);
-		  }
-		  if(toMerge) {
-		    merge(*congr_candidate,*res); // store for merging later
-		    break;
-		  }
-                }
-              }
+            // need to merge them.
+            term* res_old = m_cg_table.insert_if_not_there(res);
+            if (res_old->get_root().get_id() != res->get_root().get_id()) {
+              m_merge.push_back(std::make_pair(res, res_old));
             }
         }
         merge_flush();
@@ -665,7 +643,6 @@ namespace mbp {
 
         // Insert parents of b's old equivalence class into the cg table
         // bottom-up merge of parents
-	// TODO: reimplement using m_cg_table
         for (term *p : term::parents(b)) {
           if (p->is_marked()) {
             term* p_old = m_cg_table.insert_if_not_there(p);
