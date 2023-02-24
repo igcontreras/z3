@@ -732,22 +732,19 @@ namespace mbp {
 
     void term_graph::mk_qe_lite_equalities(term &t, expr_ref_vector &out) {
         SASSERT(t.is_repr());
-        if (t.get_class_size() == 1)
-            return;
-
+        if (t.get_class_size() == 1) return;
         expr_ref rep(m);
         rep = mk_app(t);
         if (!is_pure(m_is_red, rep)) return;
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
           expr * e = it->get_expr();
-          if(is_app(e)) {
-            app * a = to_app(e);
-            if(!m_is_var.contains(a->get_decl())) { // it is not a variable to elim
-              expr *mem = mk_app_core<true>(e);
-              if(rep != mem && is_pure(m_is_red, mem))
-                out.push_back(m.mk_eq(rep, mem));
-            }
-          }
+          SASSERT(is_app(e));
+          app * a = to_app(e);
+          // don't add equalities for vars to eliminate
+          if(m_is_var.contains(a->get_decl())) continue;
+          expr *mem  = mk_app_core(e);
+          if(rep != mem && is_pure(m_is_red, mem))
+            out.push_back(m.mk_eq(rep, mem));
         }
     }
 
