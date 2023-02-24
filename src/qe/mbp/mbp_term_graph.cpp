@@ -525,6 +525,7 @@ namespace mbp {
             // could be congruent with some other term, if that is the case, we
             // need to merge them.
             term* res_old = m_cg_table.insert_if_not_there(res);
+            if (res->is_cgr()) res_old->set_cgr(true);
             SASSERT(res_old->is_cgr() == res->is_cgr());
             if (res_old->get_root().get_id() != res->get_root().get_id()) {
               m_merge.push_back(std::make_pair(res, res_old));
