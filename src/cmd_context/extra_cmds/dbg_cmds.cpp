@@ -575,90 +575,6 @@ public:
 
 };
 
-class tg_mb_cover_cmd : public cmd {
-    unsigned              m_arg_index;
-    ptr_vector<expr>      m_lits;
-    ptr_vector<func_decl> m_vars;
-public:
-  tg_mb_cover_cmd() : cmd("mb-cover") {};
-  char const *get_usage() const override { return "(exprs) (vars)"; }
-  char const *get_descr(cmd_context &ctx) const override {
-    return "Model-based cover on e-graphs"; }
-    unsigned get_arity() const override { return 2; }
-    cmd_arg_kind next_arg_kind(cmd_context& ctx) const override {
-        if (m_arg_index == 0) return CPK_EXPR_LIST;
-        return CPK_FUNC_DECL_LIST;
-    }
-    void set_next_arg(cmd_context& ctx, unsigned num, expr * const* args) override {
-        m_lits.append(num, args);
-        m_arg_index = 1;
-    }
-    void set_next_arg(cmd_context & ctx, unsigned num, func_decl * const * ts) override {
-        m_vars.append(num, ts);
-    }
-    void prepare(cmd_context & ctx) override { m_arg_index = 0; m_lits.reset(); m_vars.reset(); }
-    void execute(cmd_context & ctx) override {
-      ast_manager &m = ctx.m();
-      func_decl_ref_vector vars(m);
-      expr_ref_vector lits(m);
-
-      for (func_decl *v : m_vars) vars.push_back(v);
-      for (expr *e : m_lits) lits.push_back(e);
-
-      mbp::term_graph tg(m);
-      tg.set_vars(vars, true /*exclude*/);
-      // (exclude = true): these are the variables to eliminate
-      tg.add_lits(lits);
-
-      ctx.regular_stream() << "------------------------------ " << std::endl;
-      ctx.regular_stream() << "Orig tg: " << tg.to_expr() << std::endl;
-      ctx.regular_stream() << "To elim: ";
-      for (func_decl *v : m_vars) {
-        ctx.regular_stream() << v->get_name() << " ";
-      }
-      ctx.regular_stream() << std::endl;
-
-      SASSERT(false);
-      // TODO: reimplement using construct_ground
-      // tg.mark_non_ground(vars);
-
-      ctx.regular_stream() << "Ground terms before decisions: " << tg.to_ground_expr() << std::endl;
-
-      solver_factory &sf = ctx.get_solver_factory();
-      params_ref pa;
-      solver_ref s = sf(m, pa, false, true, true, symbol::null);
-
-      // TODO: copy term graph before cover?
-      expr_ref_vector orig_lits(lits);
-      while(true) {
-        s->assert_expr(lits);
-        lbool r = s->check_sat();
-        if (r != l_true) {
-          break;
-        }
-        ctx.regular_stream() << "-------------" << std::endl;
-        model_ref mdl;
-        s->get_model(mdl);
-        // ctx.regular_stream() << "Model: " << *mdl << "\n";
-
-        mbp::term_graph tg2(m);
-        tg2.set_vars(vars, true);
-        tg2.add_lits(orig_lits);
-	SASSERT(false);
-	// TODO: reimplement using construct_ground
-        //tg2.mark_non_ground(vars);
-        tg2.mb_cover(*mdl);
-        expr_ref_vector tglits(m);
-        tg2.gr_terms_to_lits(tglits, false);
-        lits.push_back(m.mk_not(m.mk_and(tglits))); // get next disjunct
-
-        ctx.regular_stream() << "Ground terms after decisions: ";
-        ctx.regular_stream() << tg2.to_ground_expr() << std::endl;
-        // ctx.regular_stream() << "Graph after decisions: ";
-        // ctx.regular_stream() << tg2.to_expr() << std::endl;
-      }
-    }
-};
 
 class tg_mbp_cmd : public cmd {
     unsigned              m_arg_index;
@@ -932,7 +848,6 @@ void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(mbi_cmd));
     ctx.insert(alloc(euf_project_cmd));
     ctx.insert(alloc(eufi_cmd));
-    ctx.insert(alloc(tg_mb_cover_cmd));
     ctx.insert(alloc(abs_euf_itp_cmd));
     ctx.insert(alloc(qe_lite_tg_cmd));
     ctx.insert(alloc(qe_lite_der_cmd));
