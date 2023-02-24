@@ -941,6 +941,7 @@ namespace mbp {
 
         for (expr * a : m_lits) {
             if (is_internalized(a)) {
+              if (m_internalize_eq && get_term(a)->is_eq_neq()) continue;
               lits.push_back (::to_app(mk_app(a)));
             }
         }
@@ -975,6 +976,7 @@ namespace mbp {
 
         for (expr *a : m_lits) {
           if (is_internalized(a)) {
+            if (m_internalize_eq && get_term(a)->is_eq_neq()) continue;
             expr_ref r(m);
             r = mk_app(a);
             if (is_pure(m_is_red, r))
