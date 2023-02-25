@@ -492,6 +492,7 @@ namespace mbp {
         if (is_ground(a)) {
           t->set_gr(true);
           t->set_cgr(true);
+          t->set_class_gr(true);
         }
         else if (t->deg() > 0 && t->all_children_ground()) {
             t->set_cgr(true);
