@@ -403,7 +403,7 @@ namespace mbp {
 
     term_graph::term_graph(ast_manager &man)
         : m(man), m_lits(m), m_pinned(m), m_projector(nullptr),
-          m_cover(nullptr), m_internalize_eq(false) {
+          m_cover(nullptr), m_internalize_eq(false), m_repick_repr(false) {
       m_is_var.reset();
       m_is_red.reset();
       m_plugins.register_plugin(mbp::mk_basic_solve_plugin(m, m_is_var));
@@ -457,7 +457,9 @@ namespace mbp {
         }
     }
 
-  // optionally, exclude constructively ground nodes
+  // collect expressions of all terms in the term graph
+  // optionally, exclude constructively ground nodes that are not equalities
+  // overwrites res
   void term_graph::get_terms(expr_ref_vector& res, bool exclude_cground) {
     std::function<bool(term*)> fil = nullptr;
     if (exclude_cground) {
@@ -621,7 +623,7 @@ namespace mbp {
         // -- merge might invalidate term2app cache
         m_term2app.reset();
         m_pinned.reset();
-        for (term* t : m_terms) t->reset_repr();
+        m_repick_repr = true;
 
         if (a->get_class_size() > b->get_class_size()) {
             std::swap(a, b);
@@ -635,16 +637,15 @@ namespace mbp {
           }
         }
 
+        bool prop_cgroundness = (b->is_class_gr() != a->is_class_gr());
         // make 'a' be the root of the equivalence class of 'b'
         b->set_root(*a);
         for (term *it = &b->get_next(); it != b; it = &it->get_next()) {
             it->set_root(*a);
         }
 
-        bool prop_cgroundness = b->is_class_gr() != a->is_class_gr();
         // merge equivalence classes
         a->merge_eq_class(*b);
-        if (prop_cgroundness) cgroundPercolateUp(a);
 
         // Insert parents of b's old equivalence class into the cg table
         // bottom-up merge of parents
@@ -659,6 +660,7 @@ namespace mbp {
             }
           }
         }
+        if (prop_cgroundness) cgroundPercolateUp(a);
 
         SASSERT(marks_are_clear());
     }
@@ -811,6 +813,8 @@ namespace mbp {
     return true;
   }
 
+  //pick representatives for all terms in todo. Then, pick representatives for
+  //all terms whose children have representatives
   void term_graph::pickReprPercolateUp(ptr_vector<term>& todo) {
     term* t;
     while(!todo.empty()) {
@@ -823,6 +827,8 @@ namespace mbp {
     }
   }
 
+  //iterate through all terms in a class and pick a representative that:
+  // 1. is cgr and 2. least according to term_lt
   void term_graph::pick_repr_class(term *t) {
     SASSERT(all_children_picked(t));
     term *r = t;
@@ -835,14 +841,19 @@ namespace mbp {
     r->mk_repr();
   }
 
-  /// Choose repr for equivalence classes
+  // Choose repr for equivalence classes
+  // repr has the following properties:
+  // 1. acyclicity (mk_app terminates)
+  // 2. maximal wrt cgr
+  // 3. each class has exactly one repr
+  // assumes that cgroundness has been computed
   void term_graph::pick_repr() {
     //invalidates cache
     m_term2app.reset();
+    DEBUG_CODE(for (term* t : m_terms) SASSERT(t->deg() == 0 || !t->all_children_ground() || t->is_cgr()););
     for (term* t : m_terms) t->reset_repr();
     ptr_vector<term> todo;
     for (term *t : m_terms) {
-      if (t->get_repr()) continue;
       if (t->deg() == 0 && t->is_cgr())
         todo.push_back(t);
     }
@@ -856,6 +867,7 @@ namespace mbp {
     }
     pickReprPercolateUp(todo);
     DEBUG_CODE(for (term* t : m_terms) SASSERT(t->get_repr()););
+    DEBUG_CODE(for(auto t : m_terms) SASSERT(!t->is_cgr() || t->get_repr()->is_cgr()););
   }
 
   // if t is a variable, attempt to pick non-var
@@ -875,6 +887,7 @@ namespace mbp {
     r->mk_repr();
   }
 
+  // check if t makes a cycle if chosen as repr
   bool term_graph::makes_cycle(term* t) {
     term&  r = t->get_root();
     ptr_vector<term> todo;
@@ -902,6 +915,7 @@ namespace mbp {
     }
   }
 
+  //returns true if tg ==> e = v where v is a value
   bool term_graph::has_val_in_class(expr *e) {
     term* r = get_term(e);
     if(!r) return false;
@@ -914,15 +928,17 @@ namespace mbp {
     return false;
   }
 
+  //if there exists an uninterpreted const c s.t. tg ==> e = c, return c
+  //else return nullptr
   app* term_graph::get_const_in_class(expr *e) {
     term* r = get_term(e);
     if(!r) return nullptr;
-    auto is_val = [&](term* t) {
+    auto is_const = [](term* t) {
         return is_uninterp_const(t->get_expr());
     };
-    if (is_val(r)) return ::to_app(r->get_expr());
+    if (is_const(r)) return ::to_app(r->get_expr());
     for(term* it = &r->get_next(); it != r; it = &it->get_next())
-      if (is_val(it)) return ::to_app(it->get_expr());
+      if (is_const(it)) return ::to_app(it->get_expr());
     return nullptr;
   }
 
@@ -934,7 +950,7 @@ namespace mbp {
 
   void term_graph::to_lits(expr_ref_vector & lits, bool all_equalities,
                                bool repick_repr) {
-        if (repick_repr)
+        if (m_repick_repr || repick_repr)
           pick_repr();
 
         for (expr * a : m_lits) {
@@ -968,48 +984,48 @@ namespace mbp {
         }
     }
 
-
+  //assumes that representatives have already been picked
     void term_graph::to_lits_qe_lite(expr_ref_vector &lits) {
-        // it assumes that the roots have been properly picked
+      DEBUG_CODE(for(auto t : m_terms) SASSERT(t->get_repr()););
+      DEBUG_CODE(for(auto t : m_terms) SASSERT(!t->is_cgr() || t->get_repr()->is_cgr()););
+      //literals other than eq, neq, distinct
+      for (expr *a : m_lits) {
+        if (!is_internalized(a)) continue;
+        if (m_internalize_eq && get_term(a)->is_eq_neq()) continue;
+        expr_ref r(m);
+        r = mk_app(a);
+        if (is_pure(m_is_red, r))
+          lits.push_back(r);
+      }
 
-        for (expr *a : m_lits) {
-          if (is_internalized(a)) {
-            if (m_internalize_eq && get_term(a)->is_eq_neq()) continue;
-            expr_ref r(m);
-            r = mk_app(a);
-            if (is_pure(m_is_red, r))
-                lits.push_back(r);
-          }
-        }
+      //equalities
+      for (term *t : m_terms) {
+        if (t->is_eq_neq()) continue;
+        if (!t->is_repr()) continue;
+        mk_qe_lite_equalities(*t,lits);
+      }
+      //disequalities and distinct
+      //TODO: use seen to prevent duplicate disequalities
+      expr_ref e1(m), e2(m), d(m), distinct(m);
+      expr_ref_vector args(m);
+      for (auto p : m_deq_pairs) {
+        e1 = mk_app(*(p.first->get_repr()));
+        e2 = mk_app(*(p.second->get_repr()));
+        if (is_pure(m_is_red, e1) && is_pure(m_is_red, e2))
+          lits.push_back(mk_neq(m, e1, e2));
+      }
 
-        for (term *t : m_terms) { 
-          if (t->is_eq_neq()) continue;
-          if (!t->is_repr())
-            continue;
-          mk_qe_lite_equalities(*t,lits);
+      for (auto t : m_deq_distinct) {
+        args.reset();
+        for (auto c : t) {
+          d = mk_app(*(c->get_repr()));
+          if (is_pure(m_is_red, d))
+            args.push_back(d);
         }
-
-        //TODO: use seen to prevent duplicate disequalities
-        expr_ref e1(m), e2(m), d(m), distinct(m);
-        expr_ref_vector args(m);
-        for (auto p : m_deq_pairs) {
-          e1 = mk_app(*(p.first->get_repr()));
-          e2 = mk_app(*(p.second->get_repr()));
-          if (is_pure(m_is_red, e1) && is_pure(m_is_red, e2))
-            lits.push_back(mk_neq(m, e1, e2));
-        }
-
-        for (auto t : m_deq_distinct) {
-          args.reset();
-          for (auto c : t) {
-            d = mk_app(*(c->get_repr()));
-            if (is_pure(m_is_red, d))
-              args.push_back(d);
-          }
-          if (args.size() == 0) continue;
-          distinct = m.mk_distinct(args.size(), args.data());
-          lits.push_back(distinct);
-        }
+        if (args.size() == 0) continue;
+        distinct = m.mk_distinct(args.size(), args.data());
+        lits.push_back(distinct);
+      }
     }
 
     expr_ref term_graph::to_expr(bool repick_repr) {

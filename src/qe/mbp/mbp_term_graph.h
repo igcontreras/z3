@@ -75,6 +75,7 @@ namespace mbp {
         cover*            m_cover;
         qe*               m_qe;
         bool              m_internalize_eq;
+        bool              m_repick_repr;
         u_map<expr *>     m_term2app; // any representative change invalidates this cache
         plugin_manager<solve_plugin> m_plugins;
         ptr_hashtable<term, term_hash, term_eq> m_cg_table;
