@@ -436,6 +436,7 @@ private:
       sz = sz == 0? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
         term = terms.get(i);
+        SASSERT(!m.is_distinct(term));
         if (is_seen(term)) continue;
         if (is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0))) {
           mark_seen(term);
@@ -477,6 +478,7 @@ private:
       sz = sz == 0 ? terms.size() : sz;
       for (unsigned i = 0; i < terms.size(); i++) {
         term = terms.get(i);
+        SASSERT(!m.is_distinct(term));
         if (is_seen(term)) continue;
         TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
         if (should_create_peq(term)) {
