@@ -596,7 +596,7 @@ public:
     // mark vars as non-ground.
     tg.add_vars(vars);
     // treat eq literals as term in the egraph
-    tg.internalize_eq();
+    tg.set_explicit_eq();
 
     expr_ref_vector fml(m);
     flatten_and(inp, fml);

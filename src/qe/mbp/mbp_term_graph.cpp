@@ -403,7 +403,7 @@ namespace mbp {
 
     term_graph::term_graph(ast_manager &man)
         : m(man), m_lits(m), m_pinned(m), m_projector(nullptr),
-          m_cover(nullptr), m_internalize_eq(false), m_repick_repr(false) {
+          m_cover(nullptr), m_explicit_eq(false), m_repick_repr(false) {
       m_is_var.reset();
       m_is_red.reset();
       m_plugins.register_plugin(mbp::mk_basic_solve_plugin(m, m_is_var));
@@ -551,7 +551,7 @@ namespace mbp {
         merge(*internalize_term(a1), *internalize_term(a2));
         merge_flush();
         SASSERT(m_merge.empty());
-        if (!m_internalize_eq) return;
+        if (!m_explicit_eq) return;
         expr* eq = m.mk_eq(a1, a2);
         term* res = get_term(eq);
         if (!res)
@@ -568,7 +568,7 @@ namespace mbp {
       }
       m_add_deq(ts);
       m_deq_distinct.push_back(ts);
-      if (!m_internalize_eq) return;
+      if (!m_explicit_eq) return;
       term* t  = get_term(d);
       if (!t) mk_term(d);
     }
@@ -579,7 +579,7 @@ namespace mbp {
       term *t2 = internalize_term(a2);
       m_add_deq(t1, t2);
       m_deq_pairs.push_back({t1, t2});
-      if (!m_internalize_eq) return;
+      if (!m_explicit_eq) return;
       expr* eq = m.mk_eq(a1, a2);
       term* eq_term = mk_term(eq);
       eq_term->set_neq_child();
@@ -955,7 +955,7 @@ namespace mbp {
 
         for (expr * a : m_lits) {
             if (is_internalized(a)) {
-              if (m_internalize_eq && get_term(a)->is_eq_neq()) continue;
+              if (m_explicit_eq && get_term(a)->is_eq_neq()) continue;
               lits.push_back (::to_app(mk_app(a)));
             }
         }
@@ -991,7 +991,7 @@ namespace mbp {
       //literals other than eq, neq, distinct
       for (expr *a : m_lits) {
         if (!is_internalized(a)) continue;
-        if (m_internalize_eq && get_term(a)->is_eq_neq()) continue;
+        if (m_explicit_eq && get_term(a)->is_eq_neq()) continue;
         expr_ref r(m);
         r = mk_app(a);
         if (is_pure(m_is_red, r))

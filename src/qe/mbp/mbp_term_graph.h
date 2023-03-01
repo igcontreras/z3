@@ -74,7 +74,7 @@ namespace mbp {
         projector*        m_projector;
         cover*            m_cover;
         qe*               m_qe;
-        bool              m_internalize_eq;
+        bool              m_explicit_eq;
         bool              m_repick_repr;
         u_map<expr *>     m_term2app; // any representative change invalidates this cache
         plugin_manager<solve_plugin> m_plugins;
@@ -221,7 +221,7 @@ namespace mbp {
         void mb_cover(model& mdl);
         bool has_val_in_class(expr* e);
         app* get_const_in_class(expr* e);
-        void internalize_eq() {m_internalize_eq = true;}
+        void set_explicit_eq() {m_explicit_eq = true;}
       private:
         add_deq_proc m_add_deq;
       void refine_repr_class(term* t);
