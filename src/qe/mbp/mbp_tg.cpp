@@ -647,7 +647,7 @@ public:
     CTRACE("mbp_tg", !core_vars.empty(),
            tout << "vars not redundant ";
            for (auto v : core_vars) tout << " " << app_ref(v, m); tout <<"\n";);
-    tg.add_red(red_vars);
+    tg.mark_vars(red_vars);
 
     //Step 3.
     tg.qe_lite(vars, inp);

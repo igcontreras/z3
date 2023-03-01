@@ -82,7 +82,8 @@ namespace mbp {
         vector<std::pair<term*,term*>> m_merge;
 
         term_graph::is_variable_proc m_is_var;
-        term_graph::is_variable_proc m_is_red;
+        //marked variables are not part of the output
+        term_graph::is_variable_proc m_is_marked;
 
         void merge(term &t1, term &t2);
         void merge_flush();
@@ -137,7 +138,8 @@ namespace mbp {
         void set_vars(func_decl_ref_vector const& decls, bool exclude);
         void set_vars(app_ref_vector const &vars, bool exclude);
         void add_vars(app_ref_vector const &vars);
-        void add_red(app_ref_vector const &vars);
+        //output of qel will not contain terms with marked variables
+        void mark_vars(app_ref_vector const &vars);
         void add_var(app* var);
 
         ast_manager& get_ast_manager() const { return m;}

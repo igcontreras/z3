@@ -405,7 +405,7 @@ namespace mbp {
         : m(man), m_lits(m), m_pinned(m), m_projector(nullptr),
           m_cover(nullptr), m_explicit_eq(false), m_repick_repr(false) {
       m_is_var.reset();
-      m_is_red.reset();
+      m_is_marked.reset();
       m_plugins.register_plugin(mbp::mk_basic_solve_plugin(m, m_is_var));
       m_plugins.register_plugin(mbp::mk_arith_solve_plugin(m, m_is_var));
     }
@@ -738,7 +738,7 @@ namespace mbp {
         if (t.get_class_size() == 1) return;
         expr_ref rep(m);
         rep = mk_app(t);
-        if (!is_pure(m_is_red, rep)) return;
+        if (!is_pure(m_is_marked, rep)) return;
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
           expr * e = it->get_expr();
           SASSERT(is_app(e));
@@ -746,7 +746,7 @@ namespace mbp {
           // don't add equalities for vars to eliminate
           if(m_is_var.contains(a->get_decl())) continue;
           expr *mem  = mk_app_core(e);
-          if(rep != mem && is_pure(m_is_red, mem))
+          if(rep != mem && is_pure(m_is_marked, mem))
             out.push_back(m.mk_eq(rep, mem));
         }
     }
@@ -994,7 +994,7 @@ namespace mbp {
         if (m_explicit_eq && get_term(a)->is_eq_neq()) continue;
         expr_ref r(m);
         r = mk_app(a);
-        if (is_pure(m_is_red, r))
+        if (is_pure(m_is_marked, r))
           lits.push_back(r);
       }
 
@@ -1011,7 +1011,7 @@ namespace mbp {
       for (auto p : m_deq_pairs) {
         e1 = mk_app(*(p.first->get_repr()));
         e2 = mk_app(*(p.second->get_repr()));
-        if (is_pure(m_is_red, e1) && is_pure(m_is_red, e2))
+        if (is_pure(m_is_marked, e1) && is_pure(m_is_marked, e2))
           lits.push_back(mk_neq(m, e1, e2));
       }
 
@@ -1019,7 +1019,7 @@ namespace mbp {
         args.reset();
         for (auto c : t) {
           d = mk_app(*(c->get_repr()));
-          if (is_pure(m_is_red, d))
+          if (is_pure(m_is_marked, d))
             args.push_back(d);
         }
         if (args.size() == 0) continue;
@@ -1804,8 +1804,8 @@ namespace mbp {
       m_is_var.add_decls(vars);
     }
 
-    void term_graph::add_red(app_ref_vector const &vars) {
-      m_is_red.set_decls(vars, true);
+    void term_graph::mark_vars(app_ref_vector const &vars) {
+      m_is_marked.set_decls(vars, true);
     }
 
     void term_graph::add_var(app* var) {
