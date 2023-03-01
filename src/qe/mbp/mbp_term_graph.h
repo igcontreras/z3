@@ -102,7 +102,7 @@ namespace mbp {
         bool is_ground(expr *e);
 
         bool term_lt(term const &t1, term const &t2);
-        void pickReprPercolateUp(ptr_vector<term>& todo);
+        void pick_repr_percolate_up(ptr_vector<term>& todo);
         void pick_repr_class (term *t);
         void pick_repr();
 
@@ -120,8 +120,8 @@ namespace mbp {
         void display(std::ostream &out);
 
         bool is_pure_def(expr* atom, expr *& v);
-        void cgroundPercolateUp(ptr_vector<term>&);
-        void cgroundPercolateUp(term* t);
+        void cground_percolate_up(ptr_vector<term>&);
+        void cground_percolate_up(term* t);
         void compute_cground();
 
         // variables (or terms?) to eliminate

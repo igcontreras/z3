@@ -660,7 +660,7 @@ namespace mbp {
             }
           }
         }
-        if (prop_cgroundness) cgroundPercolateUp(a);
+        if (prop_cgroundness) cground_percolate_up(a);
 
         SASSERT(marks_are_clear());
     }
@@ -815,7 +815,7 @@ namespace mbp {
 
   //pick representatives for all terms in todo. Then, pick representatives for
   //all terms whose children have representatives
-  void term_graph::pickReprPercolateUp(ptr_vector<term>& todo) {
+  void term_graph::pick_repr_percolate_up(ptr_vector<term>& todo) {
     term* t;
     while(!todo.empty()) {
       t = todo.back();
@@ -857,7 +857,7 @@ namespace mbp {
       if (t->deg() == 0 && t->is_cgr())
         todo.push_back(t);
     }
-    pickReprPercolateUp(todo);
+    pick_repr_percolate_up(todo);
     DEBUG_CODE(for (term* t : m_terms) SASSERT(!t->is_cgr() || t->get_repr()););
 
     for (term *t : m_terms) {
@@ -865,7 +865,7 @@ namespace mbp {
       if (t->deg() == 0)
         todo.push_back(t);
     }
-    pickReprPercolateUp(todo);
+    pick_repr_percolate_up(todo);
     DEBUG_CODE(for (term* t : m_terms) SASSERT(t->get_repr()););
     DEBUG_CODE(for(auto t : m_terms) SASSERT(!t->is_cgr() || t->get_repr()->is_cgr()););
   }
@@ -1991,7 +1991,7 @@ namespace mbp {
         return result;
     }
 
-  void term_graph::cgroundPercolateUp(term* t) {
+  void term_graph::cground_percolate_up(term* t) {
     SASSERT(t->is_class_gr());
     term* it = t;
     //there is a cgr term in all ground classes
@@ -2002,10 +2002,10 @@ namespace mbp {
 
     ptr_vector<term> todo;
     todo.push_back(it);
-    cgroundPercolateUp(todo);
+    cground_percolate_up(todo);
   }
 
-  void term_graph::cgroundPercolateUp(ptr_vector<term>& todo) {
+  void term_graph::cground_percolate_up(ptr_vector<term>& todo) {
     term *t;
 
     while (!todo.empty()) {
@@ -2029,7 +2029,7 @@ namespace mbp {
         todo.push_back(t);
       }
     }
-    cgroundPercolateUp(todo);
+    cground_percolate_up(todo);
     DEBUG_CODE(for (auto t : m_terms) {
       bool isclsg = true;
       for (auto c : term::children(t)) isclsg &= c->is_class_gr();
