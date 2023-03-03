@@ -2,7 +2,7 @@
 
   Module Name:
 
-    qe_mbp_tg.cpp
+    mbp_qel.cpp
 
 Abstract:
 
