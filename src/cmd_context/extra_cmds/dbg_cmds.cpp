@@ -35,7 +35,7 @@ Notes:
 #include "qe/qe_mbp.h"
 #include "qe/qe_mbi.h"
 #include "qe/mbp/mbp_term_graph.h"
-#include "qe/mbp/mbp_tg.h"
+#include "qe/mbp/mbp_qel.h"
 #include "qe/lite/qe_lite.h"
 #include "qe/lite/qe_lite_tg.h"
 
@@ -617,7 +617,7 @@ public:
       }
       model_ref mdl;
       s->get_model(mdl);
-      qe_mbp_tg mbptg(m, pa);
+      mbp_qel mbptg(m, pa);
       mbptg(vars, fml, *mdl.get());
 
       ctx.regular_stream() << "------------------------------ " << std::endl;

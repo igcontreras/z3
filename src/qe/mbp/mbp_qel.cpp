@@ -23,7 +23,7 @@ Revision History:
 #include "model/model.h"
 #include "qe/mbp/mbp_term_graph.h"
 #include "qe/mbp/mbp_arrays.h"
-#include "qe/mbp/mbp_tg.h"
+#include "qe/mbp/mbp_qel.h"
 #include "util/debug.h"
 #include "util/obj_hashtable.h"
 #include "util/obj_pair_hashtable.h"
