@@ -411,7 +411,7 @@ public:
 
   void tg_project(app_ref_vector &vars, model &mdl, expr_ref &fml, bool reduce_all_selects) {
       flatten_and(fml);
-      qe_mbp_tg mbptg(m, m_params);
+      mbp_qel mbptg(m, m_params);
       mbptg(vars, fml, mdl, reduce_all_selects);
       m_rw(fml);
       TRACE("qe", tout << "After mbp_tg:\n"

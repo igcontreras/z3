@@ -23,14 +23,14 @@ Revision History:
 #include "util/params.h"
 #include "model/model.h"
 
-class qe_mbp_tg {
+class mbp_qel {
     class impl;
     impl * m_impl;
 public:
 
-    qe_mbp_tg(ast_manager& m, params_ref const & p);
+    mbp_qel(ast_manager& m, params_ref const & p);
 
-    ~qe_mbp_tg();
+    ~mbp_qel();
 
     /**
        Do model based projection

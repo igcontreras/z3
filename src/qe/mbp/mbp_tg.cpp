@@ -143,7 +143,7 @@ void remove_peq(expr* inp, expr_ref& op) {
   op = mk_and(fml);
 }
 
-class qe_mbp_tg::impl {
+class mbp_qel::impl {
   typedef std::pair<expr *, expr *> expr_pair;
 private:
   ast_manager& m;
@@ -657,12 +657,12 @@ public:
   }
 };
 
-qe_mbp_tg::qe_mbp_tg(ast_manager &m, params_ref const &p) {
+mbp_qel::mbp_qel(ast_manager &m, params_ref const &p) {
   m_impl = alloc(impl, m, p);
 }
 
-qe_mbp_tg::~qe_mbp_tg() { dealloc(m_impl); }
+mbp_qel::~mbp_qel() { dealloc(m_impl); }
 
-void qe_mbp_tg::operator()(app_ref_vector &vars, expr_ref &fml, model& mdl, bool reduce_all_selects) {
+void mbp_qel::operator()(app_ref_vector &vars, expr_ref &fml, model& mdl, bool reduce_all_selects) {
   (*m_impl)(vars, fml, mdl, reduce_all_selects);
 }
