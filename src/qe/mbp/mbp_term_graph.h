@@ -41,7 +41,6 @@ namespace mbp {
     class term_graph {
         class projector;
         class cover;
-        class qe;
         friend struct is_ground_ns::proc;
         friend struct is_ground_ns::found;
 
@@ -73,7 +72,6 @@ namespace mbp {
         ast_ref_vector    m_pinned;
         projector*        m_projector;
         cover*            m_cover;
-        qe*               m_qe;
         bool              m_explicit_eq;
         bool              m_repick_repr;
         u_map<expr *>     m_term2app; // any representative change invalidates this cache
@@ -135,8 +133,8 @@ namespace mbp {
       const expr_ref_vector& get_lits() const { return m_lits; }
       void get_terms(expr_ref_vector& res, bool exclude_cground = true);
       
-        void set_vars(func_decl_ref_vector const& decls, bool exclude);
-        void set_vars(app_ref_vector const &vars, bool exclude);
+        void set_vars(func_decl_ref_vector const& decls, bool exclude = true);
+        void set_vars(app_ref_vector const &vars, bool exclude = true);
         void add_vars(app_ref_vector const &vars);
         //output of qel will not contain terms with marked variables
         void mark_vars(app_ref_vector const &vars);
@@ -219,7 +217,8 @@ namespace mbp {
 
         expr_ref_vector non_ground_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
-        void qe_lite(app_ref_vector &vars, expr_ref &fml);
+        //produce a quantifier reduction of the formula stored in the term graph
+        void qel(app_ref_vector &vars, expr_ref &fml);
         void mb_cover(model& mdl);
         bool has_val_in_class(expr* e);
         app* get_const_in_class(expr* e);

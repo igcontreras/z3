@@ -2,7 +2,7 @@
 
   Module Name:
 
-    qe_lite_tg.h
+    qel.h
 
 Abstract:
 
@@ -25,14 +25,14 @@ Revision History:
 #include "util/uint_set.h"
 #include "util/params.h"
 
-class qe_lite_tg {
+class qel {
     class impl;
     impl * m_impl;
 public:
 
-    qe_lite_tg(ast_manager& m, params_ref const & p);
+    qel(ast_manager& m, params_ref const & p);
 
-    ~qe_lite_tg();
+    ~qel();
 
     /**
        \brief Applies light-weight elimination of `vars` provided as vector

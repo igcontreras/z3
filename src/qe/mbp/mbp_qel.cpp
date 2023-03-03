@@ -629,7 +629,7 @@ public:
     // 3. Re-apply qe_lite to remove non-core variables
 
     //Step 1.
-    tg.qe_lite(vars, inp);
+    tg.qel(vars, inp);
 
     //Step 2.
     // Variables that appear as array indices or values cannot be eliminated if
@@ -650,7 +650,7 @@ public:
     tg.mark_vars(red_vars);
 
     //Step 3.
-    tg.qe_lite(vars, inp);
+    tg.qel(vars, inp);
 
     //remove all occurrences of partial equalities from inp
     remove_peq(inp, inp);

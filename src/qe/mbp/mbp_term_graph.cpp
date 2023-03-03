@@ -1749,48 +1749,41 @@ namespace mbp {
       }
     };
 
-    class term_graph::qe {
 
-      term_graph &m_tg;
-      ast_manager &m;
-
-    public:
-      qe(term_graph &tg) : m_tg(tg), m(m_tg.m) {}
-
-      // removes from `vars` the variables that have a ground representative
-      // modifies `vars` to keep the variables that could not be eliminated
-      void qe_lite(app_ref_vector &vars, expr_ref &fml) {
-        unsigned i = 0;
-        for(auto v : vars) {
-          if (m_tg.is_internalized(v)) {
-            vars[i++] = v;
-          }
-        }
-        vars.shrink(i);
-        m_tg.pick_repr();
-        m_tg.refine_repr();
-
-        expr_ref_vector lits(m);
-        m_tg.to_lits_qe_lite(lits);
-        if (lits.size() == 0)
-          fml = m.mk_true();
-        else if (lits.size() == 1)
-          fml = lits[0].get();
-        else
-          fml = m.mk_and(lits);
-
-        // Remove all variables that are do not apprear in the formula
-        expr_mark mark;
-        mark_all_sub_expr marker(mark);
-        quick_for_each_expr(marker, fml);
-        i = 0;
-        for (auto v : vars) {
-          if (mark.is_marked(v))
-            vars[i++] = v;
-        }
-        vars.shrink(i);
+  //produce a quantifier reduction of the formula stored in the term graph
+  // removes from `vars` the variables that have a ground representative
+  // modifies `vars` to keep the variables that could not be eliminated
+  void term_graph::qel(app_ref_vector &vars, expr_ref &fml) {
+    unsigned i = 0;
+    for(auto v : vars) {
+      if (is_internalized(v)) {
+        vars[i++] = v;
       }
-    };
+    }
+    vars.shrink(i);
+    pick_repr();
+    refine_repr();
+
+    expr_ref_vector lits(m);
+    to_lits_qe_lite(lits);
+    if (lits.size() == 0)
+      fml = m.mk_true();
+    else if (lits.size() == 1)
+      fml = lits[0].get();
+    else
+      fml = m.mk_and(lits);
+
+    // Remove all variables that are do not apprear in the formula
+    expr_mark mark;
+    mark_all_sub_expr marker(mark);
+    quick_for_each_expr(marker, fml);
+    i = 0;
+    for (auto v : vars) {
+      if (mark.is_marked(v))
+        vars[i++] = v;
+    }
+    vars.shrink(i);
+  }
 
     void term_graph::set_vars(func_decl_ref_vector const &decls, bool exclude) {
       m_is_var.set_decls(decls, exclude);
@@ -2036,11 +2029,6 @@ namespace mbp {
       SASSERT(t->deg() == 0 || !isclsg || t->is_cgr());
       SASSERT(t->deg() ==0 || isclsg || !t->is_cgr());
     });
-  }
-
-  void term_graph::qe_lite(app_ref_vector &vars, expr_ref &fml) {
-    term_graph::qe qe(*this);
-    qe.qe_lite(vars,fml);
   }
 
   void term_graph::mb_cover(model& mdl) {

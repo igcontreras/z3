@@ -35,7 +35,7 @@ Revision History:
 #include "model/model_evaluator.h"
 #include "model/model_pp.h"
 #include "qe/lite/qe_lite.h"
-#include "qe/lite/qe_lite_tg.h"
+#include "qe/lite/qel.h"
 #include "qe/mbp/mbp_arith.h"
 #include "qe/mbp/mbp_arrays.h"
 #include "qe/mbp/mbp_qel.h"
@@ -295,14 +295,14 @@ public:
         extract_literals(model, vars, fmls);
         expr_ref e(m);
         e = mk_and(fmls);
-        do_tg_qe_lite(vars, e);
+        do_qel(vars, e);
         fmls.reset();
         flatten_and(e, fmls);
         bool change = true;
         while (change && !vars.empty()) {
             change = false;
             e = mk_and(fmls);
-            do_tg_qe_lite(vars, e);
+            do_qel(vars, e);
             fmls.reset();
             flatten_and(e, fmls);
             for (auto* p : m_plugins) {
@@ -392,11 +392,11 @@ public:
     }
 
 
-    void do_tg_qe_lite(app_ref_vector &vars, expr_ref &fml) {
-        qe_lite_tg qe(m, m_params);
+    void do_qel(app_ref_vector &vars, expr_ref &fml) {
+        qel qe(m, m_params);
         qe(vars, fml);
         m_rw(fml);
-        TRACE("qe", tout << "After qe_lite_tg:\n"
+        TRACE("qe", tout << "After qel:\n"
                          << fml << "\n"
                          << "Vars: " << vars << "\n";);
         SASSERT(!m.is_false(fml));
@@ -430,10 +430,10 @@ public:
         arith_util ari_u(m);
         datatype_util dt_u(m);
 
-        do_tg_qe_lite(vars, fml);
+        do_qel(vars, fml);
         tg_project(vars, mdl, fml, m_reduce_all_selects);
         flatten_and(fml);
-        do_tg_qe_lite(vars, fml);
+        do_qel(vars, fml);
         do_qe_bool(mdl, vars, fml);
         m_rw(fml);
         //flatten nested ites

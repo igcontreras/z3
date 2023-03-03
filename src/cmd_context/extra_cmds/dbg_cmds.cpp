@@ -37,7 +37,7 @@ Notes:
 #include "qe/mbp/mbp_term_graph.h"
 #include "qe/mbp/mbp_qel.h"
 #include "qe/lite/qe_lite.h"
-#include "qe/lite/qe_lite_tg.h"
+#include "qe/lite/qel.h"
 
 BINARY_SYM_CMD(get_quantifier_body_cmd,
                "dbg-get-qbody",
@@ -749,7 +749,7 @@ public:
       params_ref pa;
 
       // the following is the same code as in qe_mbp in spacer
-      qe_lite_tg qe(m, pa);
+      qel qe(m, pa);
       qe(vars_apps, fml);
       ctx.regular_stream() << "[tg] After: " << fml << std::endl
                            << "[tg] Vars: ";

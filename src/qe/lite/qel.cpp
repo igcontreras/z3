@@ -2,7 +2,7 @@
 
   Module Name:
 
-    qe_lite_tg.cpp
+    qel.cpp
 
 Abstract:
 
@@ -17,38 +17,38 @@ Revision History:
 
 
 --*/
-#include "qe/lite/qe_lite_tg.h"
+#include "qe/lite/qel.h"
 #include "qe/mbp/mbp_term_graph.h"
 
-class qe_lite_tg::impl {
+class qel::impl {
 private:
     ast_manager& m;
-
+    params_ref m_params;
 public:
   impl(ast_manager &m, params_ref const &p)
-      : m(m) {}
+      : m(m), m_params(p) {}
 
   void operator()(app_ref_vector &vars, expr_ref &fml) {
     if (vars.empty())
       return;
 
-    mbp::term_graph tg(m);
-    tg.set_vars(vars, true /*exclude*/);
+    mbp::term_graph tg(m, p);
+    tg.set_vars(vars);
 
     expr_ref_vector lits(m);
     flatten_and(fml, lits);
     tg.add_lits(lits);
-    tg.qe_lite(vars, fml);
+    tg.qel(vars, fml);
     }
 
 };
 
-qe_lite_tg::qe_lite_tg(ast_manager &m, params_ref const &p) {
+qel::qel(ast_manager &m, params_ref const &p) {
   m_impl = alloc(impl, m, p);
 }
 
-qe_lite_tg::~qe_lite_tg() { dealloc(m_impl); }
+qel::~qel() { dealloc(m_impl); }
 
-void qe_lite_tg::operator()(app_ref_vector &vars, expr_ref &fml) {
+void qel::operator()(app_ref_vector &vars, expr_ref &fml) {
   (*m_impl)(vars, fml);
 }
