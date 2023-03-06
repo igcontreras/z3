@@ -23,10 +23,11 @@ namespace spacer {
 
 bool is_arith_lemma(ast_manager& m, proof* pr);
 bool is_farkas_lemma(ast_manager& m, proof* pr);
+bool is_euf_lemma(ast_manager &m, proof *pr);
 
 /// rewrites theory axioms into theory lemmas
 class theory_axiom_reducer {
-public:
+  public:
     theory_axiom_reducer(ast_manager& m) : m(m), m_pinned(m) {}
 
     // reduce theory axioms and return transformed proof

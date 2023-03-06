@@ -100,4 +100,11 @@ namespace spacer {
 
         min_cut m_min_cut;
     };
+
+    class unsat_core_plugin_euf : public unsat_core_plugin {
+      public:
+        unsat_core_plugin_euf(unsat_core_learner &learner, ast_manager &m)
+          : unsat_core_plugin(learner){};
+        void compute_partial_core(proof *step) override;
+    };
 }

@@ -687,4 +687,51 @@ namespace spacer {
             m_ctx.add_lemma_to_core(m_node_to_formula[cut_node]);
         }
     }
+
+  /* ---------------------------------------------------------------------- */
+  /* -------------------- EUF plugin -------------------------------------- */
+  /* ---------------------------------------------------------------------- */
+    void unsat_core_plugin_euf::compute_partial_core(proof *step) {
+
+      if(m_ctx.is_closed(step))
+        return;
+
+      if(!is_euf_lemma(m, step))
+        return;
+
+      // the step has mixed literals B and A (includes H). If the step is only of one of
+      // them, there is nothing to do, simply take the consequence
+      if (!(m_ctx.is_b(step) && m_ctx.is_a(step)))
+        return;
+
+      auto ps = m.get_parents(step);
+      auto p_it = ps.begin();
+
+      expr * lhs = nullptr, * rhs = nullptr, *nil;
+      // proof * l_pr = nullptr;
+      app * eq;
+      while(p_it != ps.end()) {
+        if(m_ctx.is_b(*p_it) && !lhs) { // B part starts
+          eq = to_app(m.get_fact(*p_it));
+          SASSERT(m.is_eq(eq));
+          m.is_eq(eq, lhs, nil);
+        } else if (lhs && !m_ctx.is_b(*p_it)) { // B part ends, add lemma
+          eq = to_app(m.get_fact(*p_it));
+          SASSERT(m.is_eq(eq));
+          m.is_eq(eq, nil, rhs);
+          m_ctx.add_lemma_to_core(m.mk_eq(lhs,rhs));
+          lhs = nullptr;
+        }
+        ++p_it;
+      }
+
+      if (lhs) { // add last lemma
+        m.get_fact(*(--p_it));
+        m.is_eq(eq, nil, rhs);
+        m_ctx.add_lemma_to_core(m.mk_eq(lhs, rhs));
+      }
+
+      m_ctx.set_closed(step, true);
+    }
 }
+

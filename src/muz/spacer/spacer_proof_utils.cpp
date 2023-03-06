@@ -71,7 +71,16 @@ namespace spacer {
         return false;
     }
 
-
+    bool is_euf_lemma(ast_manager &m, proof *pr) {
+        if (pr->get_decl_kind() == PR_TRANSITIVITY ||
+            pr->get_decl_kind() == PR_TRANSITIVITY_STAR ||
+            pr->get_decl_kind() == PR_MONOTONICITY) {
+            // return m.get_num_parents(pr) >= 2; // IG: maybe this is always
+            // the case
+            return true;
+        }
+        return false;
+    }
 
     class linear_combinator {
         struct scaled_lit {

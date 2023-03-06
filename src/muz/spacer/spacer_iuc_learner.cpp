@@ -26,7 +26,8 @@ Revision History:
 
 namespace spacer {
 
-  static bool is_desired_lit(proof *step, ast_manager &m){
+  // returns true if the literal is syntactically good for
+  static bool is_iuc_lit(proof *step, ast_manager &m){
     if(m.is_asserted(step))
       return true;
 
@@ -58,13 +59,14 @@ namespace spacer {
         // TODO: is_b_pure checks that the node is not colored A. But it could
         // be colorable by both in this case the check does not hold. We
         // shouldn't even look at nodes that are fully colorable as A
-        if (is_b_pure(curr) && is_desired_lit(curr, m)) {
+        if (is_b_pure(curr) && is_iuc_lit(curr, m)) {
             add_lemma_to_core(m.get_fact(curr));
             set_closed(curr, true);
         }
-        // try to get an unsat core from a node that mixes A-reasoning and B-reasoning
+        // try to get an unsat core from a node that mixes A-reasoning and
+        // B-reasoning
         else if (is_a(curr) && is_b(curr)) {
-          compute_partial_core(curr);
+            compute_partial_core(curr);
         }
 
         // an unsat core could not be obtained just by looking at this node, the
