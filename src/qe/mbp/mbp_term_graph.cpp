@@ -56,10 +56,10 @@ namespace mbp {
             }
         };
       struct mark_all_sub_expr {
-        expr_mark& m_mark;
-        mark_all_sub_expr(expr_mark& mark): m_mark(mark) {}
+        expr_sparse_mark& m_mark;
+        mark_all_sub_expr(expr_sparse_mark& mark): m_mark(mark) {}
         void operator()(var *n) const {}
-        void operator()(app const *n) const {m_mark.mark(n);}
+        void operator()(app *n) const {m_mark.mark(n);}
         void operator()(quantifier *n) const {}
       };
     }
@@ -1822,7 +1822,7 @@ namespace mbp {
       fml = m.mk_and(lits);
 
     // Remove all variables that are do not apprear in the formula
-    expr_mark mark;
+    expr_sparse_mark mark;
     mark_all_sub_expr marker(mark);
     quick_for_each_expr(marker, fml);
     i = 0;

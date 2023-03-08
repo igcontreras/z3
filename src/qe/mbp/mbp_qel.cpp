@@ -119,10 +119,10 @@ private:
   obj_hashtable<app> m_vars; // array and ADT variables to be projected
 
   //Utilities to keep track of which terms have been processed
-  obj_hashtable<expr> m_seen;
+  expr_sparse_mark m_seen;
   obj_pair_hashtable<expr, expr> m_seenp;
-  void mark_seen(expr* t) { m_seen.insert(t); }
-  bool is_seen(expr* t) { return m_seen.contains(t); }
+  void mark_seen(expr* t) { m_seen.mark(t); }
+  bool is_seen(expr* t) { return m_seen.is_marked(t); }
   void mark_seen(expr* t1, expr* t2) { m_seenp.insert(expr_pair(t1, t2)); }
   bool is_seen(expr* t1, expr* t2) { return m_seenp.contains(expr_pair(t1, t2)) || m_seenp.contains(expr_pair(t2, t1)); }
 
