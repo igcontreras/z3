@@ -28,11 +28,11 @@ Revision History:
 #include "ast/ast_pp.h"
 
 // check if e contains any apps from vars
-bool contains_vars(expr *e, obj_hashtable<app> const &vars, ast_manager& man, bool only_arr = false);
+bool contains_vars(expr *e, obj_hashtable<app> const &vars, ast_manager& man, family_id fid = null_family_id, decl_kind dk = null_decl_kind);
 
 app_ref new_var(sort* s, ast_manager& m);
 
-bool contains_var(expr *e, app_ref var, ast_manager& man, bool only_arr = false);
+bool contains_var(expr *e, app_ref var, ast_manager& man, family_id fid = null_family_id, decl_kind dk = null_decl_kind);
 
 // Return all uninterpreted constants of \p q
 void collect_uninterp_consts(expr *e, obj_hashtable<app> &out);

@@ -10,19 +10,23 @@ namespace check_uninterp_consts_ns {
   struct found {};
   struct proc {
     obj_hashtable<app> const &m_vars;
-    bool m_only_arr;
-    array_util m_arr;
-    proc(obj_hashtable<app> const &vars, ast_manager& man,bool only_arr = false) : m_vars(vars), m_only_arr(only_arr), m_arr(man) {}
+    ast_manager& m;
+    family_id m_fid;
+    decl_kind m_decl_kind;
+    proc(obj_hashtable<app> const &vars, ast_manager& man, family_id fid = null_family_id, decl_kind dk = null_decl_kind) : m_vars(vars), m(man), m_fid(fid), m_decl_kind(dk) {}
     void operator()(expr *n) const {}
     void operator()(app *n) {
-      if (is_uninterp_const(n) && m_vars.contains(n) && (!m_only_arr || m_arr.is_array(n))) throw found();
+        if (is_uninterp_const(n) && m_vars.contains(n)) {
+            if (m_fid == null_family_id || m_decl_kind == null_decl_kind) throw found();
+            if (is_sort_of(n->get_sort(), m_fid, m_decl_kind)) throw found();
+        }
     }
   };
 } // namespace check_uninterp_consts_ns
 
 // check if e contains any apps from vars
-bool contains_vars(expr *e, obj_hashtable<app> const &vars, ast_manager& man, bool only_arr) {
-  check_uninterp_consts_ns::proc proc(vars, man, only_arr);
+bool contains_vars(expr *e, obj_hashtable<app> const &vars, ast_manager& man, family_id fid, decl_kind dk) {
+  check_uninterp_consts_ns::proc proc(vars, man, fid, dk);
   try {
     for_each_expr(proc, e);
   }
@@ -34,10 +38,10 @@ app_ref new_var(sort* s, ast_manager& m) {
     return app_ref(m.mk_fresh_const("mbptg", s), m);
 }
 
-bool contains_var(expr *e, app_ref var, ast_manager& man, bool only_arr) {
+bool contains_var(expr *e, app_ref var, ast_manager& man, family_id fid, decl_kind dk) {
   obj_hashtable<app> vars;
   vars.insert(var);
-  check_uninterp_consts_ns::proc proc(vars, man, only_arr);
+  check_uninterp_consts_ns::proc proc(vars, man, fid, dk);
   try {
     for_each_expr(proc, e);
   }
