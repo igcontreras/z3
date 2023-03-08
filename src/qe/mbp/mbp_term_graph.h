@@ -133,7 +133,8 @@ namespace mbp {
 
       const expr_ref_vector& get_lits() const { return m_lits; }
       void get_terms(expr_ref_vector& res, bool exclude_cground = true);
-      
+      unsigned size() { return m_terms.size(); }
+
         void set_vars(func_decl_ref_vector const& decls, bool exclude = true);
         void set_vars(app_ref_vector const &vars, bool exclude = true);
         void add_vars(app_ref_vector const &vars);
