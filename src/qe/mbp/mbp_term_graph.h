@@ -37,6 +37,7 @@ namespace mbp {
     struct found;
   }
     class term;
+    class filter_core;
 
     class term_graph {
         class projector;
@@ -114,7 +115,7 @@ namespace mbp {
         expr_ref mk_app(expr *a);
         void mk_equalities(term &t, expr_ref_vector &out);
         void mk_all_equalities(term &t, expr_ref_vector &out);
-        void mk_qe_lite_equalities(term &t, expr_ref_vector &out);
+        void mk_qe_lite_equalities(term &t, expr_ref_vector &out, filter_core* not_in_core);
         void display(std::ostream &out);
 
         bool is_pure_def(expr* atom, expr *& v);
@@ -136,8 +137,6 @@ namespace mbp {
         void set_vars(func_decl_ref_vector const& decls, bool exclude = true);
         void set_vars(app_ref_vector const &vars, bool exclude = true);
         void add_vars(app_ref_vector const &vars);
-        //output of qel will not contain terms with marked variables
-        void mark_vars(app_ref_vector const &vars);
         void add_var(app* var);
 
         ast_manager& get_ast_manager() const { return m;}
@@ -151,7 +150,7 @@ namespace mbp {
         // deprecate?
         void to_lits(expr_ref_vector &lits, bool all_equalities = false,
                      bool repick_repr = true);
-        void to_lits_qe_lite(expr_ref_vector &lits);
+        void to_lits_qe_lite(expr_ref_vector &lits, std::function<bool(expr*)> *non_core = nullptr);
         expr_ref to_expr(bool repick_repr = true);
 
         /**
@@ -218,7 +217,8 @@ namespace mbp {
         expr_ref_vector non_ground_terms();
         void gr_terms_to_lits(expr_ref_vector &lits, bool all_equalities);
         //produce a quantifier reduction of the formula stored in the term graph
-        void qel(app_ref_vector &vars, expr_ref &fml);
+        //output of qel will not contain expression e s.t. non_core(e) == true
+        void qel(app_ref_vector &vars, expr_ref &fml, std::function<bool(expr*)> *non_core = nullptr);
         void mb_cover(model& mdl);
         bool has_val_in_class(expr* e);
         app* get_const_in_class(expr* e);

@@ -33,26 +33,6 @@ Revision History:
 #include "ast/ast_pp.h"
 
 
-namespace contains_peq_ns {
-  struct found {};
-  struct proc {
-    void operator()(expr *n) const {}
-    void operator()(app *n) {
-      if (is_partial_eq(n)) throw found();
-    }
-  };
-} // namespace contains_peq_ns
-
-// check if e contains any partial equalities
-bool contains_peq(expr *e) {
-  contains_peq_ns::proc proc;
-  try {
-    for_each_expr(proc, e);
-  }
-  catch (const contains_peq_ns::found &) { return true; }
-  return false;
-}
-
 namespace check_uninterp_consts_ns {
   struct found {};
   struct proc {
@@ -128,19 +108,6 @@ namespace collect_selstore_vars_ns {
 void collect_selstore_vars(expr *fml, obj_hashtable<app>&  vars, ast_manager& man) {
   collect_selstore_vars_ns::proc proc(vars, man);
   quick_for_each_expr(proc, fml);
-}
-
-// eliminate all occurrences of peq from inp
-void remove_peq(expr* inp, expr_ref& op) {
-  ast_manager& m = op.get_manager();
-  expr_ref_vector fml(m);
-  flatten_and(inp, fml);
-  unsigned j = 0;
-  for (auto& t : fml)
-    if (!contains_peq(t))
-      fml.set(j++, t);
-  fml.shrink(j);
-  op = mk_and(fml);
 }
 
 class mbp_qel::impl {
@@ -642,18 +609,21 @@ public:
               if (!m_dt_util.is_datatype(v->get_sort()) && !m_array_util.is_array(v)) return false;
               return !core_vars.contains(v);
             };
-    app_ref_vector red_vars(m);
-    red_vars = vars.filter_pure(is_red);
+    expr_sparse_mark red_vars;
+    for (auto v : vars) if (is_red(v)) red_vars.mark(v);
     CTRACE("mbp_tg", !core_vars.empty(),
            tout << "vars not redundant ";
            for (auto v : core_vars) tout << " " << app_ref(v, m); tout <<"\n";);
-    tg.mark_vars(red_vars);
+
+    std::function<bool(expr*)> non_core = [&] (expr* e) {
+      array_util m_array(m);
+      if (is_app(e) && is_partial_eq(to_app(e))) return true;
+      if (reduce_all_selects && m_array.is_select(e) && m_array.is_store(to_app(e)->get_arg(0))) return true;
+      return red_vars.is_marked(e);
+    };
 
     //Step 3.
-    tg.qel(vars, inp);
-
-    //remove all occurrences of partial equalities from inp
-    remove_peq(inp, inp);
+    tg.qel(vars, inp, &non_core);
   }
 };
 
