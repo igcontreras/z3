@@ -31,12 +31,23 @@ private:
   ast_manager& m;
   array_util m_array_util;
   datatype_util m_dt_util;
-  obj_hashtable<app> m_vars_set; //set of variables to be projected to make contains_check faster
+  //set of non_basic variables to be projected. MBP rules are applied to terms
+  //containing these variables
+  obj_hashtable<app> m_non_basic_vars;
 
   //Utilities to keep track of which terms have been processed
   expr_sparse_mark m_seen;
   void mark_seen(expr* t) { m_seen.mark(t); }
   bool is_seen(expr* t) { return m_seen.is_marked(t); }
+
+  bool is_non_basic(app* v) { return m_dt_util.is_datatype(v->get_sort()) || m_array_util.is_array(v); }
+
+  void add_vars(app_ref_vector const& new_vars, app_ref_vector& vars) {
+    for (auto v : new_vars) {
+      if (is_non_basic(v)) m_non_basic_vars.insert(v);
+      vars.push_back(v);
+    }
+  }
 
 public:
   impl(ast_manager &m, params_ref const &p)
@@ -46,8 +57,8 @@ public:
     if (!reduce_all_selects && vars.empty())
       return;
 
-    //create vars_set to speed up contains check
-    for(auto v : vars) m_vars_set.insert(v);
+    //variables to apply projection rules on
+    for(auto v : vars) if (is_non_basic(v)) m_non_basic_vars.insert(v);
 
     mbp::term_graph tg(m);
     // mark vars as non-ground.
@@ -59,19 +70,36 @@ public:
     flatten_and(inp, fml);
     tg.add_lits(fml);
 
-    mbp_array_tg m_array_project(m, tg, mdl, m_vars_set, vars, m_seen);
-    mbp_dt_tg m_dt_project(m, tg, mdl, m_vars_set, vars, m_seen);
+    mbp_array_tg m_array_project(m, tg, mdl, m_non_basic_vars, m_seen);
+    mbp_dt_tg m_dt_project(m, tg, mdl, m_non_basic_vars, m_seen);
 
     //Apply MBP rules till saturation
     bool progress1 = true, progress2 = true;
     unsigned sz = 0;
+    // apply rules without splitting on model
     do {
       sz = tg.size();
-      //apply both rules until fixed point
-      //TODO: add option to toggle model based splitting so that we split lazily
-      while(progress1) progress1 = m_array_project();
-      while(progress2) progress2 = m_dt_project();
+      progress1 = m_array_project();
+      add_vars(m_array_project.get_new_vars(), vars);
+      progress2 = m_dt_project();
+      add_vars(m_dt_project.get_new_vars(), vars);
     } while(tg.size() > sz);
+
+    // do complete mbp
+    m_array_project.use_model();
+    m_dt_project.use_model();
+
+    progress1 = true;
+    progress2 = true;
+    //apply both rules until fixed point
+    do {
+      sz = tg.size();
+      progress1 = m_array_project();
+      add_vars(m_array_project.get_new_vars(), vars);
+      progress2 = m_dt_project();
+      add_vars(m_dt_project.get_new_vars(), vars);
+    } while(tg.size() > sz);
+
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()) << " and vars " << vars;);
     TRACE("mbp_tg_verbose",
           obj_hashtable<app> vars_tmp;

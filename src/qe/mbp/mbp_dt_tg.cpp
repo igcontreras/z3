@@ -36,8 +36,7 @@ void mbp_dt_tg::rm_select(expr* term) {
             continue;
         }
         u = new_var(d->get_range(), m);
-        m_vars_set.insert(u);
-        m_vars.push_back(u);
+        m_new_vars.push_back(u);
         m_tg.add_var(u);
         new_vars.push_back(u);
         eq = m.mk_eq(sel, u);
@@ -85,6 +84,7 @@ void mbp_dt_tg::deconstruct_neq(expr* cons, expr* rhs) {
 bool mbp_dt_tg::operator()() {
     expr *cons, *rhs, *f, *term;
     bool progress = false;
+    m_new_vars.reset();
     TRACE("mbp_tg", tout << "Iterating over terms of tg";);
     //Not resetting terms because get_terms calls resize on terms
     m_tg.get_terms(terms);
@@ -104,7 +104,7 @@ bool mbp_dt_tg::operator()() {
             deconstruct_eq(cons, rhs);
             continue;
         }
-        if (m.is_not(term, f) && is_constructor_app(f, cons, rhs)) {
+        if (m_use_mdl && m.is_not(term, f) && is_constructor_app(f, cons, rhs)) {
           mark_seen(term);
           progress = true;
           deconstruct_neq(cons, rhs);

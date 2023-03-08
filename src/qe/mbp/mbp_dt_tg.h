@@ -34,15 +34,16 @@ class mbp_dt_tg {
     //TODO: cache mdl evaluation eventhough we extend m_mdl
     model& m_mdl;
 
-    //set of all variables in the formula. To make contains check faster
+    //set of variables on which to apply MBP rules
     obj_hashtable<app> &m_vars_set;
-    // vector of all variables in the formula. For final output
-    //TODO: merge m_tg_project_vars and m_all_vars
-    app_ref_vector &m_vars;
+
+    //variables created in the last iteration of MBP application
+    app_ref_vector m_new_vars;
 
     expr_sparse_mark &m_seen;
 
     expr_ref_vector terms;
+    bool m_use_mdl;
 
     void mark_seen(expr* t) { m_seen.mark(t); }
     bool is_seen(expr* t) { return m_seen.is_marked(t); }
@@ -78,9 +79,11 @@ class mbp_dt_tg {
     void deconstruct_neq(expr* cons, expr* rhs);
 
     public:
-        mbp_dt_tg(ast_manager& man, mbp::term_graph& tg, model& mdl, obj_hashtable<app> &vars_set, app_ref_vector &vars, expr_sparse_mark &seen):
-            m(man), m_dt_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_vars(vars), m_seen(seen), terms(m) {}
+        mbp_dt_tg(ast_manager& man, mbp::term_graph& tg, model& mdl, obj_hashtable<app> &vars_set, expr_sparse_mark &seen):
+            m(man), m_dt_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_new_vars(m), m_seen(seen), terms(m), m_use_mdl(false) {}
         // iterate through all terms in m_tg and apply all array MBP rules once
         // returns true if any rules were applied
         bool operator()();
+        void use_model() { m_use_mdl = true; }
+        app_ref_vector const& get_new_vars() { return m_new_vars;}
 };

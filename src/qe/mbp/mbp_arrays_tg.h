@@ -34,16 +34,18 @@ class mbp_array_tg {
     //TODO: cache mdl evaluation eventhough we extend m_mdl
     model& m_mdl;
 
-    //set of all variables in the formula. To make contains check faster
+    //set of variables on which to apply MBP rules
     obj_hashtable<app> &m_vars_set;
-    // vector of all variables in the formula. For final output
-    //TODO: merge m_tg_project_vars and m_all_vars
-    app_ref_vector &m_vars;
+
+    //variables created in the last iteration of MBP application
+    app_ref_vector m_new_vars;
 
     expr_sparse_mark &m_seen;
     obj_pair_hashtable<expr, expr> m_seenp;
 
     bool m_reduce_all_selects;
+    // apply rules that split on model
+    bool m_use_mdl;
 
     // variables required for applying rules
     vector<expr_ref_vector> indices;
@@ -54,7 +56,7 @@ class mbp_array_tg {
     }
 
     bool has_arr_var(expr* t) {
-        return contains_vars(t, m_vars_set, m, true);
+        return contains_vars(t, m_vars_set, m, m_array_util.get_family_id(), ARRAY_SORT);
     }
 
     bool is_var(expr* t) {
@@ -71,12 +73,13 @@ class mbp_array_tg {
 
     bool is_arr_write(expr* t) {
         if (!m_array_util.is_store(t)) return false;
-        return contains_vars(to_app(t), m_vars_set, m);
+        //TODO: should it be has_var(to_app(t)->get_arg(0))???
+        return has_var(to_app(t));
     }
 
     bool is_rd_wr(expr* t, bool all = false) {
         if (!m_array_util.is_select(t) || !m_array_util.is_store(to_app(t)->get_arg(0))) return false;
-        return all || contains_vars(to_app(to_app(t)->get_arg(0))->get_arg(0), m_vars_set, m);
+        return all || has_var(to_app(to_app(t)->get_arg(0))->get_arg(0));
     }
 
     bool should_create_peq(expr* e) {
@@ -108,11 +111,11 @@ class mbp_array_tg {
     bool is_seen(expr* t1, expr* t2) { return m_seenp.contains(expr_pair(t1, t2)) || m_seenp.contains(expr_pair(t2, t1)); }
 
     public:
-        mbp_array_tg(ast_manager& man, mbp::term_graph& tg, model& mdl, obj_hashtable<app> &vars_set, app_ref_vector &vars, expr_sparse_mark &seen):
-            m(man), m_array_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_vars(vars), m_seen(seen), m_reduce_all_selects(false), terms(m), rdTerms(m) {}
+        mbp_array_tg(ast_manager& man, mbp::term_graph& tg, model& mdl, obj_hashtable<app> &vars_set, expr_sparse_mark &seen):
+            m(man), m_array_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_new_vars(m), m_seen(seen), m_reduce_all_selects(false), m_use_mdl(false), terms(m), rdTerms(m) {}
 
         void set_reduce_all_selects() { m_reduce_all_selects = true; }
-
+        void use_model() { m_use_mdl = true; }
         // iterate through all terms in m_tg and apply all array MBP rules once
         // returns true if any rules were applied
         bool operator()();
@@ -121,4 +124,5 @@ class mbp_array_tg {
             m_vars_set.reset();
             //Not resetting terms because get_terms calls resize on terms
         }
+        app_ref_vector const& get_new_vars() { return m_new_vars;}
 };

@@ -97,9 +97,8 @@ void mbp_array_tg::add_rdVar(expr* rd) {
     if (m_tg.has_val_in_class(rd)) return;
     TRACE("mbp_tg", tout << "applying add_rdVar on " << expr_ref(rd, m););
     app_ref u = new_var(to_app(rd)->get_sort(), m);
-    m_vars_set.insert(u);
+    m_new_vars.push_back(u);
     m_tg.add_var(u);
-    m_vars.push_back(u);
     expr* eq = m.mk_eq(u, rd);
     m_tg.add_lit(eq);
     m_mdl.register_decl(u->get_decl(), m_mdl(rd));
@@ -116,8 +115,7 @@ void mbp_array_tg::elimeq(peq p) {
     vector<expr_ref_vector>::iterator itr = indices.begin();
     unsigned i = 0;
     for(app* a : aux_consts) {
-        m_vars_set.insert(a);
-        m_vars.push_back(a);
+        m_new_vars.push_back(a);
         m_tg.add_var(a);
         auto const& indx =  std::next(itr, i);
         SASSERT(indx->size() == 1);
@@ -157,6 +155,7 @@ bool mbp_array_tg::operator()() {
     TRACE("mbp_tg", tout << "Iterating over terms of tg";);
     indices.reset();
     rdTerms.reset();
+    m_new_vars.reset();
     expr_ref e(m), rdEq(m), rdDeq(m);
     expr* nt, *term;
     bool progress = false, is_neg = false;
@@ -181,14 +180,14 @@ bool mbp_array_tg::operator()() {
         is_neg = m.is_not(term, nt);
         if (is_app(nt) && is_partial_eq(to_app(nt))) {
             peq p(to_app(nt), m);
-            if (is_arr_write(p.lhs())) {
+            if (m_use_mdl && is_arr_write(p.lhs())) {
                 mark_seen(nt);
                 mark_seen(term);
                 progress = true;
                 elimwreq(p, is_neg);
                 continue;
             }
-            if (has_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m), m)) {
+            if (is_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m), m)) {
                 mark_seen(nt);
                 mark_seen(term);
                 progress = true;
@@ -196,7 +195,7 @@ bool mbp_array_tg::operator()() {
                 continue;
             }
             //eliminate eq when the variable is on the rhs
-            if (has_var(p.rhs()) && !contains_var(p.lhs(), app_ref(to_app(p.rhs()), m), m)) {
+            if (is_var(p.rhs()) && !contains_var(p.lhs(), app_ref(to_app(p.rhs()), m), m)) {
                 p.get_diff_indices(indices);
                 peq p_new = mk_peq(p.rhs(), p.lhs(), indices);
                 mark_seen(nt);
@@ -206,7 +205,7 @@ bool mbp_array_tg::operator()() {
                 continue;
             }
         }
-        if (is_rd_wr(term, m_reduce_all_selects)) {
+        if (m_use_mdl && is_rd_wr(term, m_reduce_all_selects)) {
             mark_seen(term);
             progress = true;
             elimrdwr(term);
@@ -219,14 +218,14 @@ bool mbp_array_tg::operator()() {
     rdTerms.reset();
     for (unsigned i = 0; i < terms.size(); i++) {
         term = terms.get(i);
-        if (m_array_util.is_select(term) && contains_vars(to_app(term)->get_arg(0), m_vars_set, m)) {
+        if (m_array_util.is_select(term) && has_var(to_app(term)->get_arg(0))) {
             rdTerms.push_back(term);
             if (is_seen(term)) continue;
             add_rdVar(term);
             mark_seen(term);
         }
     }
-
+    if (!m_use_mdl) return progress;
     expr *e1, *e2, *a1, *a2, *i1, *i2;
     for (unsigned i = 0; i < rdTerms.size(); i++) {
         e1 = rdTerms.get(i);
