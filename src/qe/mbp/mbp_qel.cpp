@@ -32,6 +32,8 @@ private:
   ast_manager& m;
   array_util m_array_util;
   datatype_util m_dt_util;
+  params_ref m_params;
+
   //set of non_basic variables to be projected. MBP rules are applied to terms
   //containing these variables
   obj_hashtable<app> m_non_basic_vars;
@@ -52,7 +54,8 @@ private:
 
 public:
   impl(ast_manager &m, params_ref const &p)
-    : m(m), m_array_util(m), m_dt_util(m) { }
+    : m(m), m_array_util(m), m_dt_util(m), m_params(p) {
+  }
 
   void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl, bool reduce_all_selects = false) {
     if (!reduce_all_selects && vars.empty())
@@ -132,6 +135,7 @@ public:
     // All other Array/ADT variables can be eliminated, they are redundant.
     obj_hashtable<app> core_vars;
     collect_selstore_vars(inp, core_vars, m);
+
     std::function<bool(app*)> is_red =
             [&](app* v) {
               if (!m_dt_util.is_datatype(v->get_sort()) && !m_array_util.is_array(v)) return false;

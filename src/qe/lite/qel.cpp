@@ -23,16 +23,16 @@ Revision History:
 class qel::impl {
 private:
     ast_manager& m;
-    params_ref m_params;
+
 public:
   impl(ast_manager &m, params_ref const &p)
-      : m(m), m_params(p) {}
+      : m(m) {}
 
   void operator()(app_ref_vector &vars, expr_ref &fml) {
     if (vars.empty())
       return;
 
-    mbp::term_graph tg(m, p);
+    mbp::term_graph tg(m);
     tg.set_vars(vars);
 
     expr_ref_vector lits(m);
