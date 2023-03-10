@@ -74,31 +74,26 @@ public:
     mbp_dt_tg m_dt_project(m, tg, mdl, m_non_basic_vars, m_seen);
 
     //Apply MBP rules till saturation
-    bool progress1 = true, progress2 = true;
-    unsigned sz = 0;
+    bool progress1, progress2;
     // apply rules without splitting on model
     do {
-      sz = tg.size();
       progress1 = m_array_project();
       add_vars(m_array_project.get_new_vars(), vars);
       progress2 = m_dt_project();
       add_vars(m_dt_project.get_new_vars(), vars);
-    } while(tg.size() > sz);
+    } while(progress1 || progress2);
 
     // do complete mbp
     m_array_project.use_model();
     m_dt_project.use_model();
 
-    progress1 = true;
-    progress2 = true;
     //apply both rules until fixed point
     do {
-      sz = tg.size();
       progress1 = m_array_project();
       add_vars(m_array_project.get_new_vars(), vars);
       progress2 = m_dt_project();
       add_vars(m_dt_project.get_new_vars(), vars);
-    } while(tg.size() > sz);
+    } while(progress1 || progress2);
 
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()) << " and vars " << vars;);
     TRACE("mbp_tg_verbose",
