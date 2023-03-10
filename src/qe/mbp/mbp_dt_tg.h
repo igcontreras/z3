@@ -25,7 +25,6 @@ Revision History:
 #include "qe/mbp/mbp_qel_util.h"
 #include "qe/mbp/mbp_term_graph.h"
 #include "util/obj_hashtable.h"
-#include "util/obj_pair_hashtable.h"
 
 class mbp_dt_tg {
     ast_manager& m;
@@ -81,7 +80,7 @@ class mbp_dt_tg {
     public:
         mbp_dt_tg(ast_manager& man, mbp::term_graph& tg, model& mdl, obj_hashtable<app> &vars_set, expr_sparse_mark &seen):
             m(man), m_dt_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_new_vars(m), m_seen(seen), terms(m), m_use_mdl(false) {}
-        // iterate through all terms in m_tg and apply all array MBP rules once
+        // iterate through all terms in m_tg and apply all datatype MBP rules once
         // returns true if any rules were applied
         bool operator()();
         void use_model() { m_use_mdl = true; }

@@ -23,6 +23,7 @@ Revision History:
 #include "qe/mbp/mbp_arrays.h"
 #include "qe/mbp/mbp_arrays_tg.h"
 #include "qe/mbp/mbp_dt_tg.h"
+#include "qe/mbp/mbp_basic_tg.h"
 #include "qe/mbp/mbp_qel.h"
 #include "util/obj_hashtable.h"
 
@@ -72,28 +73,32 @@ public:
 
     mbp_array_tg m_array_project(m, tg, mdl, m_non_basic_vars, m_seen);
     mbp_dt_tg m_dt_project(m, tg, mdl, m_non_basic_vars, m_seen);
+    mbp_basic_tg m_basic_project(m, tg, mdl, m_non_basic_vars, m_seen);
 
     //Apply MBP rules till saturation
-    bool progress1, progress2;
+    bool p1, p2, p3;
     // apply rules without splitting on model
     do {
-      progress1 = m_array_project();
+      p1 = m_array_project();
       add_vars(m_array_project.get_new_vars(), vars);
-      progress2 = m_dt_project();
+      p2 = m_dt_project();
       add_vars(m_dt_project.get_new_vars(), vars);
-    } while(progress1 || progress2);
+      p3 = m_basic_project();
+    } while(p1 || p2 || p3);
 
     // do complete mbp
     m_array_project.use_model();
     m_dt_project.use_model();
+    m_dt_project.use_model();
 
     //apply both rules until fixed point
     do {
-      progress1 = m_array_project();
+      p1 = m_array_project();
       add_vars(m_array_project.get_new_vars(), vars);
-      progress2 = m_dt_project();
+      p2 = m_dt_project();
       add_vars(m_dt_project.get_new_vars(), vars);
-    } while(progress1 || progress2);
+      p3 = m_basic_project();
+    } while(p1 || p2 || p3);
 
     TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()) << " and vars " << vars;);
     TRACE("mbp_tg_verbose",

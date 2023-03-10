@@ -3,7 +3,7 @@ Copyright (c) 2022 Microsoft Corporation
 
 Module Name:
 
-    mbp_dt_tg.h
+    mbp_dt_tg.cpp
 
 Abstract:
 
