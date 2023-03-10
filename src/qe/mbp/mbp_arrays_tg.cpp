@@ -41,53 +41,55 @@ void mbp_array_tg::elimwreq(peq p, bool is_neg) {
     TRACE("mbp_tg", tout << "applying elimwreq on " << expr_ref(p.mk_peq(), m););
     vector<expr_ref_vector> indices;
     expr* j = to_app(p.lhs())->get_arg(1);
+    expr* elem = to_app(p.lhs())->get_arg(2);
     bool in = false;
     p.get_diff_indices(indices);
-    expr* eq;
+    expr_ref eq_index(m);
     expr_ref_vector deq(m);
     for(expr_ref_vector& e : indices) {
         for (expr* i : e) {
-            if (m_mdl.is_true(m.mk_eq(j, i))) {
+            if (m_mdl.are_equal(j, i)) {
                 in = true;
-                eq = m.mk_eq(j, i);
+                //save for later
+                eq_index = i;
                 break;
             }
             else deq.push_back(i);
         }
     }
     if (in) {
+        SASSERT(m_mdl.are_equal(j, eq_index));
         peq p_new = mk_peq(to_app(p.lhs())->get_arg(0), p.rhs(), indices);
-        m_tg.add_lit(eq);
-        expr* p_new_expr = is_neg ? m.mk_not(p_new.mk_peq()) : p_new.mk_peq();
+        m_tg.add_eq(j, eq_index);
+        expr_ref p_new_expr(m);
+        p_new_expr = is_neg ? m.mk_not(p_new.mk_peq()) : p_new.mk_peq();
         m_tg.add_lit(p_new_expr);
-        m_tg.add_lit(m.mk_eq(p_new_expr, p.mk_peq()));
+        m_tg.add_eq(p_new_expr, p.mk_peq());
+        return;
+    }
+    for(expr* d : deq) {
+        m_tg.add_deq(j, d);
+    }
+    expr_ref_vector setOne(m);
+    setOne.push_back(j);
+    indices.push_back(setOne);
+    peq p_new = mk_peq(to_app(p.lhs())->get_arg(0), p.rhs(), indices);
+    expr* args[2] = {p.rhs(), j};
+    expr_ref rd(m_array_util.mk_select(2, args), m);
+    if (!is_neg) {
+        m_tg.add_lit(p_new.mk_peq());
+        m_tg.add_eq(rd, elem);
+        m_tg.add_eq(p.mk_peq(), p_new.mk_peq());
     }
     else {
-        for(expr* d : deq) {
-            eq = m.mk_not(m.mk_eq(j, d));
-            m_tg.add_lit(eq);
-        }
-        expr_ref_vector setOne(m);
-        setOne.push_back(j);
-        indices.push_back(setOne);
-        peq p_new = mk_peq(to_app(p.lhs())->get_arg(0), p.rhs(), indices);
-        expr* args[2] = {p.rhs(), j};
-        expr* rd = m_array_util.mk_select(2, args);
-        eq = m.mk_eq(rd, to_app(p.lhs())->get_arg(2));
-        if (!is_neg) {
-            m_tg.add_lit(p_new.mk_peq());
-            m_tg.add_lit(eq);
+        SASSERT(m_mdl.is_false(p_new.mk_peq()) || !m_mdl.are_equal(rd, elem));
+        if (m_mdl.is_false(p_new.mk_peq())) {
+            expr_ref npeq(mk_not(p_new.mk_peq()), m);
+            m_tg.add_lit(npeq);
             m_tg.add_eq(p.mk_peq(), p_new.mk_peq());
         }
-        else {
-            SASSERT(m_mdl.is_false(p_new.mk_peq()) || m_mdl.is_false(eq));
-            if (m_mdl.is_false(p_new.mk_peq())) {
-                m_tg.add_lit(mk_not(p_new.mk_peq()));
-                m_tg.add_eq(p.mk_peq(), p_new.mk_peq());
-            }
-            if (m_mdl.is_false(eq)) {
-                m_tg.add_lit(m.mk_not(eq));
-            }
+        if (!m_mdl.are_equal(rd, elem)) {
+            m_tg.add_deq(rd, elem);
         }
     }
 }
@@ -99,8 +101,7 @@ void mbp_array_tg::add_rdVar(expr* rd) {
     app_ref u = new_var(to_app(rd)->get_sort(), m);
     m_new_vars.push_back(u);
     m_tg.add_var(u);
-    expr* eq = m.mk_eq(u, rd);
-    m_tg.add_lit(eq);
+    m_tg.add_eq(u, rd);
     m_mdl.register_decl(u->get_decl(), m_mdl(rd));
 }
 
@@ -135,18 +136,17 @@ void mbp_array_tg::elimrdwr(expr* term) {
     TRACE("mbp_tg", tout << "applying elimrdwr on " << expr_ref(term, m););
     expr* wr_ind = to_app(to_app(term)->get_arg(0))->get_arg(1);
     expr* rd_ind = to_app(term)->get_arg(1);
-    expr *eq = m.mk_eq(wr_ind, rd_ind);
-    expr_ref e(m);
-    if (m_mdl.is_true(eq)) {
-        m_tg.add_lit(eq);
+    expr* e;
+    if (m_mdl.are_equal(wr_ind, rd_ind)) {
+        m_tg.add_eq(wr_ind, rd_ind);
         e =  to_app(to_app(term)->get_arg(0))->get_arg(2);
     }
     else {
-        m_tg.add_lit(m.mk_not(eq));
+        m_tg.add_deq(wr_ind, rd_ind);
         expr* args[2] = {to_app(to_app(term)->get_arg(0))->get_arg(0), to_app(term)->get_arg(1)};
         e = m_array_util.mk_select(2, args);
     }
-    m_tg.add_lit(m.mk_eq(term, e));
+    m_tg.add_eq(term, e);
 }
 
 // iterate through all terms in m_tg and apply all array MBP rules once
@@ -174,7 +174,7 @@ bool mbp_array_tg::operator()() {
             progress = true;
             e = mk_peq(to_app(term)->get_arg(0), to_app(term)->get_arg(1)).mk_peq();
             m_tg.add_lit(e);
-            m_tg.add_lit(m.mk_eq(term, e));
+            m_tg.add_eq(term, e);
             continue;
         }
         nt = term;
@@ -250,18 +250,15 @@ bool mbp_array_tg::operator()() {
             i2 = to_app(e2)->get_arg(1);
             if (!is_seen(e1, e2) && a1->get_id() == a2->get_id()) {
                 mark_seen(e1, e2);
-                rdEq = m.mk_eq(i1, i2);
-                if (m_mdl.is_true(rdEq)) {
-                    progress = true;
-                    m_tg.add_lit(rdEq);
-                    continue;
+                progress = true;
+                if (m_mdl.are_equal(i1, i2)){
+                    m_tg.add_eq(i1, i2);
                 }
-                rdDeq = m.mk_not(rdEq);
-                if (m_mdl.is_true(rdDeq)) {
-                    progress = true;
-                    m_tg.add_lit(rdDeq);
-                    continue;
+                else {
+                    SASSERT(!m_mdl.are_equal(i1, i2));
+                    m_tg.add_deq(i1, i2);
                 }
+                continue;
             }
         }
     }

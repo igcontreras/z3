@@ -22,7 +22,8 @@ Revision History:
 void mbp_dt_tg::rm_select(expr* term) {
     SASSERT(is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0)));
     TRACE("mbp_tg", tout << "applying rm_select on " << expr_ref(term, m););
-    expr* v = to_app(term)->get_arg(0), *sel, *eq;
+    expr* v = to_app(term)->get_arg(0);
+    expr_ref sel(m);
     app_ref u(m);
     app_ref_vector new_vars(m);
     func_decl* cons = m_dt_util.get_accessor_constructor(to_app(term)->get_decl());
@@ -39,43 +40,43 @@ void mbp_dt_tg::rm_select(expr* term) {
         m_new_vars.push_back(u);
         m_tg.add_var(u);
         new_vars.push_back(u);
-        eq = m.mk_eq(sel, u);
-        m_tg.add_lit(eq);
+        m_tg.add_eq(sel, u);
         m_mdl.register_decl(u->get_decl(), m_mdl(sel));
     }
-    eq = m.mk_eq(v, m.mk_app(cons, new_vars));
-    m_tg.add_lit(eq);
+    expr_ref new_cons(m.mk_app(cons, new_vars), m);
+    m_tg.add_eq(v, new_cons);
 }
 
 void mbp_dt_tg::deconstruct_eq(expr* cons, expr* rhs) {
     TRACE("mbp_tg", tout << "applying deconstruct_eq on " << expr_ref(cons, m););
     ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
     for (unsigned i = 0; i < accessors->size(); i++) {
-        app* a = m.mk_app(accessors->get(i), rhs);
+        expr_ref a(m.mk_app(accessors->get(i), rhs), m);
         expr* newRhs = to_app(cons)->get_arg(i);
-        m_tg.add_lit(m.mk_eq(a, newRhs));
+        m_tg.add_eq(a, newRhs);
     }
     func_decl* is_cons = m_dt_util.get_constructor_recognizer(to_app(cons)->get_decl());
-    m_tg.add_lit(m.mk_app(is_cons, rhs));
+    expr_ref is(m.mk_app(is_cons, rhs), m);
+    m_tg.add_lit(is);
 }
 
 void mbp_dt_tg::deconstruct_neq(expr* cons, expr* rhs) {
     TRACE("mbp_tg", tout << "applying deconstruct_neq on " << expr_ref(cons, m););
     ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
     func_decl* is_cons = m_dt_util.get_constructor_recognizer(to_app(cons)->get_decl());
-    expr* a = m.mk_app(is_cons, rhs);
+    expr_ref a(m.mk_app(is_cons, rhs), m);
     if (m_mdl.is_false(a)) {
-      m_tg.add_lit(m.mk_not(a));
+      expr_ref not_cons(m.mk_not(a), m);
+      m_tg.add_lit(not_cons);
       return;
     }
     m_tg.add_lit(a);
 
     for (unsigned i = 0; i < accessors->size(); i++) {
-        app* a = m.mk_app(accessors->get(i), rhs);
+        expr_ref a(m.mk_app(accessors->get(i), rhs), m);
         expr* newRhs = to_app(cons)->get_arg(i);
-        expr* eq = m.mk_eq(a, newRhs);
-        if (m_mdl.is_false(eq)) {
-            m_tg.add_lit(m.mk_not(eq));
+        if (!m_mdl.are_equal(a, newRhs)) {
+            m_tg.add_deq(a, newRhs);
             break;
         }
     }

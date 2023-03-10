@@ -601,7 +601,7 @@ namespace mbp {
         merge_flush();
         SASSERT(m_merge.empty());
         if (!m_explicit_eq) return;
-        expr* eq = m.mk_eq(a1, a2);
+        expr_ref eq(m.mk_eq(a1, a2), m);
         term* res = get_term(eq);
         if (!res)
           mk_term(eq);
@@ -629,10 +629,10 @@ namespace mbp {
       m_add_deq(t1, t2);
       m_deq_pairs.push_back({t1, t2});
       if (!m_explicit_eq) return;
-      expr* eq = m.mk_eq(a1, a2);
+      expr_ref eq(m.mk_eq(a1, a2), m);
       term* eq_term = mk_term(eq);
       eq_term->set_neq_child();
-      expr* deq = m.mk_not(eq);
+      expr_ref deq(m.mk_not(eq), m);
       term* res = get_term(deq);
       if (!res)
         mk_term(deq);

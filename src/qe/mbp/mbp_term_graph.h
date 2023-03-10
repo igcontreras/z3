@@ -146,6 +146,7 @@ namespace mbp {
         void add_lit(expr *lit);
         void add_lits(expr_ref_vector const &lits) { for (expr* e : lits) add_lit(e); }
         void add_eq(expr* a, expr* b) { internalize_eq(a, b); }
+        void add_deq(expr* a, expr* b) { internalize_deq(a, b); }
 
         void reset();
 
