@@ -161,11 +161,12 @@ bool mbp_array_tg::operator()() {
     bool progress = false, is_neg = false;
 
     //Not resetting terms because get_terms calls resize on terms
-    m_tg.get_terms(terms, !m_reduce_all_selects);
+    m_tg.get_terms(terms, false);
     for (unsigned i = 0; i < terms.size(); i++) {
         term = terms.get(i);
         SASSERT(!m.is_distinct(term));
         if (m_seen.is_marked(term)) continue;
+        if (!m_reduce_all_selects && m_tg.is_cgr(term)) continue;
         TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
         if (should_create_peq(term)) {
             // rewrite array eq as peq

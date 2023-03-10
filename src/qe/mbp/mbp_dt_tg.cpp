@@ -87,11 +87,12 @@ bool mbp_dt_tg::operator()() {
     m_new_vars.reset();
     TRACE("mbp_tg", tout << "Iterating over terms of tg";);
     //Not resetting terms because get_terms calls resize on terms
-    m_tg.get_terms(terms);
+    m_tg.get_terms(terms, false);
     for (unsigned i = 0; i < terms.size(); i++) {
         term = terms.get(i);
         SASSERT(!m.is_distinct(term));
         if (is_seen(term)) continue;
+        if (m_tg.is_cgr(term)) continue;
         if (is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0))) {
             mark_seen(term);
             progress = true;

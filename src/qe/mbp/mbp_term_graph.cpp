@@ -520,6 +520,12 @@ namespace mbp {
     unsigned i = 0;
     for (term* t : terms) res[i++] = t->get_expr();
   }
+
+  bool term_graph::is_cgr(expr *e) {
+    if (!is_internalized(e)) return false;
+    term* t = get_term(e);
+    return (!t->is_eq_peq() && t->is_cgr());
+  }
   
   bool term_graph::is_internalized(expr *a) {
         return m_app2term.contains(a->get_id());
