@@ -433,31 +433,12 @@ public:
         do_qel(vars, fml);
         tg_project(vars, mdl, fml, m_reduce_all_selects);
         flatten_and(fml);
-        do_qel(vars, fml);
-        do_qe_bool(mdl, vars, fml);
         m_rw(fml);
-        //flatten nested ites
-        expr_ref_vector fmls(m);
-        flatten_and(fml, fmls);
-        extract_literals(mdl, vars, fmls);
-        fml = mk_and(fmls);
         rewrite_as_const_arr(fml, mdl, fml);
 
-        //substitute all remaining array and adt variables
         for (app* v : vars) {
-            CTRACE("qe", arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
-            if (arr_u.is_array(v) || dt_u.is_datatype(v->get_sort()))
-                sub_vars.push_back(v);
-            else
-                other_vars.push_back(v);
-
-        }
-        if (!sub_vars.empty()) {
-            subst_vars(eval, sub_vars, fml);
-            TRACE("qe", tout << "After substituting remaining arr/adt vars:\n" << fml << "\n";);
-            // an extra round of simplification because subst_vars is not simplifying
-            m_rw(fml);
-            sub_vars.reset();
+            SASSERT(!arr_u.is_array(v) && !dt_u.is_datatype(v->get_sort()));
+            other_vars.push_back(v);
         }
 
         // project reals, ints and other variables.

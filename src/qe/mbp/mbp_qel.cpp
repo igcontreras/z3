@@ -144,14 +144,34 @@ public:
            for (auto v : core_vars) tout << " " << app_ref(v, m); tout <<"\n";);
 
     std::function<bool(expr*)> non_core = [&] (expr* e) {
-      array_util m_array(m);
       if (is_app(e) && is_partial_eq(to_app(e))) return true;
-      if (reduce_all_selects && m_array.is_select(e) && m_array.is_store(to_app(e)->get_arg(0))) return true;
+      if (reduce_all_selects && m_array_util.is_select(e) && m_array_util.is_store(to_app(e)->get_arg(0))) return true;
+      if (m.is_ite(e)) return true;
       return red_vars.is_marked(e);
     };
 
     //Step 3.
     tg.qel(vars, inp, &non_core);
+
+    // for all remaining non-cgr bool, dt, array variables, add v = mdl(v)
+    expr_sparse_mark s_vars;
+    for (auto v : vars) {
+      if (m_dt_util.is_datatype(v->get_sort()) || m_array_util.is_array(v) || m.is_bool(v)) {
+        CTRACE("qe", m_array_util.is_array(v) || m_dt_util.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
+        s_vars.mark(v);
+        tg.add_eq(v, mdl(v));
+      }
+    }
+
+    std::function<bool(expr*)> substituted = [&] (expr* e) {
+      if (is_app(e) && is_partial_eq(to_app(e))) return true;
+      if (reduce_all_selects && m_array_util.is_select(e) && m_array_util.is_store(to_app(e)->get_arg(0))) return true;
+      if (m.is_ite(e)) return true;
+      return s_vars.is_marked(e);
+    };
+
+    // remove all substituted variables
+    tg.qel(vars, inp, &substituted);
   }
 };
 
