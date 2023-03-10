@@ -171,7 +171,7 @@ public:
       if (is_app(e) && is_partial_eq(to_app(e))) return true;
       if (reduce_all_selects && m_array_util.is_select(e) && m_array_util.is_store(to_app(e)->get_arg(0))) return true;
       if (m.is_ite(e)) return true;
-      return s_vars.is_marked(e);
+      return red_vars.is_marked(e) || s_vars.is_marked(e);
     };
 
     // remove all substituted variables
