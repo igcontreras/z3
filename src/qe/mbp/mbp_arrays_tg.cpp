@@ -188,12 +188,8 @@ bool mbp_array_tg::operator()() {
                 elimwreq(p, is_neg);
                 continue;
             }
-            if (is_var(p.lhs()) && !contains_var(p.rhs(), app_ref(to_app(p.lhs()), m), m)) {
-                if (m_seen.is_marked(p.lhs())) {
-                    mark_seen(nt);
-                    mark_seen(term);
-                    continue;
-                }
+            if (!m_array_util.is_store(p.lhs()) &&  has_var(p.lhs())) {
+                //TODO: don't apply this rule if vars in p.lhs() also appear in p.rhs()
                 mark_seen(p.lhs());
                 mark_seen(nt);
                 mark_seen(term);
@@ -202,12 +198,7 @@ bool mbp_array_tg::operator()() {
                 continue;
             }
             //eliminate eq when the variable is on the rhs
-            if (is_var(p.rhs()) && !contains_var(p.lhs(), app_ref(to_app(p.rhs()), m), m)) {
-                if (m_seen.is_marked(p.rhs())) {
-                    mark_seen(nt);
-                    mark_seen(term);
-                    continue;
-                }
+            if (!m_array_util.is_store(p.rhs()) && has_var(p.rhs())) {
                 mark_seen(p.rhs());
                 p.get_diff_indices(indices);
                 peq p_new = mk_peq(p.rhs(), p.lhs(), indices);

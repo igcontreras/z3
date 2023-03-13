@@ -73,8 +73,7 @@ class mbp_array_tg {
 
     bool is_arr_write(expr* t) {
         if (!m_array_util.is_store(t)) return false;
-        //TODO: should it be has_var(to_app(t)->get_arg(0))???
-        return has_var(to_app(t));
+        return has_var(to_app(t)->get_arg(0));
     }
 
     bool is_rd_wr(expr* t, bool all = false) {
