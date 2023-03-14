@@ -21,12 +21,12 @@ Revision History:
 #pragma once
 
 #include "ast/datatype_decl_plugin.h"
-#include "qe/mbp/mbp_arrays.h"
+#include "qe/mbp/mbp_tg_plugins.h"
 #include "qe/mbp/mbp_qel_util.h"
 #include "qe/mbp/mbp_term_graph.h"
 #include "util/obj_hashtable.h"
 
-class mbp_dt_tg {
+class mbp_dt_tg: public mbp_tg_plugin {
     ast_manager& m;
     datatype_util m_dt_util;
     mbp::term_graph& m_tg;
@@ -82,7 +82,8 @@ class mbp_dt_tg {
             m(man), m_dt_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_new_vars(m), m_seen(seen), terms(m), m_use_mdl(false) {}
         // iterate through all terms in m_tg and apply all datatype MBP rules once
         // returns true if any rules were applied
-        bool operator()();
-        void use_model() { m_use_mdl = true; }
-        app_ref_vector const& get_new_vars() { return m_new_vars;}
+        bool apply() override;
+        void use_model() override { m_use_mdl = true; }
+        void get_new_vars(app_ref_vector*& t) override { t = &m_new_vars; }
+        family_id get_family_id() const override { return m_dt_util.get_family_id(); }
 };

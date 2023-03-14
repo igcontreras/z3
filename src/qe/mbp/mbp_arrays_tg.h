@@ -21,12 +21,13 @@ Revision History:
 #pragma once
 
 #include "qe/mbp/mbp_arrays.h"
+#include "qe/mbp/mbp_tg_plugins.h"
 #include "qe/mbp/mbp_qel_util.h"
 #include "qe/mbp/mbp_term_graph.h"
 #include "util/obj_hashtable.h"
 #include "util/obj_pair_hashtable.h"
 
-class mbp_array_tg {
+class mbp_array_tg: public mbp_tg_plugin {
     typedef std::pair<expr *, expr *> expr_pair;
     ast_manager& m;
     array_util m_array_util;
@@ -114,14 +115,16 @@ class mbp_array_tg {
             m(man), m_array_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_new_vars(m), m_seen(seen), m_reduce_all_selects(false), m_use_mdl(false), terms(m), rdTerms(m) {}
 
         void set_reduce_all_selects() { m_reduce_all_selects = true; }
-        void use_model() { m_use_mdl = true; }
+        void use_model() override { m_use_mdl = true; }
         // iterate through all terms in m_tg and apply all array MBP rules once
         // returns true if any rules were applied
-        bool operator()();
+        bool apply() override;
         void reset() {
             m_seen.reset();
             m_vars_set.reset();
             //Not resetting terms because get_terms calls resize on terms
         }
-        app_ref_vector const& get_new_vars() { return m_new_vars;}
+        void get_new_vars(app_ref_vector*& t) override { t = &m_new_vars; }
+        family_id get_family_id() const override { return m_array_util.get_family_id(); }
+
 };

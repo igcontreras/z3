@@ -22,7 +22,7 @@ Revision History:
 #include "ast/expr_functors.h"
 #include "util/debug.h"
 
-bool mbp_basic_tg::operator()() {
+bool mbp_basic_tg::apply() {
     if (!m_use_mdl) return false;
     expr *term, *c, *th, *el;
     expr_ref nterm(m);

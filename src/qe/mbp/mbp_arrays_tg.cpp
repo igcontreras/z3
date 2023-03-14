@@ -151,7 +151,7 @@ void mbp_array_tg::elimrdwr(expr* term) {
 
 // iterate through all terms in m_tg and apply all array MBP rules once
 // returns true if any rules were applied
-bool mbp_array_tg::operator()() {
+bool mbp_array_tg::apply() {
     TRACE("mbp_tg", tout << "Iterating over terms of tg";);
     indices.reset();
     rdTerms.reset();

@@ -20,6 +20,7 @@ Revision History:
 #include "ast/datatype_decl_plugin.h"
 #include "model/model.h"
 #include "qe/mbp/mbp_term_graph.h"
+#include "qe/mbp/mbp_tg_plugins.h"
 #include "qe/mbp/mbp_arrays.h"
 #include "qe/mbp/mbp_arrays_tg.h"
 #include "qe/mbp/mbp_dt_tg.h"
@@ -33,6 +34,9 @@ private:
   array_util m_array_util;
   datatype_util m_dt_util;
   params_ref m_params;
+  mbp::term_graph m_tg;
+
+  ptr_vector<mbp_tg_plugin> m_plugins;
 
   //set of non_basic variables to be projected. MBP rules are applied to terms
   //containing these variables
@@ -45,81 +49,101 @@ private:
 
   bool is_non_basic(app* v) { return m_dt_util.is_datatype(v->get_sort()) || m_array_util.is_array(v); }
 
-  void add_vars(app_ref_vector const& new_vars, app_ref_vector& vars) {
-    for (auto v : new_vars) {
+  void add_vars(mbp_tg_plugin* p, app_ref_vector& vars) {
+    app_ref_vector* new_vars;
+    p->get_new_vars(new_vars);
+    for (auto v : *new_vars) {
       if (is_non_basic(v)) m_non_basic_vars.insert(v);
       vars.push_back(v);
     }
   }
 
+    // apply all plugins till saturation
+    void saturate(app_ref_vector& vars) {
+      bool progress;
+      do {
+        progress = false;
+        for (auto* p : m_plugins) {
+          if (p->apply()) {
+            progress = true;
+            add_vars(p, vars);
+          }
+        }
+      } while(progress);
+    }
+
+    void init(app_ref_vector &vars, expr_ref &inp, model& mdl, bool reduce_all_selects = false) {
+      //variables to apply projection rules on
+      for(auto v : vars) if (is_non_basic(v)) m_non_basic_vars.insert(v);
+
+      // mark vars as non-ground.
+      m_tg.add_vars(vars);
+      // treat eq literals as term in the egraph
+      m_tg.set_explicit_eq();
+
+      expr_ref_vector fml(m);
+      flatten_and(inp, fml);
+      m_tg.add_lits(fml);
+
+      add_plugin(alloc(mbp_array_tg, m, m_tg, mdl, m_non_basic_vars, m_seen));
+      add_plugin(alloc(mbp_dt_tg, m, m_tg, mdl, m_non_basic_vars, m_seen));
+      add_plugin(alloc(mbp_basic_tg, m, m_tg, mdl, m_non_basic_vars, m_seen));
+    }
+
+    void add_plugin(mbp_tg_plugin* p) {
+      m_plugins.push_back(p);
+    }
+
+    void enable_model_splitting() {
+      for (auto p : m_plugins) p->use_model();
+    }
+
+    mbp_tg_plugin* get_plugin(family_id fid) {
+      for(auto p : m_plugins) if (p->get_family_id() == fid) return p;
+      return nullptr;
+    }
+
 public:
-  impl(ast_manager &m, params_ref const &p)
-    : m(m), m_array_util(m), m_dt_util(m), m_params(p) {
-  }
+    impl(ast_manager &m, params_ref const &p)
+      : m(m), m_array_util(m), m_dt_util(m), m_params(p), m_tg(m) {
+    }
+
+    ~impl() {
+        std::for_each(m_plugins.begin(), m_plugins.end(), delete_proc<mbp_tg_plugin>());
+    }
 
   void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl, bool reduce_all_selects = false) {
     if (!reduce_all_selects && vars.empty())
       return;
 
-    //variables to apply projection rules on
-    for(auto v : vars) if (is_non_basic(v)) m_non_basic_vars.insert(v);
-
-    mbp::term_graph tg(m);
-    // mark vars as non-ground.
-    tg.add_vars(vars);
-    // treat eq literals as term in the egraph
-    tg.set_explicit_eq();
-
-    expr_ref_vector fml(m);
-    flatten_and(inp, fml);
-    tg.add_lits(fml);
-
-    mbp_array_tg m_array_project(m, tg, mdl, m_non_basic_vars, m_seen);
-    mbp_dt_tg m_dt_project(m, tg, mdl, m_non_basic_vars, m_seen);
-    mbp_basic_tg m_basic_project(m, tg, mdl, m_non_basic_vars, m_seen);
-
+    init(vars, inp, mdl, reduce_all_selects);
     //Apply MBP rules till saturation
-    bool p1, p2, p3;
+    saturate(vars);
     // apply rules without splitting on model
-    do {
-      p1 = m_array_project();
-      add_vars(m_array_project.get_new_vars(), vars);
-      p2 = m_dt_project();
-      add_vars(m_dt_project.get_new_vars(), vars);
-      p3 = m_basic_project();
-    } while(p1 || p2 || p3);
+    enable_model_splitting();
 
     // do complete mbp
-    m_array_project.use_model();
-    m_dt_project.use_model();
-    m_dt_project.use_model();
+    saturate(vars);
 
-    //apply both rules until fixed point
-    do {
-      p1 = m_array_project();
-      add_vars(m_array_project.get_new_vars(), vars);
-      p2 = m_dt_project();
-      add_vars(m_dt_project.get_new_vars(), vars);
-      p3 = m_basic_project();
-    } while(p1 || p2 || p3);
-
-    TRACE("mbp_tg", tout << "mbp tg " << mk_and(tg.get_lits()) << " and vars " << vars;);
+    TRACE("mbp_tg", tout << "mbp tg " << mk_and(m_tg.get_lits()) << " and vars " << vars;);
     TRACE("mbp_tg_verbose",
           obj_hashtable<app> vars_tmp;
-          collect_uninterp_consts(mk_and(tg.get_lits()), vars_tmp);
+          collect_uninterp_consts(mk_and(m_tg.get_lits()), vars_tmp);
           for(auto a : vars_tmp) tout << mk_pp(a->get_decl(), m) << "\n";
-          for(auto b : tg.get_lits()) tout << expr_ref(b, m) << "\n";
+          for(auto b : m_tg.get_lits()) tout << expr_ref(b, m) << "\n";
           for(auto a : vars) tout << expr_ref(a, m) << " " ;);
 
     // apply the read_over_write rule to all terms, including those without
     // variables DOES not always remove the original read_over_write term but
     // introduces equalities and disequalities where necessary
     if (reduce_all_selects) {
-      m_array_project.set_reduce_all_selects();
+      mbp_array_tg* p = reinterpret_cast<mbp_array_tg*>(get_plugin(m_array_util.get_family_id()));
+      SASSERT(p);
+      p->set_reduce_all_selects();
       //resets m_vars_set
-      m_array_project.reset();
+      p->reset();
       bool progress = true;
-      while(progress) progress = m_array_project();
+      while(progress) progress = p->apply();
     }
 
     // 1. Apply qe_lite to remove all c-ground variables
@@ -127,7 +151,7 @@ public:
     // 3. Re-apply qe_lite to remove non-core variables
 
     //Step 1.
-    tg.qel(vars, inp);
+    m_tg.qel(vars, inp);
 
     //Step 2.
     // Variables that appear as array indices or values cannot be eliminated if
@@ -155,7 +179,7 @@ public:
     };
 
     //Step 3.
-    tg.qel(vars, inp, &non_core);
+    m_tg.qel(vars, inp, &non_core);
 
     // for all remaining non-cgr bool, dt, array variables, add v = mdl(v)
     expr_sparse_mark s_vars;
@@ -163,7 +187,7 @@ public:
       if (m_dt_util.is_datatype(v->get_sort()) || m_array_util.is_array(v) || m.is_bool(v)) {
         CTRACE("qe", m_array_util.is_array(v) || m_dt_util.is_datatype(v->get_sort()), tout << "Could not eliminate  " << v->get_name() << "\n";);
         s_vars.mark(v);
-        tg.add_eq(v, mdl(v));
+        m_tg.add_eq(v, mdl(v));
       }
     }
 
@@ -175,7 +199,7 @@ public:
     };
 
     // remove all substituted variables
-    tg.qel(vars, inp, &substituted);
+    m_tg.qel(vars, inp, &substituted);
   }
 };
 

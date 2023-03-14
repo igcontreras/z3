@@ -82,7 +82,7 @@ void mbp_dt_tg::deconstruct_neq(expr* cons, expr* rhs) {
     }
 }
 
-bool mbp_dt_tg::operator()() {
+bool mbp_dt_tg::apply() {
     expr *cons, *rhs, *f, *term;
     bool progress = false;
     m_new_vars.reset();
