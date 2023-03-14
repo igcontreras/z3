@@ -83,6 +83,7 @@ class mbp_dt_tg: public mbp_tg_plugin {
         // iterate through all terms in m_tg and apply all datatype MBP rules once
         // returns true if any rules were applied
         bool apply() override;
+        ~mbp_dt_tg() override = default;
         void use_model() override { m_use_mdl = true; }
         void get_new_vars(app_ref_vector*& t) override { t = &m_new_vars; }
         family_id get_family_id() const override { return m_dt_util.get_family_id(); }

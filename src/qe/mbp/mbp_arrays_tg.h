@@ -124,6 +124,7 @@ class mbp_array_tg: public mbp_tg_plugin {
             m_vars_set.reset();
             //Not resetting terms because get_terms calls resize on terms
         }
+        ~mbp_array_tg() override = default;
         void get_new_vars(app_ref_vector*& t) override { t = &m_new_vars; }
         family_id get_family_id() const override { return m_array_util.get_family_id(); }
 
