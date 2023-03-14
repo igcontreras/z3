@@ -32,7 +32,12 @@ bool mbp_basic_tg::apply() {
     m_tg.get_terms(terms, false);
     for (unsigned i = 0; i < terms.size(); i++) {
         term = terms.get(i);
+        //Unsupported operators
+        SASSERT(!m.is_and(term));
+        SASSERT(!m.is_or(term));
         SASSERT(!m.is_distinct(term));
+        SASSERT(!m.is_implies(term));
+
         if (is_seen(term)) continue;
         if (m_tg.is_cgr(term)) continue;
         if (m.is_ite(term, c, th, el)) {
