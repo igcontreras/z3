@@ -12,6 +12,12 @@ Abstract:
 Author:
 
     Arie Gurfinkel
+    Isabel Garcia (igcontreras)
+    Hari Govind V K (hgvk94)
+
+Revision History:
+
+    Added implementation of qe_lite using term graph
 
 Notes:
 
@@ -23,6 +29,7 @@ Notes:
 #include "util/plugin_manager.h"
 #include "qe/mbp/mbp_solve_plugin.h"
 #include "model/model.h"
+#include "util/vector.h"
 
 namespace mbp {
 
@@ -71,8 +78,6 @@ namespace mbp {
         bool is_internalized(expr *a);
 
         bool term_lt(term const &t1, term const &t2);
-        void pick_root (term &t);
-        void pick_roots();
 
         void reset_marks();
         bool marks_are_clear();
