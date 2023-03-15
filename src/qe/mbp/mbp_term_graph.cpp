@@ -795,22 +795,35 @@ namespace mbp {
     /// Order of preference for roots of equivalence classes
     /// XXX This should be factored out to let clients control the preference
     bool term_graph::term_lt(term const &t1, term const &t2) {
-        // prefer constants over applications
-        // prefer uninterpreted constants over values
-        // prefer smaller expressions over larger ones
-        if (t1.get_num_args() == 0 || t2.get_num_args() == 0) {
-            if (t1.get_num_args() == t2.get_num_args()) {
-                // t1.get_num_args() == t2.get_num_args() == 0
-                if (m.is_value(t1.get_expr()) == m.is_value(t2.get_expr()))
-                    return t1.get_id() < t2.get_id();
-                return m.is_value(t2.get_expr());
-            }
-            return t1.get_num_args() < t2.get_num_args();
-        }
+      // prefer constants over applications (ground)
+      // prefer applications over variables (for non-ground)
+      // prefer uninterpreted constants over values
+      // prefer smaller expressions over larger ones
 
-        unsigned sz1 = get_num_exprs(t1.get_expr());
-        unsigned sz2 = get_num_exprs(t2.get_expr());
-        return sz1 < sz2;
+      // -- commented out for performance, pick_root already checks if the term
+      // -- is cyclic, but if term_lt should be called outside of pick_root, it
+      // -- could be uncommented to prefer non-cyclic terms.
+
+      // bool t1_cyclic = is_cyclic(t1);
+      // bool t2_cyclic = is_cyclic(t2);
+      // if (!t1_cyclic && t2_cyclic)
+      //   return true;
+      // else if (t1_cyclic && !t2_cyclic)
+      //   return false;
+      if (t1.get_num_args() == 0 || t2.get_num_args() == 0) {
+        if (t1.get_num_args() == t2.get_num_args()) {
+          if (m.is_value(t1.get_expr()) == m.is_value(t2.get_expr()))
+            return t1.get_id() < t2.get_id();
+          return m.is_value(t2.get_expr());
+        }
+        return t1.get_num_args() < t2.get_num_args();
+      }
+
+      // XXX this is the internalized size, not the size with the new
+      // representatives
+      unsigned sz1 = get_num_exprs(t1.get_expr());
+      unsigned sz2 = get_num_exprs(t2.get_expr());
+      return sz1 < sz2;
     }
 
   bool all_children_picked(term* t) {
