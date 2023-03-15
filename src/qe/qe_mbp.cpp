@@ -289,15 +289,29 @@ public:
 
     void preprocess_solve(model& model, app_ref_vector& vars, expr_ref_vector& fmls) {
         extract_literals(model, vars, fmls);
+        expr_ref e(m);
+        e = mk_and(fmls);
+        do_qel(vars, e);
+        fmls.reset();
+        flatten_and(e, fmls);
         bool change = true;
         while (change && !vars.empty()) {
-            change = solve(model, vars, fmls);
+            change = false;
+            e = mk_and(fmls);
+            do_qel(vars, e);
+            fmls.reset();
+            flatten_and(e, fmls);
             for (auto* p : m_plugins) {
                 if (p && p->solve(model, vars, fmls)) {
                     change = true;
                 }
             }
         }
+        //rewrite as_const_arr terms
+        expr_ref fml(m);
+        fml = mk_and(fmls);
+        rewrite_as_const_arr(fml, model, fml);
+        flatten_and(fml, fmls);
     }
 
     bool validate_model(model& model, expr_ref_vector const& fmls) {
