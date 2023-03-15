@@ -333,7 +333,48 @@ namespace mbp {
         term_graph::deqs &get_deqs() { return m_class_props.m_deqs; }
     };
 
+  namespace expr_contains_and_update_cache {
+    struct not_in_core {};
+    struct proc {
+      std::function<bool(expr*)> *m_non_core;
+      obj_map<expr, bool>& m_cache;
+      proc(std::function<bool(expr*)> *nc, obj_map<expr, bool>& c): m_non_core(nc), m_cache(c) {}
+      void operator()(var *n) const {}
+      void operator()(app *n) {
+        if (m_cache.contains(n)) {
+          if (!m_cache[n]) throw not_in_core();
+          else return;
+        }
+        if ((*m_non_core)(n)) {
+          m_cache.insert(n, false);
+          throw not_in_core();
+        }
+        m_cache.insert(n, true);
+      }
+      void operator()(quantifier *n) const {}
+    };
+  }
+
+  //TODO: cache inside terms to save space
+  class filter_core {
+    std::function<bool(expr*)> *m_non_core;
+    obj_map<expr, bool> m_cache;
+    void reset() { m_cache.reset(); }
+    bool expr_contains(expr* e) {
+      try {
+        expr_contains_and_update_cache::proc t(m_non_core, m_cache);
+        quick_for_each_expr(t, e);
+        return false;
+      }
+      catch (expr_contains_and_update_cache::not_in_core) {
+        return true;
+      }
     }
+
+    public:
+      filter_core(std::function<bool(expr*)> *non_core): m_non_core(non_core) { reset(); }
+      bool operator()(expr* e) { return !expr_contains(e); }
+  };
 
   static std::ostream& operator<<(std::ostream& out, term const& t) {
     return t.display(out);
@@ -709,6 +750,24 @@ namespace mbp {
         }
     }
 
+    void term_graph::mk_qe_lite_equalities(term &t, expr_ref_vector &out, filter_core* in_core) {
+        SASSERT(t.is_repr());
+        if (t.get_class_size() == 1) return;
+        expr_ref rep(m);
+        rep = mk_app(t);
+        if (in_core && !(*in_core)(rep)) return;
+        for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
+          expr * e = it->get_expr();
+          SASSERT(is_app(e));
+          app * a = to_app(e);
+          // don't add equalities for vars to eliminate
+          if(m_is_var.contains(a->get_decl())) continue;
+          expr *mem  = mk_app_core(e);
+          if(rep != mem && (!in_core || (*in_core)(mem)))
+            out.push_back(m.mk_eq(rep, mem));
+        }
+    }
+
     void term_graph::reset_marks() {
         for (term * t : m_terms) {
             t->set_mark(false);
@@ -926,6 +985,55 @@ namespace mbp {
             args.push_back(mk_app(c->get_expr()));
           lits.push_back(m.mk_distinct(args.size(), args.data()));
         }
+
+  }
+  //assumes that representatives have already been picked
+    void term_graph::to_lits_qe_lite(expr_ref_vector &lits, std::function<bool(expr*)> *non_core) {
+      DEBUG_CODE(for(auto t : m_terms) SASSERT(t->get_repr()););
+      DEBUG_CODE(for(auto t : m_terms) SASSERT(!t->is_cgr() || t->get_repr()->is_cgr()););
+      filter_core in_core(non_core);
+      //literals other than eq, neq, distinct
+      for (expr *a : m_lits) {
+        if (!is_internalized(a)) continue;
+        if (m_explicit_eq && get_term(a)->is_eq_neq()) continue;
+        expr_ref r(m);
+        r = mk_app(a);
+        if (non_core == nullptr || in_core(r))
+          lits.push_back(r);
+      }
+
+      //equalities
+      for (term *t : m_terms) {
+        if (t->is_eq_neq()) continue;
+        if (!t->is_repr()) continue;
+        if (non_core)
+          mk_qe_lite_equalities(*t, lits, &in_core);
+        else
+          mk_qe_lite_equalities(*t, lits, nullptr);
+      }
+      //disequalities and distinct
+      //TODO: use seen to prevent duplicate disequalities
+      expr_ref e1(m), e2(m), d(m), distinct(m);
+      expr_ref_vector args(m);
+      for (auto p : m_deq_pairs) {
+        e1 = mk_app(*(p.first->get_repr()));
+        e2 = mk_app(*(p.second->get_repr()));
+        if (non_core == nullptr || (in_core(e1) && in_core(e2)))
+          lits.push_back(mk_neq(m, e1, e2));
+      }
+
+      for (auto t : m_deq_distinct) {
+        args.reset();
+        for (auto c : t) {
+          d = mk_app(*(c->get_repr()));
+          if (non_core == nullptr || in_core(d))
+            args.push_back(d);
+        }
+        if (args.size() < 2) continue;
+        if (args.size() == 2) distinct = mk_neq(m, args.get(0), args.get(1));
+        else distinct = m.mk_distinct(args.size(), args.data());
+        lits.push_back(distinct);
+      }
     }
 
     expr_ref term_graph::to_expr(bool repick_repr) {
@@ -1484,6 +1592,42 @@ namespace mbp {
         }
 
     };
+
+
+  //produce a quantifier reduction of the formula stored in the term graph
+  // removes from `vars` the variables that have a ground representative
+  // modifies `vars` to keep the variables that could not be eliminated
+  void term_graph::qel(app_ref_vector &vars, expr_ref &fml, std::function<bool(expr*)> *non_core) {
+    unsigned i = 0;
+    for(auto v : vars) {
+      if (is_internalized(v)) {
+        vars[i++] = v;
+      }
+    }
+    vars.shrink(i);
+    pick_repr();
+    refine_repr();
+
+    expr_ref_vector lits(m);
+    to_lits_qe_lite(lits, non_core);
+    if (lits.size() == 0)
+      fml = m.mk_true();
+    else if (lits.size() == 1)
+      fml = lits[0].get();
+    else
+      fml = m.mk_and(lits);
+
+    // Remove all variables that are do not apprear in the formula
+    expr_sparse_mark mark;
+    mark_all_sub_expr marker(mark);
+    quick_for_each_expr(marker, fml);
+    i = 0;
+    for (auto v : vars) {
+      if (mark.is_marked(v))
+        vars[i++] = v;
+    }
+    vars.shrink(i);
+  }
 
     void term_graph::set_vars(func_decl_ref_vector const &decls, bool exclude) {
       m_is_var.set_decls(decls, exclude);
