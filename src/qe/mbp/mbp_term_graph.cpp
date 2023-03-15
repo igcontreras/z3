@@ -964,11 +964,13 @@ namespace mbp {
 
         for (expr * a : m_lits) {
             if (is_internalized(a)) {
-                lits.push_back (::to_app(mk_app(a)));
+              if (m_explicit_eq && get_term(a)->is_eq_neq()) continue;
+              lits.push_back (::to_app(mk_app(a)));
             }
         }
 
         for (term * t : m_terms) {
+          if (t->is_eq_neq()) continue;
           if (!t->is_repr())
             continue;
           else if (all_equalities)
