@@ -32,8 +32,10 @@ Revision History:
 #include "model/model_evaluator.h"
 #include "model/model_pp.h"
 #include "qe/lite/qe_lite.h"
+#include "qe/lite/qel.h"
 #include "qe/mbp/mbp_arith.h"
 #include "qe/mbp/mbp_arrays.h"
+#include "qe/mbp/mbp_qel.h"
 #include "qe/mbp/mbp_datatypes.h"
 
 using namespace qe;
@@ -363,11 +365,22 @@ public:
         TRACE("qe", tout << vars << " " << fmls << "\n";);
     }
 
-    void do_qe_lite(app_ref_vector& vars, expr_ref& fml) {
+  void do_qe_lite(app_ref_vector& vars, expr_ref& fml) {
         qe_lite qe(m, m_params, false);
         qe(vars, fml);
         m_rw(fml);
         TRACE("qe", tout << "After qe_lite:\n" << fml << "\n" << "Vars: " << vars << "\n";);
+        SASSERT(!m.is_false(fml));
+    }
+
+
+    void do_qel(app_ref_vector &vars, expr_ref &fml) {
+        qel qe(m, m_params);
+        qe(vars, fml);
+        m_rw(fml);
+        TRACE("qe", tout << "After qel:\n"
+                         << fml << "\n"
+                         << "Vars: " << vars << "\n";);
         SASSERT(!m.is_false(fml));
     }
 
@@ -377,6 +390,16 @@ public:
         project_bools(mdl, vars, fmls);
         fml = mk_and(fmls);
     }
+
+  void tg_project(app_ref_vector &vars, model &mdl, expr_ref &fml, bool reduce_all_selects) {
+      flatten_and(fml);
+      mbp_qel mbptg(m, m_params);
+      mbptg(vars, fml, mdl, reduce_all_selects);
+      m_rw(fml);
+      TRACE("qe", tout << "After mbp_tg:\n"
+            << fml << " models " << mdl.is_true(fml) << "\n"
+            << "Vars: " << vars << "\n";);
+  }
 
     void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {
         TRACE("qe", tout << "Before projection:\n" << fml << "\n" << "Vars: " << vars << "\n";);
