@@ -99,11 +99,11 @@ struct mbp_array_tg::impl {
         return has_stores(to_app(t)->get_arg(0));
     }
 
-    bool should_create_peq(expr* e) {
-        return m.is_eq(e) && should_create_peq(to_app(e)->get_arg(0), to_app(e)->get_arg(1));
+    bool is_implicit_peq(expr* e) {
+        return m.is_eq(e) && is_implicit_peq(to_app(e)->get_arg(0), to_app(e)->get_arg(1));
     }
 
-    bool should_create_peq(expr* lhs, expr* rhs) {
+    bool is_implicit_peq(expr* lhs, expr* rhs) {
         return m_array_util.is_array(lhs) && m_array_util.is_array(rhs) && (has_var(lhs) || has_var(rhs));
     }
 
@@ -223,7 +223,6 @@ struct mbp_array_tg::impl {
             i++;
         }
         m_tg.add_lit(eq);
-        m_tg.add_lit(m.mk_true());
         m_tg.add_eq(p.mk_peq(), m.mk_true());
         TRACE("mbp_tg", tout << "added lit  " << eq;);
     }
@@ -265,7 +264,7 @@ struct mbp_array_tg::impl {
             if (m_seen.is_marked(term)) continue;
             if (!m_reduce_all_selects && m_tg.is_cgr(term)) continue;
             TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
-            if (should_create_peq(term)) {
+            if (is_implicit_peq(term)) {
                 // rewrite array eq as peq
                 mark_seen(term);
                 progress = true;

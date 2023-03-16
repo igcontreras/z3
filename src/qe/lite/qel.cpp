@@ -6,7 +6,7 @@
 
 Abstract:
 
-    Light weight partial quantifier-elimination for cubes using term graphs
+    Quantifier-elimination using term graphs
 
 Author:
 

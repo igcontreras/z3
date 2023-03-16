@@ -124,10 +124,10 @@ namespace mbp {
         term_graph(ast_manager &m);
         ~term_graph();
 
-      const expr_ref_vector& get_lits() const { return m_lits; }
-      void get_terms(expr_ref_vector& res, bool exclude_cground = true);
-      bool is_cgr(expr* e);
-      unsigned size() { return m_terms.size(); }
+        const expr_ref_vector& get_lits() const { return m_lits; }
+        void get_terms(expr_ref_vector& res, bool exclude_cground = true);
+        bool is_cgr(expr* e);
+        unsigned size() { return m_terms.size(); }
 
         void set_vars(func_decl_ref_vector const& decls, bool exclude = true);
         void set_vars(app_ref_vector const &vars, bool exclude = true);
@@ -195,12 +195,9 @@ namespace mbp {
         void  add_model_based_terms(model& mdl, expr_ref_vector const& terms);
         expr* rep_of(expr* e);
 
-      // new methods by IG
         using deqs = bit_vector;
         struct add_deq_proc {
-          uint64_t m_deq_cnt =
-              0; // TODO: how can I declare a type for a very big number?
-                 //       is this a bad idea?
+          uint64_t m_deq_cnt = 0;
           void operator()(term *t1, term *t2);
           void operator()(ptr_vector<term> &ts);
         };

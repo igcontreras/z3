@@ -226,8 +226,8 @@ namespace mbp {
 
         unsigned deg() const { return m_children.size(); }
         unsigned get_id() const { return m_expr->get_id();}
-        bool is_eq_neq() const { return m_is_eq || m_is_neq || m_is_distinct; }
-        bool is_eq_peq() const { return m_is_eq || m_is_peq; }
+        bool is_eq_or_neq() const { return m_is_eq || m_is_neq || m_is_distinct; }
+        bool is_eq_or_peq() const { return m_is_eq || m_is_peq; }
         bool is_neq() const { return m_is_neq; }
         void set_neq_child() { m_is_neq_child = true; }
         bool is_neq_child() const { return m_is_neq_child; }
@@ -390,10 +390,10 @@ namespace mbp {
 
   // distinct(ts)
   void term_graph::add_deq_proc::operator()(ptr_vector<term> &ts) {
-
     for (auto t : ts) {
       term::set_deq(t->get_root().get_deqs(), m_deq_cnt);
     }
+    SASSERT(m_deq_cnt < UINT64_MAX);
     m_deq_cnt++;
   }
 
@@ -505,7 +505,7 @@ namespace mbp {
     std::function<bool(term*)> fil = nullptr;
     if (exclude_cground) {
       fil = [](term* t) {
-        return !t->is_neq_child() && (t->is_eq_peq() || !t->is_cgr());
+        return !t->is_neq_child() && (t->is_eq_or_peq() || !t->is_cgr());
       };
     }
     else {
@@ -522,7 +522,7 @@ namespace mbp {
   bool term_graph::is_cgr(expr *e) {
     if (!is_internalized(e)) return false;
     term* t = get_term(e);
-    return (!t->is_eq_peq() && t->is_cgr());
+    return (!t->is_eq_or_peq() && t->is_cgr());
   }
 
   bool term_graph::is_internalized(expr *a) {
@@ -620,8 +620,8 @@ namespace mbp {
       if (!t) mk_term(d);
     }
 
+   //Assumes that a1 != a2 is satisfiable
     void term_graph::internalize_deq(expr *a1, expr *a2) {
-      // TODO: what do not add disequalities of interpreted terms? (e.g. 1 != 2)
       term *t1 = internalize_term(a1);
       term *t2 = internalize_term(a2);
       m_add_deq(t1, t2);
@@ -786,7 +786,14 @@ namespace mbp {
         if (t.get_class_size() == 1) return;
         expr_ref rep(m);
         rep = mk_app(t);
-        if (in_core && !(*in_core)(rep)) return;
+        if (in_core && !(*in_core)(rep)) {
+          TRACE("qe_debug", tout << "repr not in core " << t;
+                for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
+                  tout << *it << "\n";
+                };);
+          DEBUG_CODE(for(term *it = &t.get_next(); it != &t; it = &it->get_next()) SASSERT(!it->is_cgr() || !(*in_core)(mk_app_core(it->get_expr()))););
+          return;
+        }
         for (term *it = &t.get_next(); it != &t; it = &it->get_next()) {
           expr * e = it->get_expr();
           SASSERT(is_app(e));
@@ -827,16 +834,6 @@ namespace mbp {
       // prefer uninterpreted constants over values
       // prefer smaller expressions over larger ones
 
-      // -- commented out for performance, pick_root already checks if the term
-      // -- is cyclic, but if term_lt should be called outside of pick_root, it
-      // -- could be uncommented to prefer non-cyclic terms.
-
-      // bool t1_cyclic = is_cyclic(t1);
-      // bool t2_cyclic = is_cyclic(t2);
-      // if (!t1_cyclic && t2_cyclic)
-      //   return true;
-      // else if (t1_cyclic && !t2_cyclic)
-      //   return false;
       if (t1.get_num_args() == 0 || t2.get_num_args() == 0) {
         if (t1.get_num_args() == t2.get_num_args()) {
           if (m.is_value(t1.get_expr()) == m.is_value(t2.get_expr()))
@@ -935,7 +932,9 @@ namespace mbp {
     r->mk_repr();
   }
 
-  // check if t makes a cycle if chosen as repr
+  // check if t makes a cycle if chosen as repr. This function assumes that the
+  // current repr doesn't have cycles. If there is a cycle in a child class the
+  // function doesn't terminate.
   bool term_graph::makes_cycle(term* t) {
     term&  r = t->get_root();
     ptr_vector<term> todo;
@@ -1004,13 +1003,13 @@ namespace mbp {
 
         for (expr * a : m_lits) {
             if (is_internalized(a)) {
-              if (m_explicit_eq && get_term(a)->is_eq_neq()) continue;
+              if (m_explicit_eq && get_term(a)->is_eq_or_neq()) continue;
               lits.push_back (::to_app(mk_app(a)));
             }
         }
 
         for (term * t : m_terms) {
-          if (t->is_eq_neq()) continue;
+          if (t->is_eq_or_neq()) continue;
           if (!t->is_repr())
             continue;
           else if (all_equalities)
@@ -1041,7 +1040,7 @@ namespace mbp {
       //literals other than eq, neq, distinct
       for (expr *a : m_lits) {
         if (!is_internalized(a)) continue;
-        if (m_explicit_eq && get_term(a)->is_eq_neq()) continue;
+        if (m_explicit_eq && get_term(a)->is_eq_or_neq()) continue;
         expr_ref r(m);
         r = mk_app(a);
         if (non_core == nullptr || in_core(r))
@@ -1050,7 +1049,7 @@ namespace mbp {
 
       //equalities
       for (term *t : m_terms) {
-        if (t->is_eq_neq()) continue;
+        if (t->is_eq_or_neq()) continue;
         if (!t->is_repr()) continue;
         if (non_core)
           mk_qe_lite_equalities(*t, lits, &in_core);
@@ -1154,7 +1153,7 @@ namespace mbp {
             ptr_vector<term> worklist;
             for (term * t : m_tg.m_terms) {
                 // skip pure terms
-	        if (!in_term2app(*t) && !t->is_eq_neq()) {
+	        if (!in_term2app(*t) && !t->is_eq_or_neq()) {
                     worklist.push_back(t);
                     t->set_mark(true);
                 }
@@ -1263,7 +1262,7 @@ namespace mbp {
             m_decl2terms.reset();
             m_decls.reset();
             for (term *t : m_tg.m_terms) {
-	        if (t->is_eq_neq()) continue;
+	        if (t->is_eq_or_neq()) continue;
                 expr* e = t->get_expr();
                 if (!is_app(e)) continue;
                 if (!is_projected(*t)) continue;
@@ -1373,7 +1372,7 @@ namespace mbp {
         template<bool pure>
         void mk_equalities(expr_ref_vector &res) {
             for (term *t : m_tg.m_terms) {
-	        if (t->is_eq_neq()) continue;
+	        if (t->is_eq_or_neq()) continue;
                 if (!t->is_root()) continue;
                 if (!m_root2rep.contains(t->get_id())) continue;
                 if (pure)
@@ -1550,7 +1549,7 @@ namespace mbp {
             };
             model::scoped_model_completion _smc(mdl, true);
             for (term *t : m_tg.m_terms) {
-	        if (t->is_eq_neq()) continue;
+	        if (t->is_eq_or_neq()) continue;
                 expr* a = t->get_expr();
                 if (!is_app(a)) 
                     continue;
@@ -1565,7 +1564,7 @@ namespace mbp {
         expr_ref_vector shared_occurrences(family_id fid) {
             expr_ref_vector result(m);
             for (term *t : m_tg.m_terms) {
-	        if (t->is_eq_neq()) continue;
+	        if (t->is_eq_or_neq()) continue;
                 expr* e = t->get_expr();
                 if (e->get_sort()->get_family_id() != fid) continue;
                 for (term * p : term::parents(t->get_root())) {
@@ -1590,7 +1589,7 @@ namespace mbp {
 
             ptr_vector<term> worklist;
             for (term * t : m_tg.m_terms) {
-	        if (t->is_eq_neq()) continue;
+	        if (t->is_eq_or_neq()) continue;
                 worklist.push_back(t);
                 t->set_mark(true);
             }
@@ -1663,7 +1662,7 @@ namespace mbp {
     else
       fml = m.mk_and(lits);
 
-    // Remove all variables that are do not apprear in the formula
+    // Remove all variables that are do not appear in the formula
     expr_sparse_mark mark;
     mark_all_sub_expr marker(mark);
     quick_for_each_expr(marker, fml);

@@ -72,7 +72,7 @@ private:
       } while(progress);
     }
 
-    void init(app_ref_vector &vars, expr_ref &inp, model& mdl) {
+    void init(app_ref_vector &vars, expr_ref &fml, model& mdl) {
       //variables to apply projection rules on
       for(auto v : vars) if (is_non_basic(v)) m_non_basic_vars.insert(v);
 
@@ -81,9 +81,9 @@ private:
       // treat eq literals as term in the egraph
       m_tg.set_explicit_eq();
 
-      expr_ref_vector fml(m);
-      flatten_and(inp, fml);
-      m_tg.add_lits(fml);
+      expr_ref_vector fmls(m);
+      flatten_and(fml, fmls);
+      m_tg.add_lits(fmls);
 
       add_plugin(alloc(mbp_array_tg, m, m_tg, mdl, m_non_basic_vars, m_seen));
       add_plugin(alloc(mbp_dt_tg, m, m_tg, mdl, m_non_basic_vars, m_seen));
@@ -112,17 +112,19 @@ public:
         std::for_each(m_plugins.begin(), m_plugins.end(), delete_proc<mbp_tg_plugin>());
     }
 
-  void operator()(app_ref_vector &vars, expr_ref &inp, model& mdl, bool reduce_all_selects = false) {
+  void operator()(app_ref_vector &vars, expr_ref &fml, model& mdl, bool reduce_all_selects = false) {
     if (!reduce_all_selects && vars.empty())
       return;
 
-    init(vars, inp, mdl);
+    init(vars, fml, mdl);
     //Apply MBP rules till saturation
+
+    // First, apply rules without splitting on model
     saturate(vars);
-    // apply rules without splitting on model
+
     enable_model_splitting();
 
-    // do complete mbp
+    // Do complete mbp
     saturate(vars);
 
     TRACE("mbp_tg", tout << "mbp tg " << m_tg.to_expr(false) << " and vars " << vars;);
@@ -152,14 +154,14 @@ public:
     // 3. Re-apply qe_lite to remove non-core variables
 
     //Step 1.
-    m_tg.qel(vars, inp);
+    m_tg.qel(vars, fml);
 
     //Step 2.
     // Variables that appear as array indices or values cannot be eliminated if
     // they are not c-ground. They are core variables
     // All other Array/ADT variables can be eliminated, they are redundant.
     obj_hashtable<app> core_vars;
-    collect_selstore_vars(inp, core_vars, m);
+    collect_selstore_vars(fml, core_vars, m);
 
     std::function<bool(app*)> is_red =
             [&](app* v) {
@@ -180,9 +182,9 @@ public:
     };
 
     //Step 3.
-    m_tg.qel(vars, inp, &non_core);
+    m_tg.qel(vars, fml, &non_core);
 
-    CTRACE("mbp_tg", !vars.empty(), tout << "before substitution " << inp << "\n";);
+    CTRACE("mbp_tg", !vars.empty(), tout << "before substitution " << fml << "\n";);
     // for all remaining non-cgr bool, dt, array variables, add v = mdl(v)
     expr_sparse_mark s_vars;
     for (auto v : vars) {
@@ -201,7 +203,7 @@ public:
     };
 
     // remove all substituted variables
-    m_tg.qel(vars, inp, &substituted);
+    m_tg.qel(vars, fml, &substituted);
   }
 };
 
