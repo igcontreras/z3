@@ -18,25 +18,57 @@ Revision History:
 
 --*/
 
-#include "ast/rewriter/expr_safe_replace.h"
+#include "qe/qe_mbp.h"
 #include "ast/ast_pp.h"
 #include "ast/ast_util.h"
-#include "ast/occurs.h"
-#include "ast/rewriter/th_rewriter.h"
 #include "ast/expr_functors.h"
 #include "ast/for_each_expr.h"
+#include "ast/occurs.h"
+#include "ast/rewriter/expr_safe_replace.h"
+#include "ast/rewriter/th_rewriter.h"
+#include "ast/rewriter/rewriter.h"
+#include "ast/rewriter/rewriter_def.h"
 #include "ast/scoped_proof.h"
-#include "qe/qe_mbp.h"
+#include "model/model_evaluator.h"
+#include "model/model_pp.h"
+#include "qe/lite/qe_lite_tactic.h"
+#include "qe/lite/qel.h"
 #include "qe/mbp/mbp_arith.h"
 #include "qe/mbp/mbp_arrays.h"
+#include "qe/mbp/mbp_qel.h"
 #include "qe/mbp/mbp_datatypes.h"
-#include "qe/lite/qe_lite_tactic.h"
-#include "model/model_pp.h"
-#include "model/model_evaluator.h"
-
 
 using namespace qe;
 
+// rewrite all occurrences of (as const arr c) to (as const arr v) where v = m_eval(c)
+namespace  {
+    struct app_const_arr_rewriter : public default_rewriter_cfg {
+            ast_manager &m;
+            array_util m_arr;
+            model_evaluator m_eval;
+            expr_ref val;
+
+            app_const_arr_rewriter(ast_manager& man, model& mdl): m(man), m_arr(m), m_eval(mdl), val(m) {
+                m_eval.set_model_completion(false);
+            }
+            br_status reduce_app(func_decl *f, unsigned num, expr *const *args,
+                                 expr_ref &result, proof_ref &result_pr) {
+                if (m_arr.is_const(f) && !m.is_value(args[0])) {
+                    val = m_eval(args[0]);
+                    SASSERT(m.is_value(val));
+                    result = m_arr.mk_const_array(f->get_range(), val);
+                    return BR_DONE;
+                }
+                return BR_FAILED;
+            }
+    };
+}
+
+void rewrite_as_const_arr(expr* in, model& mdl, expr_ref& out) {
+    app_const_arr_rewriter cfg(out.m(), mdl);
+    rewriter_tpl<app_const_arr_rewriter> rw(out.m(), false, cfg);
+    rw(in, out);
+}
 
 class mbproj::impl {
     ast_manager& m;
@@ -257,15 +289,29 @@ public:
 
     void preprocess_solve(model& model, app_ref_vector& vars, expr_ref_vector& fmls) {
         extract_literals(model, vars, fmls);
+        expr_ref e(m);
+        e = mk_and(fmls);
+        do_qel(vars, e);
+        fmls.reset();
+        flatten_and(e, fmls);
         bool change = true;
         while (change && !vars.empty()) {
-            change = solve(model, vars, fmls);
+            change = false;
+            e = mk_and(fmls);
+            do_qel(vars, e);
+            fmls.reset();
+            flatten_and(e, fmls);
             for (auto* p : m_plugins) {
                 if (p && p->solve(model, vars, fmls)) {
                     change = true;
                 }
             }
         }
+        //rewrite as_const_arr terms
+        expr_ref fml(m);
+        fml = mk_and(fmls);
+        rewrite_as_const_arr(fml, model, fml);
+        flatten_and(fml, fmls);
     }
 
     bool validate_model(model& model, expr_ref_vector const& fmls) {
@@ -333,11 +379,22 @@ public:
         TRACE("qe", tout << vars << " " << fmls << "\n";);
     }
 
-    void do_qe_lite(app_ref_vector& vars, expr_ref& fml) {
+  void do_qe_lite(app_ref_vector& vars, expr_ref& fml) {
         qe_lite qe(m, m_params, false);
         qe(vars, fml);
         m_rw(fml);
         TRACE("qe", tout << "After qe_lite:\n" << fml << "\n" << "Vars: " << vars << "\n";);
+        SASSERT(!m.is_false(fml));
+    }
+
+
+    void do_qel(app_ref_vector &vars, expr_ref &fml) {
+        qel qe(m, m_params);
+        qe(vars, fml);
+        m_rw(fml);
+        TRACE("qe", tout << "After qel:\n"
+                         << fml << "\n"
+                         << "Vars: " << vars << "\n";);
         SASSERT(!m.is_false(fml));
     }
 
@@ -348,48 +405,36 @@ public:
         fml = mk_and(fmls);
     }
 
+  void tg_project(app_ref_vector &vars, model &mdl, expr_ref &fml, bool reduce_all_selects) {
+      flatten_and(fml);
+      mbp_qel mbptg(m, m_params);
+      mbptg(vars, fml, mdl, reduce_all_selects);
+      m_rw(fml);
+      TRACE("qe", tout << "After mbp_tg:\n"
+            << fml << " models " << mdl.is_true(fml) << "\n"
+            << "Vars: " << vars << "\n";);
+  }
+
     void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {
         TRACE("qe", tout << "Before projection:\n" << fml << "\n" << "Vars: " << vars << "\n";);
 
         model_evaluator eval(mdl, m_params);
         eval.set_model_completion(true);
         app_ref_vector other_vars(m);
-        app_ref_vector array_vars(m);
+        app_ref_vector sub_vars(m);
         array_util arr_u(m);
         arith_util ari_u(m);
+        datatype_util dt_u(m);
 
+        do_qel(vars, fml);
+        tg_project(vars, mdl, fml, m_reduce_all_selects);
         flatten_and(fml);
+        m_rw(fml);
+        rewrite_as_const_arr(fml, mdl, fml);
 
-        while (!vars.empty()) {
-
-            do_qe_lite(vars, fml);
-
-            do_qe_bool(mdl, vars, fml);
-
-            // sort out vars into bools, arith (int/real), and arrays
-            for (app* v : vars) {
-                if (arr_u.is_array(v)) {
-                    array_vars.push_back(v);
-                }
-                else {
-                    other_vars.push_back(v);
-                }
-            }
-
-            TRACE("qe", tout << "Array vars: " << array_vars << "\n";);
-
-            vars.reset();
-
-            // project arrays
-            mbp::array_project_plugin ap(m);
-            ap(mdl, array_vars, fml, vars, m_reduce_all_selects);
-            SASSERT(array_vars.empty());
-            m_rw(fml);
-            SASSERT(!m.is_false(fml));
-
-            TRACE("qe",
-                tout << "extended model:\n" << mdl;
-                tout << "Vars: " << vars << "\n";);
+        for (app* v : vars) {
+            SASSERT(!arr_u.is_array(v) && !dt_u.is_datatype(v->get_sort()));
+            other_vars.push_back(v);
         }
 
         // project reals, ints and other variables.
@@ -468,3 +513,4 @@ opt::inf_eps mbproj::maximize(expr_ref_vector const& fmls, model& mdl, app* t, e
     scoped_no_proof _sp(fmls.get_manager());
     return m_impl->maximize(fmls, mdl, t, ge, gt);
 }
+template class rewriter_tpl<app_const_arr_rewriter>;
