@@ -32,6 +32,8 @@ namespace euf {
         };
         kind_t m_kind;
         bool   m_comm;
+        // -- general purpose mark
+        unsigned m_mark:1;
         union {
             void*    m_external;
             uint64_t m_timestamp;
@@ -50,11 +52,10 @@ namespace euf {
         {}
 
     public:
-        justification():
-            m_kind(kind_t::axiom_t),
-            m_comm(false),
-            m_external(nullptr)
-        {}
+      justification()
+          : m_kind(kind_t::axiom_t), m_comm(false), m_external(nullptr) {
+        m_mark = 0;
+      }
 
         static justification axiom() { return justification(); }
         static justification congruence(bool c, uint64_t ts) { return justification(c, ts); }
@@ -65,7 +66,9 @@ namespace euf {
         bool   is_commutative() const { return m_comm; }
         uint64_t timestamp() const { SASSERT(is_congruence()); return m_timestamp; }
         template <typename T>
-        T*  ext() const { SASSERT(is_external()); return static_cast<T*>(m_external); }            
+        T*  ext() const { SASSERT(is_external()); return static_cast<T*>(m_external); }
+        void set_mark(bool mark) { m_mark = mark; }
+        bool is_marked() { return m_mark; }
 
         justification copy(std::function<void*(void*)>& copy_justification) const {
             switch (m_kind) {

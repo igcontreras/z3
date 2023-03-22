@@ -19,7 +19,7 @@ Notes:
     - data structures form the (legacy) SMT solver.
       - it still uses eager path compression.
 
-    NB. The worklist is in reality inheritied from the legacy SMT solver. 
+    NB. The worklist is in reality inherited from the legacy SMT solver. 
     It is claimed to have the same effect as delayed congruence table reconstruction from egg.
     Similar to the legacy solver, parents are partially deduplicated.
     
@@ -212,7 +212,6 @@ namespace euf {
         enode* mk_enode(expr* f, unsigned generation, unsigned num_args, enode * const* args);
         void force_push();
         void set_conflict(enode* n1, enode* n2, justification j);
-        void merge(enode* n1, enode* n2, justification j);
         void merge_th_eq(enode* n, enode* root);
         void merge_justification(enode* n1, enode* n2, justification j);
         void reinsert_parents(enode* r1, enode* r2);
@@ -223,6 +222,7 @@ namespace euf {
         void push_lca(enode* a, enode* b);
         enode* find_lca(enode* a, enode* b);
         void push_to_lca(enode* a, enode* lca);
+        void push_to_lca_reverse(enode *a, enode *lca);
         void push_congruence(enode* n1, enode* n2, bool commutative);
         void push_todo(enode* n);
         void toggle_cgc_enabled(enode* n, bool backtracking);
@@ -235,6 +235,9 @@ namespace euf {
 
         template <typename T>
         void explain_todo(ptr_vector<T>& justifications, cc_justification* cc);
+        template <typename T>
+        void explain_todo_summ(ptr_vector<T> &justifications,
+                               cc_justification *cc, expr_ref_vector &B);
 
         std::ostream& display(std::ostream& out, unsigned max_args, enode* n) const;
         
@@ -244,14 +247,16 @@ namespace euf {
         enode* find(expr* f) const { return m_expr2enode.get(f->get_id(), nullptr); }
         enode* find(expr* f, unsigned n, enode* const* args);
         enode* mk(expr* f, unsigned generation, unsigned n, enode *const* args);
+        enode *rec_mk(expr *f, unsigned generation);
         enode_vector const& enodes_of(func_decl* f);
         void push() { if (!m_to_merge.empty()) propagate(); ++m_num_scopes; }
         void pop(unsigned num_scopes);
 
+        void merge(enode *n1, enode *n2, justification j);
         /**
            \brief merge nodes, all effects are deferred to the propagation step.
          */
-        void merge(enode* n1, enode* n2, void* reason) { merge(n1, n2, justification::external(reason)); }        
+        void merge(enode* n1, enode* n2, void* reason) { merge(n1, n2, justification::external(reason)); }
         void new_diseq(enode* n);
 
 
@@ -314,6 +319,11 @@ namespace euf {
         void explain(ptr_vector<T>& justifications, cc_justification* cc);
         template <typename T>
         void explain_eq(ptr_vector<T>& justifications, cc_justification* cc, enode* a, enode* b);
+        // iuc, assumes that justifications have been marked if they belong to the unsat core
+        void explain_eq_sum(enode *a, enode *b, expr_ref_vector &sum);
+        // TODO: move to private
+        void summarize_trans(enode *a, enode *b, enode *lca, expr_ref_vector &sum);
+
         template <typename T>
         unsigned explain_diseq(ptr_vector<T>& justifications, cc_justification* cc, enode* a, enode* b);
         enode_vector const& nodes() const { return m_nodes; }

@@ -761,158 +761,271 @@ namespace euf {
         explain_todo(justifications, cc);
     }
 
-    template <typename T>
-    unsigned egraph::explain_diseq(ptr_vector<T>& justifications, cc_justification* cc, enode* a, enode* b) {
-        enode* ra = a->get_root(), * rb = b->get_root();
-        SASSERT(ra != rb);
-        if (ra->interpreted() && rb->interpreted()) {
-            explain_eq(justifications, cc, a, ra);
-            explain_eq(justifications, cc, b, rb);
-            return sat::null_bool_var;
+    // struct summarizer {
+    //     expr *m_lhs = nullptr;
+    //     expr *m_rhs = nullptr;
+
+    //     expr_ref_vector &m_sum;
+    //     ast_manager &m_m;
+
+    //     summarizer(expr_ref_vector &summary, ast_manager &m)
+    //         : m_sum(summary), m_m(m){};
+    //     void begin_summary(enode *first) { m_lhs = first; }
+    //     void end_summary(enode *last) {
+    //       m_sum.push_back(m_m.mk_eq(m_lhs, m_rhs));
+    //     }
+    // };
+
+    // assumes that justifications belonging to the part that needs to be
+    // summarized have been marked using the general purpose mark
+    void egraph::explain_eq_sum(enode *a, enode *b, expr_ref_vector & sum) {
+      SASSERT(a->get_root() == b->get_root());
+
+      enode *lca = find_lca(a, b);
+      TRACE("euf_verbose", tout << "explain-eq-summ: " << bpp(a) << " == " << bpp(b)
+                                << " lca: " << bpp(lca) << "\n";);
+
+      summarize_trans(a, b, lca, sum);
+     }
+
+     void egraph::summarize_trans(enode *a, enode *b, enode *lca,
+                                          expr_ref_vector &sum) {
+      enode * n = a;
+      expr * lhs = nullptr;
+
+      // TODO: refactor with the next while loop
+      while (n != lca) {
+            if (!lhs &&
+                n->m_justification.is_marked()) { // summarization begins
+                lhs = n->get_expr();
+            } else if (lhs && !n->m_justification
+                                   .is_marked()) { // summarization ends
+                sum.push_back(m.mk_eq(lhs, n->get_expr()));
+                lhs = nullptr;
+            }
+        SASSERT(n->m_target);
+        n = n->m_target;
+      }
+
+      // we haven't summarized a--->lca because we do not know how b reaches
+      // lca, we keep lhs in mind when we finish reaching lca from b:
+
+      expr *rhs = nullptr;
+
+      n = b;
+
+      // TODO: refactor with the previous
+      while (n != lca) {
+        if (!rhs && n->m_justification.is_marked()) { // new summary starts
+          rhs = n->get_expr();
+        } else if (rhs && !n->m_justification.is_marked()) {
+          sum.push_back(m.mk_eq(rhs, n->get_expr()));
+          rhs = nullptr;
         }
-        enode* r = tmp_eq(ra, rb);
-        SASSERT(r && r->get_root()->value() == l_false);
-        explain_eq(justifications, cc, r, r->get_root());
-        return r->get_root()->bool_var();
+        SASSERT(n->m_target);
+        n = n->m_target;
+      }
+
+      // !lhs <==> rhs, the color changes exactly at lca
+      if (!lhs)
+        lhs = lca->get_expr();
+      if (!rhs)
+        rhs = lca->get_expr();
+
+
+      if (lhs != rhs) // if lhs == rhs (== lca) summaries were closed already
+          sum.push_back(m.mk_eq(lhs, rhs));
     }
 
+    // template <typename T>
+    // void egraph::summarize_congr(ptr_vector<T> &justifications,
+    //                              cc_justification *cc, expr_ref_vector &B) {}
 
     template <typename T>
-    void egraph::explain_todo(ptr_vector<T>& justifications, cc_justification* cc) {
-        for (unsigned i = 0; i < m_todo.size(); ++i) {
-            enode* n = m_todo[i];
-            if (n->is_marked1())
-                continue;
-            if (n->m_target) {
-                n->mark1();
-                CTRACE("euf_verbose", m_display_justification, n->m_justification.display(tout << n->get_expr_id() << " = " << n->m_target->get_expr_id() << " ", m_display_justification) << "\n";);
-                explain_eq(justifications, cc, n, n->m_target, n->m_justification);
-            }
-            else if (!n->is_marked1() && n->value() != l_undef) {
-                n->mark1();
-                if (m.is_true(n->get_expr()) || m.is_false(n->get_expr()))
+    unsigned egraph::explain_diseq(ptr_vector<T> &justifications,
+                                   cc_justification *cc, enode *a, enode *b) {
+      enode *ra = a->get_root(), *rb = b->get_root();
+      SASSERT(ra != rb);
+      if (ra->interpreted() && rb->interpreted()) {
+        explain_eq(justifications, cc, a, ra);
+        explain_eq(justifications, cc, b, rb);
+        return sat::null_bool_var;
+      }
+      enode *r = tmp_eq(ra, rb);
+      SASSERT(r && r->get_root()->value() == l_false);
+      explain_eq(justifications, cc, r, r->get_root());
+      return r->get_root()->bool_var();
+        }
+
+        template <typename T>
+        void egraph::explain_todo(ptr_vector<T> & justifications,
+                                  cc_justification * cc) {
+            for (unsigned i = 0; i < m_todo.size(); ++i) {
+                enode *n = m_todo[i];
+                if (n->is_marked1())
                     continue;
-                justification j = n->m_lit_justification;
-                SASSERT(j.is_external());
-                justifications.push_back(j.ext<T>());
+                if (n->m_target) {
+                    n->mark1();
+                    CTRACE("euf_verbose", m_display_justification,
+                           n->m_justification.display(
+                               tout << n->get_expr_id() << " = "
+                                    << n->m_target->get_expr_id() << " ",
+                               m_display_justification)
+                               << "\n";);
+                    explain_eq(justifications, cc, n, n->m_target,
+                               n->m_justification);
+                } else if (!n->is_marked1() && n->value() != l_undef) {
+                    n->mark1();
+                    if (m.is_true(n->get_expr()) || m.is_false(n->get_expr()))
+                      continue;
+                    justification j = n->m_lit_justification;
+                    SASSERT(j.is_external());
+                    justifications.push_back(j.ext<T>());
+                }
             }
         }
-    }
 
-    void egraph::invariant() {
-        for (enode* n : m_nodes)
-            n->invariant(*this);
-        for (enode* n : m_nodes)
-            if (n->cgc_enabled() && n->num_args() > 0 && (!m_table.find(n) || n->get_root() != m_table.find(n)->get_root())) {
-                CTRACE("euf", !m_table.find(n), tout << "node is not in table\n";);
-                CTRACE("euf", m_table.find(n), tout << "root " << bpp(n->get_root()) << " table root " << bpp(m_table.find(n)->get_root()) << "\n";);
-                TRACE("euf", display(tout << bpp(n) << " is not closed under congruence\n"););
-                UNREACHABLE();
+        void egraph::invariant() {
+            for (enode *n : m_nodes)
+                n->invariant(*this);
+            for (enode *n : m_nodes)
+                if (n->cgc_enabled() && n->num_args() > 0 &&
+                    (!m_table.find(n) ||
+                     n->get_root() != m_table.find(n)->get_root())) {
+                    CTRACE("euf", !m_table.find(n),
+                           tout << "node is not in table\n";);
+                    CTRACE("euf", m_table.find(n),
+                           tout << "root " << bpp(n->get_root())
+                                << " table root "
+                                << bpp(m_table.find(n)->get_root()) << "\n";);
+                    TRACE("euf",
+                          display(tout
+                                  << bpp(n)
+                                  << " is not closed under congruence\n"););
+                    UNREACHABLE();
+                }
+        }
+
+        std::ostream &egraph::display(std::ostream & out, unsigned max_args,
+                                      enode *n) const {
+            if (!n->is_relevant())
+                out << "n";
+            out << "#" << n->get_expr_id() << " := ";
+            expr *f = n->get_expr();
+            if (is_app(f))
+                out << mk_bounded_pp(f, m, 1) << " ";
+            else if (is_quantifier(f))
+                out << "q:" << f->get_id() << " ";
+            else
+                out << "v:" << f->get_id() << " ";
+            if (!n->is_root())
+                out << "[r " << n->get_root()->get_expr_id() << "] ";
+            if (!n->m_parents.empty()) {
+                out << "[p";
+                for (enode *p : enode_parents(n))
+                    out << " " << p->get_expr_id();
+                out << "] ";
             }
-    }
-
-    std::ostream& egraph::display(std::ostream& out, unsigned max_args, enode* n) const {
-        if (!n->is_relevant())
-            out << "n";
-        out << "#" << n->get_expr_id() << " := ";
-        expr* f = n->get_expr();
-        if (is_app(f))
-            out << mk_bounded_pp(f, m, 1) << " ";
-        else if (is_quantifier(f))
-            out << "q:" << f->get_id() << " ";
-        else
-            out << "v:" << f->get_id() << " ";
-        if (!n->is_root()) 
-            out << "[r " << n->get_root()->get_expr_id() << "] ";
-        if (!n->m_parents.empty()) {
-            out << "[p";
-            for (enode* p : enode_parents(n))
-                out << " " << p->get_expr_id();
-            out << "] ";
-        }
-        auto value_of = [&]() {
-            switch (n->value()) {
-            case l_true: return "T";
-            case l_false: return "F";
-            default: return "?";
+            auto value_of = [&]() {
+              switch (n->value()) {
+              case l_true:
+                return "T";
+              case l_false:
+                return "F";
+              default:
+                return "?";
+              }
+            };
+            if (n->bool_var() != sat::null_bool_var)
+                out << "[b" << n->bool_var() << " := " << value_of()
+                    << (n->cgc_enabled() ? "" : " no-cgc")
+                    << (n->merge_tf() ? " merge-tf" : "") << "] ";
+            if (n->has_th_vars()) {
+                out << "[t";
+                for (auto const &v : enode_th_vars(n))
+                    out << " " << v.get_id() << ":" << v.get_var();
+                out << "] ";
             }
-        };
-        if (n->bool_var() != sat::null_bool_var) 
-            out << "[b" << n->bool_var() << " := " << value_of() << (n->cgc_enabled() ? "" : " no-cgc") << (n->merge_tf()? " merge-tf" : "") << "] ";
-        if (n->has_th_vars()) {
-            out << "[t";
-            for (auto const& v : enode_th_vars(n))
-                out << " " << v.get_id() << ":" << v.get_var();
-            out << "] ";
+            if (n->generation() > 0)
+                out << "[g " << n->generation() << "] ";
+            if (n->m_target && m_display_justification)
+                n->m_justification.display(
+                    out << "[j " << n->m_target->get_expr_id()
+                    << " " << n->m_lit_justification.is_marked() << " " <<
+                        " ",
+                    m_display_justification)
+                    << "] ";
+            out << "\n";
+            return out;
         }
-        if (n->generation() > 0)
-            out << "[g " << n->generation() << "] ";
-        if (n->m_target && m_display_justification)
-            n->m_justification.display(out << "[j " << n->m_target->get_expr_id() << " ", m_display_justification) << "] ";
-        out << "\n";
-        return out;
-    }
 
-    std::ostream& egraph::display(std::ostream& out) const {
-        out << "updates " << m_updates.size() << "\n";
-        out << "neweqs  " << m_new_th_eqs.size() << " qhead: " << m_new_th_eqs_qhead << "\n";
-        m_table.display(out);
-        unsigned max_args = 0;
-        for (enode* n : m_nodes)
-            max_args = std::max(max_args, n->num_args());
-        for (enode* n : m_nodes) 
-            display(out, max_args, n);          
-        return out;
-    }
-
-    void egraph::collect_statistics(statistics& st) const {
-        st.update("euf merge", m_stats.m_num_merge);
-        st.update("euf conflicts", m_stats.m_num_conflicts);
-        st.update("euf propagations eqs", m_stats.m_num_eqs);
-        st.update("euf propagations theory eqs", m_stats.m_num_th_eqs);
-        st.update("euf propagations theory diseqs", m_stats.m_num_th_diseqs);
-        st.update("euf propagations literal", m_stats.m_num_lits);
-    }
-
-    void egraph::copy_from(egraph const& src, std::function<void*(void*)>& copy_justification) {
-        SASSERT(m_scopes.empty());
-        SASSERT(m_nodes.empty());
-        ptr_vector<enode> old_expr2new_enode, args;
-        ast_translation tr(src.m, m);
-        for (unsigned i = 0; i < src.m_nodes.size(); ++i) {
-            enode* n1 = src.m_nodes[i];
-            expr* e1 = src.m_exprs[i];
-            args.reset();
-            for (unsigned j = 0; j < n1->num_args(); ++j) 
-                args.push_back(old_expr2new_enode[n1->get_arg(j)->get_expr_id()]);
-            expr*  e2 = tr(e1);
-            enode* n2 = mk(e2, n1->generation(), args.size(), args.data());
-            
-            old_expr2new_enode.setx(e1->get_id(), n2, nullptr);
-            n2->set_value(n1->value());
-            n2->m_bool_var = n1->m_bool_var;
-            n2->m_commutative = n1->m_commutative;
-            n2->m_cgc_enabled = n1->m_cgc_enabled;
-            n2->m_merge_tf_enabled = n1->m_merge_tf_enabled;
-            n2->m_is_equality = n1->m_is_equality;            
+        std::ostream &egraph::display(std::ostream & out) const {
+            out << "updates " << m_updates.size() << "\n";
+            out << "neweqs  " << m_new_th_eqs.size()
+                << " qhead: " << m_new_th_eqs_qhead << "\n";
+            m_table.display(out);
+            unsigned max_args = 0;
+            for (enode *n : m_nodes)
+                max_args = std::max(max_args, n->num_args());
+            for (enode *n : m_nodes)
+                display(out, max_args, n);
+            return out;
         }
-        for (unsigned i = 0; i < src.m_nodes.size(); ++i) {             
-            enode* n1 = src.m_nodes[i];
-            enode* n1t = n1->m_target;      
-            enode* n2 = m_nodes[i];
-            enode* n2t = n1t ? old_expr2new_enode[n1->get_expr_id()] : nullptr;
-            SASSERT(!n1t || n2t);
-            SASSERT(!n1t || n1->get_sort() == n1t->get_sort());
-            SASSERT(!n1t || n2->get_sort() == n2t->get_sort());
-            if (n1t && n2->get_root() != n2t->get_root()) 
-                merge(n2, n2t, n1->m_justification.copy(copy_justification));
+
+        void egraph::collect_statistics(statistics & st) const {
+            st.update("euf merge", m_stats.m_num_merge);
+            st.update("euf conflicts", m_stats.m_num_conflicts);
+            st.update("euf propagations eqs", m_stats.m_num_eqs);
+            st.update("euf propagations theory eqs", m_stats.m_num_th_eqs);
+            st.update("euf propagations theory diseqs",
+                      m_stats.m_num_th_diseqs);
+            st.update("euf propagations literal", m_stats.m_num_lits);
         }
-        propagate();
-        for (unsigned i = 0; i < src.m_scopes.size(); ++i)
-            push();
-        force_push();
+
+        void egraph::copy_from(
+            egraph const &src,
+            std::function<void *(void *)> &copy_justification) {
+            SASSERT(m_scopes.empty());
+            SASSERT(m_nodes.empty());
+            ptr_vector<enode> old_expr2new_enode, args;
+            ast_translation tr(src.m, m);
+            for (unsigned i = 0; i < src.m_nodes.size(); ++i) {
+                enode *n1 = src.m_nodes[i];
+                expr *e1 = src.m_exprs[i];
+                args.reset();
+                for (unsigned j = 0; j < n1->num_args(); ++j)
+                    args.push_back(
+                        old_expr2new_enode[n1->get_arg(j)->get_expr_id()]);
+                expr *e2 = tr(e1);
+                enode *n2 = mk(e2, n1->generation(), args.size(), args.data());
+
+                old_expr2new_enode.setx(e1->get_id(), n2, nullptr);
+                n2->set_value(n1->value());
+                n2->m_bool_var = n1->m_bool_var;
+                n2->m_commutative = n1->m_commutative;
+                n2->m_cgc_enabled = n1->m_cgc_enabled;
+                n2->m_merge_tf_enabled = n1->m_merge_tf_enabled;
+                n2->m_is_equality = n1->m_is_equality;
+            }
+            for (unsigned i = 0; i < src.m_nodes.size(); ++i) {
+                enode *n1 = src.m_nodes[i];
+                enode *n1t = n1->m_target;
+                enode *n2 = m_nodes[i];
+                enode *n2t =
+                    n1t ? old_expr2new_enode[n1->get_expr_id()] : nullptr;
+                SASSERT(!n1t || n2t);
+                SASSERT(!n1t || n1->get_sort() == n1t->get_sort());
+                SASSERT(!n1t || n2->get_sort() == n2t->get_sort());
+                if (n1t && n2->get_root() != n2t->get_root())
+                    merge(n2, n2t,
+                          n1->m_justification.copy(copy_justification));
+            }
+            propagate();
+            for (unsigned i = 0; i < src.m_scopes.size(); ++i)
+                push();
+            force_push();
+        }
     }
-}
 
 template void euf::egraph::explain(ptr_vector<int>& justifications, cc_justification*);
 template void euf::egraph::explain_todo(ptr_vector<int>& justifications, cc_justification*);
