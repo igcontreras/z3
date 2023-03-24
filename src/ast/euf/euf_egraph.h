@@ -322,10 +322,15 @@ namespace euf {
         // iuc, assumes that justifications have been marked if they belong to the unsat core
         void explain_eq_sum(enode *a, enode *b, expr_ref_vector &sum);
         // TODO: move to private
-        void summarize_trans(enode *a, enode *b, enode *lca, expr_ref_vector &sum);
+        void summarize_trans(enode *a, enode *b, expr_ref_vector &sum);
+        void summarize_trans(enode *a, enode *b, expr_ref &a_sum, expr_ref &b_sum,
+                             expr_ref_vector &sum);
+        void summarize_congr(enode *c, expr_ref_vector &sum);
+        expr *summarize_branch(enode *n, enode *lca, expr_ref_vector &sum);
 
         template <typename T>
-        unsigned explain_diseq(ptr_vector<T>& justifications, cc_justification* cc, enode* a, enode* b);
+        unsigned explain_diseq(ptr_vector<T> &justifications,
+                               cc_justification *cc, enode *a, enode *b);
         enode_vector const& nodes() const { return m_nodes; }
 
         ast_manager& get_manager() { return m; }

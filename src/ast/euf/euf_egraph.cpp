@@ -761,85 +761,111 @@ namespace euf {
         explain_todo(justifications, cc);
     }
 
-    // struct summarizer {
-    //     expr *m_lhs = nullptr;
-    //     expr *m_rhs = nullptr;
-
-    //     expr_ref_vector &m_sum;
-    //     ast_manager &m_m;
-
-    //     summarizer(expr_ref_vector &summary, ast_manager &m)
-    //         : m_sum(summary), m_m(m){};
-    //     void begin_summary(enode *first) { m_lhs = first; }
-    //     void end_summary(enode *last) {
-    //       m_sum.push_back(m_m.mk_eq(m_lhs, m_rhs));
-    //     }
-    // };
-
     // assumes that justifications belonging to the part that needs to be
     // summarized have been marked using the general purpose mark
     void egraph::explain_eq_sum(enode *a, enode *b, expr_ref_vector & sum) {
       SASSERT(a->get_root() == b->get_root());
-
-      enode *lca = find_lca(a, b);
-      TRACE("euf_verbose", tout << "explain-eq-summ: " << bpp(a) << " == " << bpp(b)
-                                << " lca: " << bpp(lca) << "\n";);
-
-      summarize_trans(a, b, lca, sum);
+      summarize_trans(a, b, sum);
      }
 
-     void egraph::summarize_trans(enode *a, enode *b, enode *lca,
-                                          expr_ref_vector &sum) {
-      enode * n = a;
-      expr * lhs = nullptr;
+     expr *egraph::summarize_branch(enode *n, enode *lca,
+                                     expr_ref_vector &sum) {
 
-      // TODO: refactor with the next while loop
-      while (n != lca) {
-            if (!lhs &&
-                n->m_justification.is_marked()) { // summarization begins
-                lhs = n->get_expr();
-            } else if (lhs && !n->m_justification
-                                   .is_marked()) { // summarization ends
-                sum.push_back(m.mk_eq(lhs, n->get_expr()));
-                lhs = nullptr;
-            }
-        SASSERT(n->m_target);
-        n = n->m_target;
-      }
+       expr * r = nullptr; // beginning of summary
+       while (n != lca) {
+         justification &j = n->m_justification;
+         if (j.is_congruence() && !n->is_marked2()) {
+           // is_mark2 if it has been summarized
+           summarize_congr(n, sum); // colors the congruence edge if possible
+         }
+         if (!r && j.is_marked()) { // new summary starts
+           r = n->get_expr();
+         } else if (r && !j.is_marked()) {
+           sum.push_back(m.mk_eq(r, n->get_expr()));
+           r = nullptr;
+         }
+         SASSERT(n->m_target);
+         n = n->m_target;
+       }
+       return r;
+     }
 
-      // we haven't summarized a--->lca because we do not know how b reaches
-      // lca, we keep lhs in mind when we finish reaching lca from b:
+     void egraph::summarize_trans(enode *a, enode *b, expr_ref_vector &sum) {
+       enode *lca = find_lca(a, b);
+       verbose_stream() << "explain-trans: " << bpp(a) << " == " << bpp(b)
+                        << " lca: " << bpp(lca) << "\n";
 
-      expr *rhs = nullptr;
+       expr *lhs = summarize_branch(a, lca, sum);
+       // partially summarized a--->lca, we do not know how b reaches lca
+       expr *rhs = summarize_branch(b, lca, sum);
 
-      n = b;
+       // !lhs <==> rhs, the color changes exactly at lca
+       if (!lhs)
+         lhs = lca->get_expr();
+       if (!rhs)
+         rhs = lca->get_expr();
 
-      // TODO: refactor with the previous
-      while (n != lca) {
-        if (!rhs && n->m_justification.is_marked()) { // new summary starts
-          rhs = n->get_expr();
-        } else if (rhs && !n->m_justification.is_marked()) {
-          sum.push_back(m.mk_eq(rhs, n->get_expr()));
-          rhs = nullptr;
-        }
-        SASSERT(n->m_target);
-        n = n->m_target;
-      }
+       if (lhs != rhs) // if lhs == rhs (== lca) summaries were closed already
+         sum.push_back(m.mk_eq(lhs, rhs));
+     }
+     void egraph::summarize_trans(enode *a, enode *b, expr_ref &a_sum,
+                                  expr_ref &b_sum, expr_ref_vector &sum) {
+       // TODO: implement
+       summarize_trans(a, b, sum);
+     }
 
-      // !lhs <==> rhs, the color changes exactly at lca
-      if (!lhs)
-        lhs = lca->get_expr();
-      if (!rhs)
-        rhs = lca->get_expr();
+     // adds a summary for each argument in the congruence step. If the step is
+     // colorable, it does not add anything and it marks the justification as
+     // colorable
+  void egraph::summarize_congr(enode *c, expr_ref_vector &sum) {
 
+       verbose_stream() << "explain-congr: " << bpp(c)
+                        << " == " << bpp(c->m_target) << "\n";
+       SASSERT(c->m_justification.is_congruence());
+       SASSERT(!c->is_marked2());
+       bool all_blue = true;
+       expr_ref a_sum(m), b_sum(m);
 
-      if (lhs != rhs) // if lhs == rhs (== lca) summaries were closed already
-          sum.push_back(m.mk_eq(lhs, rhs));
+       unsigned init_sz = sum.size();
+       unsigned last_sz = init_sz;
+
+       expr_ref_vector args_c(m); // TODO: initialize with number of children
+       expr_ref_vector args_c_next(m);
+
+       auto ach = enode_args(c);
+       auto bch = enode_args(c->m_target);
+       // justify each of the arguments, cache if congruence explanation
+       // colorable
+       for (auto a_it = ach.begin(), b_it = bch.begin(); a_it != ach.end();
+            ++a_it, ++b_it) {
+         enode *an = *a_it;
+         enode *bn = *b_it;
+
+         if (an != bn) {
+           summarize_trans(an, bn, a_sum, b_sum, sum);
+           if (all_blue) {
+             if (sum.size() - last_sz == 1) {
+               // arg explanation may be colorable
+               expr *last = sum.back();
+               expr *lhs, *rhs;
+               ENSURE(m.is_eq(last, lhs, rhs));
+               if (lhs != an->get_expr() || rhs != bn->get_expr()) {
+                 all_blue = false;
+               }
+             } else {
+               all_blue = false;
+             }
+           }
+           last_sz = sum.size();
+         }
+       }
+       if (all_blue) {
+         c->m_justification.set_mark(true);
+         sum.shrink(init_sz); // all arguments can be colored blue, so we do not
+                              // need each explanation
+       }
+       c->mark2(); // mark already summarized
     }
-
-    // template <typename T>
-    // void egraph::summarize_congr(ptr_vector<T> &justifications,
-    //                              cc_justification *cc, expr_ref_vector &B) {}
 
     template <typename T>
     unsigned egraph::explain_diseq(ptr_vector<T> &justifications,
@@ -855,10 +881,10 @@ namespace euf {
       SASSERT(r && r->get_root()->value() == l_false);
       explain_eq(justifications, cc, r, r->get_root());
       return r->get_root()->bool_var();
-        }
+    }
 
-        template <typename T>
-        void egraph::explain_todo(ptr_vector<T> & justifications,
+  template <typename T>
+  void egraph::explain_todo(ptr_vector<T> & justifications,
                                   cc_justification * cc) {
             for (unsigned i = 0; i < m_todo.size(); ++i) {
                 enode *n = m_todo[i];
@@ -951,7 +977,7 @@ namespace euf {
             if (n->m_target && m_display_justification)
                 n->m_justification.display(
                     out << "[j " << n->m_target->get_expr_id()
-                    << " " << n->m_lit_justification.is_marked() << " " <<
+                    << " m:" << n->m_lit_justification.is_marked() << " " <<
                         " ",
                     m_display_justification)
                     << "] ";
