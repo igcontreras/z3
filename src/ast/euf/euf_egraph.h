@@ -197,6 +197,8 @@ namespace euf {
         std::function<void(app*,app*)>         m_used_cc;  
         std::function<void(std::ostream&, void*)>   m_display_justification;
 
+        friend class euf_summarizer;
+
         void push_eq(enode* r1, enode* n1, unsigned r2_num_parents) {
             m_updates.push_back(update_record(r1, n1, r2_num_parents));
         }
@@ -321,12 +323,6 @@ namespace euf {
         void explain_eq(ptr_vector<T>& justifications, cc_justification* cc, enode* a, enode* b);
         // iuc, assumes that justifications have been marked if they belong to the unsat core
         void explain_eq_sum(enode *a, enode *b, expr_ref_vector &sum);
-        // TODO: move to private
-        void summarize_trans(enode *a, enode *b, expr_ref_vector &sum);
-        void summarize_trans(enode *a, enode *b, expr_ref &a_sum, expr_ref &b_sum,
-                             expr_ref_vector &sum);
-        void summarize_congr(enode *c, expr_ref_vector &sum);
-        expr *summarize_branch(enode *n, enode *lca, expr_ref_vector &sum);
 
         template <typename T>
         unsigned explain_diseq(ptr_vector<T> &justifications,

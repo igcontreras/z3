@@ -47,15 +47,16 @@ Notes:
 #include "smt/params/theory_arith_params.h"
 
 #include "ast/euf/euf_justification.h"
+#include "ast/euf/euf_summary.h"
 
-    BINARY_SYM_CMD(
-        get_quantifier_body_cmd, "dbg-get-qbody", "<symbol> <quantifier>",
-        "store the body of the quantifier in the global variable <symbol>",
-        CPK_EXPR, expr *, {
-          if (!is_quantifier(arg))
-            throw cmd_exception("invalid command, term must be a quantifier");
-          store_expr_ref(ctx, m_sym, to_quantifier(arg)->get_expr());
-        });
+BINARY_SYM_CMD(
+    get_quantifier_body_cmd, "dbg-get-qbody", "<symbol> <quantifier>",
+    "store the body of the quantifier in the global variable <symbol>",
+    CPK_EXPR, expr *, {
+      if (!is_quantifier(arg))
+        throw cmd_exception("invalid command, term must be a quantifier");
+      store_expr_ref(ctx, m_sym, to_quantifier(arg)->get_expr());
+    });
 
 BINARY_SYM_CMD(set_cmd,
                "dbg-set",
@@ -945,7 +946,7 @@ public:
       j.set_mark(true);   // mark edges in proof tree
       g.merge(e1, e2, j); // creates an external justification
     }
-    g.propagate();
+    g.propagate(); // propagate + mark justifications in blue?
 
     SASSERT(!g.inconsistent());
 
@@ -959,7 +960,8 @@ public:
     SASSERT(e1->get_root() == e2->get_root());
 
     expr_ref_vector iuc(m);
-    g.explain_eq_sum(e1, e2, iuc);
+    euf::euf_summarizer sum(g,iuc);
+    sum.sum_eq(e1, e2);
 
     ctx.regular_stream() << "IUC: " << iuc << "\n";
 
@@ -967,6 +969,11 @@ public:
     ctx.regular_stream() << g;
   }
 };
+
+
+// analyze final IUC
+// I want to create a sat solver with an euf solver only
+
 
 
 #if 0
