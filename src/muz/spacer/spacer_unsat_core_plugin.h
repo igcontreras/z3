@@ -20,6 +20,9 @@ Revision History:
 #include "ast/ast.h"
 #include "util/min_cut.h"
 
+// to replay proofs
+#include "sat/smt/euf_solver.h"
+
 namespace spacer {
 
     class unsat_core_learner;
@@ -107,4 +110,17 @@ namespace spacer {
           : unsat_core_plugin(learner){};
         void compute_partial_core(proof *step) override;
     };
+
+  class replay_plugin : public unsat_core_plugin {
+  public:
+    replay_plugin(unsat_core_learner &learner, ast_manager &m)
+        : unsat_core_plugin(learner), m_h(m), m_b(m) {};
+        void compute_partial_core(proof *step) override;
+  private:
+    expr_ref m_h; // hypothesis if `understands_step` is true
+    expr_ref_vector m_b; // B literals if `understands_step` is true
+
+    // looks for a lemma with only B and 1 hypothesis
+    bool understands_step(proof *pr); // this should be a plugin interface function
+  };
 }

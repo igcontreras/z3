@@ -32,6 +32,8 @@ Revision History:
 #include "muz/spacer/spacer_unsat_core_learner.h"
 #include "muz/spacer/spacer_iuc_proof.h"
 
+static unsigned proof_dbg_cnt = 0;
+
 namespace spacer {
 
     unsat_core_plugin::unsat_core_plugin(unsat_core_learner& ctx):
@@ -150,7 +152,7 @@ namespace spacer {
                 proof * premise = m.get_parent(step, i);
 
                 if (m_ctx.is_b_open (premise)) {
-                    SASSERT(!m_ctx.is_a(premise));
+                    // SASSERT(!m_ctx.is_a(premise));
 
                     if (m_ctx.is_b_pure (premise)) {
                         if (!m_use_constant_from_a) {
@@ -733,5 +735,76 @@ namespace spacer {
 
       m_ctx.set_closed(step, true);
     }
-}
 
+      bool replay_plugin::understands_step(proof * step) {
+        if (!m.is_false(m.get_fact(step))) { return false; }
+        if (m_ctx.is_a_marked(step)) return false;
+
+        SASSERT(m_ctx.is_b(step) && m_ctx.is_h(step));
+
+        m_h = nullptr;
+        m_b.reset();
+
+        // traverse the proof to find exactly hypothesis and B literals
+        proof_visitor pit(step, m);
+
+        proof *curr = nullptr;
+        while (pit.hasNext()) {
+          curr = pit.next();
+
+          bool visit = true;
+
+          if (m_ctx.is_b(curr) && m_ctx.is_h(curr)) {
+            visit = true;
+          } else if (curr->get_decl_kind() == PR_HYPOTHESIS) {
+            if (m_h == nullptr) {
+              m_h = m.get_fact(curr);
+              visit = false;
+            } else {
+              return false; // more than one hypothesis
+            }
+          }
+          // find B literals working around spacer_proxy!X: if the first parent
+          // is a boolean variable, it is a spacer_proxy variable
+          else if (m_ctx.is_b(curr) && m.get_num_parents(curr) > 1) {
+            app *fact = to_app(m.get_fact(to_app(curr->get_arg(0))));
+            if ((fact->get_num_parameters() == 0) && m.is_bool(fact)) {
+              m_b.push_back(m.get_fact(curr));
+              visit = false;
+            }
+          }
+
+          if(visit){
+            pit.visit_parents();
+          }
+        }
+
+        if(m_h && !m_b.empty())
+          return true;
+        return false;
+      }
+
+      void replay_plugin::compute_partial_core(proof *step) {
+        if (m_ctx.is_closed(step)) return;
+
+        if (!understands_step(step)) return;
+        // we assume that the lemma is not over B vocabulary because that is
+        // taken care of earlier by spacer_iuc_learner, for the other learner we
+        // can add a condition
+
+        // TODO: if interpolation could be done, close step
+        verbose_stream() << "Hyp: " << m_h << "\n";
+        verbose_stream() << "B:";
+
+        for (auto l : m_b) verbose_stream() << " " << expr_ref(l,m);
+
+        verbose_stream() << "\n";
+
+        if (proof_dbg_cnt <= 5) {
+          std::ofstream ofs;
+          ofs.open("/tmp/proof" + std::to_string(++proof_dbg_cnt) + ".dot");
+          m_ctx.get_proof().display_dot(ofs);
+          ofs.close();
+        }
+      }
+ } // namespace spacer
