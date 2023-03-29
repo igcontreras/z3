@@ -860,13 +860,13 @@ public:
 };
 
 
-class euf_solver_iuc : public cmd {
+class euf_cube_iuc : public cmd {
   expr *m_A;   // A(x,y) (and l1 l2 ... ln)
   expr *m_B;   // B(y)   assumptions
   expr *m_eq;   // equality to justify
 
 public:
-  euf_solver_iuc() : cmd("euf-iuc"){};
+  euf_cube_iuc() : cmd("euf-iuc"){};
   char const *get_usage() const override {
     return "(A-cube) (B-cube) (eq)";
   }
@@ -952,261 +952,79 @@ public:
 
     ENSURE(m.is_eq(m_eq, lhs, rhs)); // to check: ENSURE always gets executed
     e1 = g.find(lhs);
+    SASSERT(e1);
     e2 = g.find(rhs);
+    SASSERT(e2);
 
-    ctx.regular_stream() << "\nexplain: "
-                         << expr_ref(e1->get_expr(), m) << " = " << expr_ref(e2->get_expr(), m) << "\n";
+    ctx.regular_stream() << "\nexplain: " << expr_ref(e1->get_expr(), m)
+                         << " = " << expr_ref(e2->get_expr(), m) << "\n";
 
     SASSERT(e1->get_root() == e2->get_root());
 
     expr_ref_vector iuc(m);
-    euf::euf_summarizer sum(g,iuc);
+    euf::euf_summarizer sum(g, iuc);
     sum.sum_eq(e1, e2);
 
     ctx.regular_stream() << "IUC: " << iuc << "\n";
-
-    ctx.regular_stream() << "graph: \n";
-    ctx.regular_stream() << g;
-  }
-};
-
-
-// analyze final IUC
-// I want to create a sat solver with an euf solver only
-
-
-
-#if 0
-
-#define MAXJ 100
-class euf_iuc : public cmd {
-  expr *m_euf_cube;   // axioms  (and l1 l2 ... ln)
-  expr *m_euf_assums; // assumptions (and a1 a2 ... am)
-  expr *m_euf_eq;     // equality to justify
-
-  struct summarizer {
-    ast_manager &m_m;
-    ptr_vector<int> &m_js;
-    int m_offset;
-    app *m_asserted;
-    app *m_assumed;
-
-    summarizer(ast_manager &m, ptr_vector<int> &js, int offset, app *asserted,
-               app *assumed)
-        : m_m(m), m_js(js), m_offset(offset), m_asserted(asserted),
-          m_assumed(assumed) {}
-
-    // \brief if `e1` and `e2` share a term (syntactic), `l` and `r` point to
-    // the non-shared terms of e1 and e2 respectively and returns true.
-    // otherwise returns false.
-    bool get_ends(expr *e1, expr *e2, expr **l, expr **r) {
-      expr *e1lhs, *e1rhs, *e2lhs, *e2rhs;
-      m_m.is_eq(e1, e1lhs, e1rhs);
-      m_m.is_eq(e2, e2lhs, e2rhs);
-
-      // is there a call to simplify?
-      if (e1lhs == e2lhs) {
-        *l = e1rhs;
-        *r = e2rhs;
-      } else if (e1lhs == e2rhs) {
-        *l = e1rhs;
-        *r = e2lhs;
-      } else if (e1rhs == e2lhs) {
-        *l = e1lhs;
-        *r = e2rhs;
-      } else if (e1rhs == e2rhs) {
-        *l = e1lhs;
-        *r = e2lhs;
-      } else {
-        return false;
-      }
-      return true;
-    }
-
-    expr *get_js_expr(int idx) {
-      if (*m_js[idx] < m_offset)
-        return m_asserted->get_arg(*m_js[idx]);
-      else
-        return m_assumed->get_arg(*m_js[idx] - m_offset);
-    }
-
-    void summarize(int begin, int end, expr_ref_vector &summary){
-      if (begin == end) {
-        summary.push_back(get_js_expr(begin));
-      } else {
-        expr *lhs, *rhs;
-        get_ends(get_js_expr(begin), get_js_expr(begin + 1), &lhs, &rhs);
-        if (end - begin > 1) {
-          expr *dummy;
-          get_ends(get_js_expr(end - 1), get_js_expr(end), &dummy, &rhs);
-        }
-        summary.push_back(m_m.mk_eq(lhs, rhs));
-      }
-    }
-
-    // summarizes consecutive equalities of the same color
-    void horizontal_summarize(int (*color)(int,int), expr_ref_vector &summary) {
-      int curr_color = color(m_offset, *m_js[0]);
-      int begin_curr = 0, end_curr = 0;
-
-      expr *prev = get_js_expr(0), *curr;
-      expr *l, *r;
-
-      for (int i = 1; i < m_js.size(); ++i) {
-        curr = get_js_expr(i);
-        int c = color(m_offset, *m_js[i]);
-        if (c == curr_color && get_ends(prev, curr, &l, &r)) { // same sequence
-          // get_ends is never executed the first iteration of the loop
-          end_curr = i;
-        } else { // current sequence ended, either because of color change or
-                 // because of justification cut
-          summarize(begin_curr, end_curr, summary);
-          curr_color = c;
-          begin_curr = end_curr = i;
-        }
-        prev = curr;
-      }
-      summarize(begin_curr, end_curr, summary);
-    }
-  };
-
-public : euf_iuc() : cmd("euf-iuc"){};
-  char const *get_usage() const override { return "(euf-cube) (assums) (eq)"; }
-  char const *get_descr(cmd_context &ctx) const override {
-    return "Interpolating congruence closure for 2 EUF cubes";
-  }
-
-  unsigned get_arity() const override { return 3; }
-  cmd_arg_kind next_arg_kind(cmd_context &ctx) const override {
-    return CPK_EXPR;
-  }
-  void set_next_arg(cmd_context &ctx, expr *arg) override {
-    if (m_euf_cube == nullptr)
-      m_euf_cube = arg;
-    else if (m_euf_assums == nullptr)
-      m_euf_assums = arg;
-    else
-      m_euf_eq = arg;
-  }
-  void prepare(cmd_context &ctx) override {
-    m_euf_cube = nullptr;
-    m_euf_assums = nullptr;
-    m_euf_eq = nullptr;
-  }
-
-  void execute(cmd_context &ctx) override {
-
-    // enable_trace("euf_verbose");
-    // enable_trace("euf");
-
-    ast_manager &m = ctx.m();
-    reg_decl_plugins(m);
-    arith_util a(m);
-
-    expr_ref phi(m_euf_cube, m);
-    expr_ref assums(m_euf_assums, m);
-    expr_ref eq(m_euf_eq, m);
-
-    euf::egraph g(m);
-
-    int justifications[MAXJ];
-    for(int i = 0; i < MAXJ ; ++i) {
-      justifications[i] = i;
-    }
-
-    int n = 0;
-    expr *lhs, *rhs;
-    euf::enode *e1, *e2;
-
-    // insert formula
-    SASSERT(m.is_and(phi));
-    app *phi_app = to_app(phi);
-    ctx.regular_stream() << "------------------------------------------------------------\n";
-    ctx.regular_stream() << "Phi: ";
-    for (auto l : *phi_app) {
-      ctx.regular_stream() << expr_ref(l,m) << " ";
-      SASSERT(m.is_eq(l));
-      m.is_eq(l, lhs, rhs);
-
-      e1 = g.rec_mk(lhs,0 /* generation */);
-      e2 = g.rec_mk(rhs,0);
-      g.merge(e1, e2, &justifications[n]);
-      ++n;
-      g.propagate();
-    }
-    int phi_n_lits = n;
-    // insert assumptions
-    SASSERT(m.is_and(assums));
-    app *assums_app = to_app(assums);
-    ctx.regular_stream() << "\nAssums: ";
-    for (auto l : *assums_app) {
-      ctx.regular_stream() << expr_ref(l, m) << " ";
-
-      if(!m.is_eq(l, lhs, rhs))
-        continue;
-
-      e1 = g.rec_mk(lhs, 0);
-      e2 = g.rec_mk(rhs, 0);
-      g.merge(e1, e2, &justifications[n]);
-      ++n;
-      g.propagate();
-    }
-
-    SASSERT(!g.inconsistent());
-
-    SASSERT(m.is_eq(m_euf_eq));
-    m.is_eq(m_euf_eq,lhs,rhs);
-    e1 = g.find(lhs);
-    SASSERT(e1 && "term not internalized");
-    ctx.regular_stream() << "\nJustify " << expr_ref(e1->get_expr(), m) << " = ";
-    e2 = g.find(rhs);
-    SASSERT(e2 && "term not internalized");
-    ctx.regular_stream() << expr_ref(e2->get_expr(), m) << ":\n";
-
-    ptr_vector<int> js;
-    g.begin_explain();
-    g.explain_eq<int>(js, nullptr, e1, e2);
-    g.end_explain();
-
-    ctx.regular_stream() << "\tfull:  ";
-    for (int *j : js) {
-      if (*j >= phi_n_lits) {
-        ctx.regular_stream()
-            << expr_ref(assums_app->get_arg(*j - phi_n_lits), m) << ", ";
-      }
-      else {
-        ctx.regular_stream()
-            << expr_ref(phi_app->get_arg(*j), m) << ", ";
-      }
-    }
-    ctx.regular_stream() << "\n\tassumptions only: ";
-    for (int *j : js) {
-      if (*j >= phi_n_lits) {
-        ctx.regular_stream()
-            << expr_ref(assums_app->get_arg(*j - phi_n_lits), m) << ", ";
-      }
-    }
-    ctx.regular_stream() << "\n";
-
-    auto color = [](int th, int n) {return n < th ? 0 : 1;};
-    summarizer sum(m,js,phi_n_lits,phi_app,assums_app);
-
-    expr_ref_vector summary(m);
-    sum.horizontal_summarize(color, summary);
-
-    // this is sumarized, not filtered!
-    ctx.regular_stream() << "\nSummarized: ";
-    for (auto e : summary)
-      ctx.regular_stream() << expr_ref(e, m) << ", ";
-
-    ctx.regular_stream() << "\n";
 
     // ctx.regular_stream() << "graph: \n";
     // ctx.regular_stream() << g;
   }
 };
 
-#endif
+// analyze final IUC
+// I want to create a sat solver with an euf solver only
+
+// same as the previous command but allowing to have BCP in A (but conflict is
+// reached in one step)
+class sat_euf_solver_iuc : public cmd {
+  expr *m_A;  // A(x,y) formula
+  expr *m_B;  // B(y)   assumptions (cube)
+
+public:
+  sat_euf_solver_iuc() : cmd("sat-euf-iuc") {}
+  char const *get_usage() const override { return "(A-formula) (B-cube)"; }
+  char const *get_descr(cmd_context &ctx) const override {
+    return "Interpolating Unsat Core for B(x) with a formula A(x,y), conflict is reached without search";
+  }
+
+  unsigned get_arity() const override { return 2; }
+  cmd_arg_kind next_arg_kind(cmd_context &ctx) const override {
+    return CPK_EXPR;
+  }
+  void set_next_arg(cmd_context &ctx, expr *arg) override {
+    if (m_A == nullptr)
+      m_A = arg;
+    else
+      m_B = arg;
+  }
+  void prepare(cmd_context &ctx) override {
+    m_A = nullptr;
+    m_B = nullptr;
+  }
+  void execute(cmd_context &ctx) override {
+    ast_manager &m = ctx.m();
+    reg_decl_plugins(m);
+    arith_util a(m);
+
+    expr_ref A(m_A, m);
+    expr_ref B(m_B, m);
+    SASSERT(m.is_and(m_B));
+
+    params_ref pa;
+    reslimit lim;
+    sat::solver s(pa, lim); // new engine, what theories are enabled by default?
+
+    goal2sat si;
+
+    for (auto l : *to_app(B)) {
+      s.add_clause(si.internalize(l), sat::status::asserted());
+    }
+    sat::extension * ext = s.get_extension(); // all extensions
+    
+    SASSERT(s.inconsistent());
+  }
+};
 
 
 void install_dbg_cmds(cmd_context & ctx) {
@@ -1241,5 +1059,5 @@ void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(qe_lite_tg_cmd));
     ctx.insert(alloc(qe_lite_der_cmd));
     ctx.insert(alloc(euf_solver_eq));
-    ctx.insert(alloc(euf_solver_iuc));
+    ctx.insert(alloc(euf_cube_iuc));
 }
