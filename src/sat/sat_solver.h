@@ -132,7 +132,7 @@ namespace sat {
         bool                    m_searching;
         // A conflict is usually a single justification. That is, a justification
         // for false. If m_not_l is not null_literal, then m_conflict is a
-        // justification for l, and the conflict is union of m_no_l and m_conflict;
+        // justification for l, and the conflict is union of m_not_l and m_conflict;
         justification           m_conflict;
         literal                 m_not_l;
         clause_vector           m_clauses;
@@ -664,7 +664,14 @@ namespace sat {
         bool use_backjumping(unsigned num_scopes) const;
         bool allow_backtracking() const;
         bool resolve_conflict();
+    public: // TODO: put back as protected
         lbool resolve_conflict_core();
+        justification & get_conflict_j() {
+          return m_conflict;
+        }
+        literal get_conflict_lit() { return m_not_l; }
+
+      protected:
         void learn_lemma_and_backjump();
         inline unsigned update_max_level(literal lit, unsigned lvl2, bool& unique_max) {
             unsigned lvl1 = lvl(lit);
@@ -674,7 +681,9 @@ namespace sat {
         }
         unsigned get_max_lvl(literal consequent, justification js, bool& unique_max);
         void process_antecedent(literal antecedent, unsigned & num_marks);
+    public:
         void resolve_conflict_for_unsat_core();
+    protected:
         void process_antecedent_for_unsat_core(literal antecedent);
         void process_consequent_for_unsat_core(literal consequent, justification const& js);
         void fill_ext_antecedents(literal consequent, justification js, bool probing);

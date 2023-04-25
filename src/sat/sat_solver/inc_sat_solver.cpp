@@ -45,6 +45,9 @@ Notes:
 #include "sat/tactic/sat2goal.h"
 #include "sat/tactic/sat_tactic.h"
 #include "sat/sat_simplifier_params.hpp"
+#include <iostream>
+
+#include "ast/euf/euf_egraph.h"
 
 // incremental SAT solver.
 class inc_sat_solver : public solver {
@@ -946,8 +949,10 @@ private:
     }
 
     lbool internalize_formulas() {
-        if (m_fmls_head == m_fmls.size()) 
-            return l_true;
+      if(m_params.get_bool("ig_fmls",true))
+        internalize_formulas_ig();
+
+      if (m_fmls_head == m_fmls.size()) return l_true;
 
         lbool res;
         
@@ -966,6 +971,66 @@ private:
             m_fmls_head = m_fmls.size();
         m_internalized_converted = false;
         return res;
+    }
+    lbool internalize_formulas_ig() {
+      SASSERT(m_fmls.size() >= 2);
+      SASSERT(m_fmls_head != m_fmls.size());
+
+      SASSERT(!m_is_cnf);
+      lbool res;
+      goal_ref g = alloc(goal, m, true, false); // models, maybe cores are enabled
+      g->assert_expr(m_fmls.get(0)); // the first formula is B
+      res = internalize_goal(g);
+      m_fmls_head = 1;
+
+      // get euf solver to mark
+      euf::solver *euf_s = m_goal2sat.ensure_euf();
+      euf::egraph &eg = euf_s->get_egraph();
+      eg.set_mark_justifications(true);
+      m_solver.propagate(false);
+      eg.set_mark_justifications(false);
+      // FIXME: assuming all literals are on the trail because B is a cube. The
+      // last one to know up to which id they come from B
+      sat::bool_var last_B_var = m_solver.num_vars() - 1;
+
+      std::cout << "\n------------------------------\nEUF solver after B "
+                   "propagation\n"
+                << *euf_s;
+
+      for (unsigned i = m_fmls_head; i < m_fmls.size(); ++i) {
+        expr *fml = m_fmls.get(i);
+        g->assert_expr(fml);
+      }
+      res = internalize_goal(g);
+
+      m_solver.propagate(false);
+
+      std::cout << "\n------------------------------\n EUF solver after A "
+                   "propagation\n" << *euf_s;
+      if(eg.inconsistent())
+        std::cout << "\nInconsistent egraph\n";
+
+      m_solver.propagate(false);
+
+      if(m_solver.inconsistent()) {
+        std::cout << "\nInconsistent sat solver\n";
+        euf_s->set_summarize(true);
+        m_solver.resolve_conflict_core();
+        sat::literal conflict = m_solver.get_conflict_lit();
+        expr_ref_vector &core = euf_s->get_summary();
+        if (conflict.var() <= last_B_var) {
+          core.push_back(m_sat_mc->lit2expr(conflict));
+        }
+        std::cout << core << std::endl;
+      }
+      if (euf_s->get_egraph().inconsistent())
+        std::cout << "\nInconsistent egraph\n";
+
+      if (res != l_undef)
+        m_fmls_head = m_fmls.size();
+      m_internalized_converted = false;
+
+      return res;
     }
 
     void extract_assumptions(unsigned sz, expr* const* asms) {

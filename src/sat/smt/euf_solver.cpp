@@ -29,6 +29,8 @@ Author:
 #include "sat/smt/dt_solver.h"
 #include "sat/smt/recfun_solver.h"
 
+#include "ast/euf/euf_summary.h"
+
 namespace euf {
 
     std::ostream& clause_pp::display(std::ostream& out) const {
@@ -37,44 +39,32 @@ namespace euf {
         return out;
     }
 
-    solver::solver(ast_manager& m, sat::sat_internalizer& si, params_ref const& p) :
-        extension(symbol("euf"), m.mk_family_id("euf")),
-        m(m),
-        si(si),
-        m_relevancy(*this),
-        m_egraph(m),
-        m_trail(),
-        m_rewriter(m),
-        m_unhandled_functions(m),
-        m_to_m(&m),
-        m_to_si(&si),
-        m_clause_visitor(m),
-        m_smt_proof_checker(m, p),
-        m_clause(m),       
-        m_expr_args(m),
-        m_values(m)
+    solver::solver(ast_manager &m, sat::sat_internalizer &si,
+                   params_ref const &p)
+        : extension(symbol("euf"), m.mk_family_id("euf")), m(m), si(si),
+          m_relevancy(*this), m_egraph(m), m_trail(), m_rewriter(m),
+          m_unhandled_functions(m), m_to_m(&m), m_to_si(&si),
+          m_clause_visitor(m), m_smt_proof_checker(m, p), m_clause(m),
+          m_expr_args(m), m_iuc(m), m_values(m)
     {
-        updt_params(p);
-        m_relevancy.set_enabled(get_config().m_relevancy_lvl > 2);
+      updt_params(p);
+      m_relevancy.set_enabled(get_config().m_relevancy_lvl > 2);
 
-        std::function<void(std::ostream&, void*)> disp =
-            [&](std::ostream& out, void* j) { 
-            display_justification_ptr(out, reinterpret_cast<size_t*>(j)); 
-        };
-        m_egraph.set_display_justification(disp);
+      std::function<void(std::ostream &, void *)> disp = [&](std::ostream &out,
+                                                             void *j) {
+        display_justification_ptr(out, reinterpret_cast<size_t *>(j));
+      };
+      m_egraph.set_display_justification(disp);
 
-        std::function<void(euf::enode* n, euf::enode* ante)> on_literal = [&](enode* n, enode* ante) {
-            propagate_literal(n, ante);
-        };
-        m_egraph.set_on_propagate(on_literal);
-        
-        if (m_relevancy.enabled()) {
-            std::function<void(euf::enode* root, euf::enode* other)> on_merge =
-                [&](enode* root, enode* other) {
-                m_relevancy.merge(root, other);
-            };
-            m_egraph.set_on_merge(on_merge);
-        }
+      std::function<void(euf::enode * n, euf::enode * ante)> on_literal =
+          [&](enode *n, enode *ante) { propagate_literal(n, ante); };
+      m_egraph.set_on_propagate(on_literal);
+
+      if (m_relevancy.enabled()) {
+        std::function<void(euf::enode * root, euf::enode * other)> on_merge =
+            [&](enode *root, enode *other) { m_relevancy.merge(root, other); };
+        m_egraph.set_on_merge(on_merge);
+      }
     }
 
     void solver::updt_params(params_ref const& p) {
@@ -319,7 +309,7 @@ namespace euf {
             SASSERT(n);
             SASSERT(n->is_equality());
             SASSERT(!l.sign());
-            m_egraph.explain_eq<size_t>(m_explain, cc, n->get_arg(0), n->get_arg(1));
+            explain_eq<size_t>(m_explain, cc, n->get_arg(0), n->get_arg(1));
             break;
         case constraint::kind_t::lit: {
             e = m_bool_var2expr[l.var()];
@@ -328,7 +318,7 @@ namespace euf {
             SASSERT(n);
             SASSERT(m.is_bool(n->get_expr()));
             SASSERT(ante->get_root() == n->get_root());
-            m_egraph.explain_eq<size_t>(m_explain, cc, n, ante);
+            explain_eq<size_t>(m_explain, cc, n, ante);
             if (!m.is_true(ante->get_expr()) && !m.is_false(ante->get_expr())) {
                 bool_var v = ante->bool_var();
                 lbool val = ante->value();
@@ -342,6 +332,16 @@ namespace euf {
             IF_VERBOSE(0, verbose_stream() << (unsigned)j.kind() << "\n");
             UNREACHABLE();
         }
+    }
+    template <typename T>
+    void solver::explain_eq(ptr_vector<T> &justifications, cc_justification *cc,
+                            enode *a, enode *b) {
+      if(m_log_sum) {
+        euf::euf_summarizer sum(m_egraph, m_iuc);
+        sum.sum_eq(a, b);
+      }
+
+      m_egraph.explain_eq<size_t>(m_explain, cc, a, b);
     }
 
     void solver::set_eliminated(bool_var v) {

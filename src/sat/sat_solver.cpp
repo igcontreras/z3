@@ -2738,7 +2738,7 @@ namespace sat {
         }
     }
 
-    void solver::resolve_conflict_for_unsat_core() {
+  void solver::resolve_conflict_for_unsat_core() { // analyze final
         TRACE("sat_verbose", display(tout);
               unsigned level = 0;
               for (literal l : m_trail) {

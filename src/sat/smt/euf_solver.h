@@ -172,6 +172,8 @@ namespace euf {
         expr_ref_vector                  m_clause;
         expr_ref_vector                  m_expr_args;
 
+        bool m_log_sum = false;
+        expr_ref_vector m_iuc;
 
         // internalization
         bool visit(expr* e) override;
@@ -219,7 +221,7 @@ namespace euf {
         void propagate_th_eqs();
         bool is_self_propagated(th_eq const& e);
         void get_antecedents(literal l, constraint& j, literal_vector& r, bool probing);
-        void new_diseq(enode* a, enode* b, literal lit);
+        void new_diseq(enode *a, enode *b, literal lit);
         bool merge_shared_bools();
 
         // proofs
@@ -267,7 +269,6 @@ namespace euf {
             if (!m_user_propagator)
                 throw default_exception("user propagator must be initialized");
         }
-
     public:
         solver(ast_manager& m, sat::sat_internalizer& si, params_ref const& p = params_ref());
 
@@ -364,6 +365,9 @@ namespace euf {
 
         void get_antecedents(literal l, ext_justification_idx idx, literal_vector& r, bool probing) override;
         void get_antecedents(literal l, th_explain& jst, literal_vector& r, bool probing);
+        template <typename T>
+        void explain_eq(ptr_vector<T> &justifications, cc_justification *cc,
+                        enode *a, enode *b);
         void add_antecedent(bool probing, enode* a, enode* b);
         void add_diseq_antecedent(ptr_vector<size_t>& ex, cc_justification* cc, enode* a, enode* b);
         void add_explain(size_t* p) { m_explain.push_back(p); }
@@ -398,6 +402,9 @@ namespace euf {
         void gc_vars(unsigned num_vars) override;
         bool resource_limits_exceeded() const { return false; } // TODO
 
+        // summarization for interpolation
+        void set_summarize(bool sum) { m_log_sum = sum; }
+        expr_ref_vector &get_summary() { return m_iuc; }
 
         // proof
         bool use_drat() { return m_solver && s().get_config().m_drat && (init_proof(), true); }

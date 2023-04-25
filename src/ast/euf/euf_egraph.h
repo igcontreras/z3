@@ -54,7 +54,7 @@ namespace euf {
         theory_id  m_id;
         theory_var m_v1;
         theory_var m_v2;
-        union {            
+        union {
             enode* m_child;
             expr* m_eq;
         };
@@ -73,14 +73,14 @@ namespace euf {
             m_id(id), m_v1(v1), m_v2(v2), m_eq(eq), m_root(nullptr) {}
     };
 
-    // cc_justification contains the uses of congruence closure 
+    // cc_justification contains the uses of congruence closure
     // It is the only information collected from justifications in order to
     // reconstruct EUF proofs. Transitivity, Symmetry of equality are not
     // tracked.
     typedef std::tuple<app*,app*,uint64_t, bool> cc_justification_record;
     typedef svector<cc_justification_record> cc_justification;
-    
-    class egraph {        
+
+    class egraph {
 
         typedef ptr_vector<trail> trail_stack;
 
@@ -181,6 +181,7 @@ namespace euf {
         enode                  *m_n1 = nullptr;
         enode                  *m_n2 = nullptr;
         justification          m_justification;
+        bool                   m_mark_js; // whether to mark justifications (for IUC)
         unsigned               m_new_th_eqs_qhead = 0;
         svector<th_eq>         m_new_th_eqs;
         bool_vector            m_th_propagates_diseqs;
@@ -213,9 +214,9 @@ namespace euf {
         void undo_add_th_var(enode* n, theory_id id);
         enode* mk_enode(expr* f, unsigned generation, unsigned num_args, enode * const* args);
         void force_push();
-        void set_conflict(enode* n1, enode* n2, justification j);
+        void set_conflict(enode* n1, enode* n2, justification &j);
         void merge_th_eq(enode* n, enode* root);
-        void merge_justification(enode* n1, enode* n2, justification j);
+        void merge_justification(enode* n1, enode* n2, justification &j);
         void reinsert_parents(enode* r1, enode* r2);
         void remove_parents(enode* r);
         void unmerge_justification(enode* n1);
@@ -253,6 +254,10 @@ namespace euf {
         enode_vector const& enodes_of(func_decl* f);
         void push() { if (!m_to_merge.empty()) propagate(); ++m_num_scopes; }
         void pop(unsigned num_scopes);
+
+        void set_mark_justifications(bool mark) {
+          m_mark_js = mark;
+        }
 
         void merge(enode *n1, enode *n2, justification j);
         /**
@@ -347,8 +352,7 @@ namespace euf {
             std::ostream& display(std::ostream& out) const { return n ? (out << n->get_expr_id() << ": " << mk_bounded_pp(n->get_expr(), g.m)) : out << "null"; }
         };
         b_pp bpp(enode* n) const { return b_pp(*this, n); }
-        std::ostream& display(std::ostream& out) const; 
-        
+        std::ostream& display(std::ostream& out) const;
         void collect_statistics(statistics& st) const;
 
         unsigned num_scopes() const { return m_scopes.size() + m_num_scopes; }

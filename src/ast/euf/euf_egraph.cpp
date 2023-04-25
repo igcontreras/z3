@@ -319,7 +319,7 @@ namespace euf {
             force_push();
             TRACE("euf", tout << bpp(n) << " := " << value << "\n";);
             n->set_value(value);
-            n->m_lit_justification = j;
+            n->m_lit_justification = std::move(j);
             m_updates.push_back(update_record(n, update_record::value_assignment()));
             if (n->is_equality() && n->value() == l_false) 
                 new_diseq(n);
@@ -445,6 +445,9 @@ namespace euf {
         if (r1 == r2)
             return;
 
+        if(m_mark_js)
+          j.set_mark(true);
+        
         TRACE("euf", j.display(tout << "merge: " << bpp(n1) << " == " << bpp(n2) << " ", m_display_justification) << "\n" << bpp(r1) << " " << bpp(r2) << "\n";);
         IF_VERBOSE(20, j.display(verbose_stream() << "merge: " << bpp(n1) << " == " << bpp(n2) << " ", m_display_justification) << "\n";);
         force_push();
@@ -575,7 +578,7 @@ namespace euf {
         force_push();
         for (unsigned i = 0; i < m_to_merge.size() && m.limit().inc() && !inconsistent(); ++i) {
             auto const& w = m_to_merge[i];
-            merge(w.a, w.b, justification::congruence(w.commutativity, m_congruence_timestamp++));                
+            merge(w.a, w.b, justification::congruence(w.commutativity, m_congruence_timestamp++));
         }
         m_to_merge.reset();
         return 
@@ -583,7 +586,7 @@ namespace euf {
             inconsistent();
     }
 
-    void egraph::set_conflict(enode* n1, enode* n2, justification j) {
+    void egraph::set_conflict(enode* n1, enode* n2, justification &j) {
         ++m_stats.m_num_conflicts;
         if (m_inconsistent)
             return;
@@ -595,7 +598,7 @@ namespace euf {
         m_justification = j;
     }
 
-    void egraph::merge_justification(enode* n1, enode* n2, justification j) {
+    void egraph::merge_justification(enode* n1, enode* n2, justification &j) {
         SASSERT(!n1->get_root()->m_target);
         SASSERT(!n2->get_root()->m_target);
         SASSERT(n1->reaches(n1->get_root()));
@@ -751,7 +754,7 @@ namespace euf {
     template <typename T>
     void egraph::explain_eq(ptr_vector<T>& justifications, cc_justification* cc, enode* a, enode* b) {
         SASSERT(a->get_root() == b->get_root());
-        
+
         enode* lca = find_lca(a, b);
         TRACE("euf_verbose", tout << "explain-eq: " << bpp(a) << " == " << bpp(b) << " lca: " << bpp(lca) << "\n";);
         push_to_lca(a, lca);
@@ -798,7 +801,7 @@ namespace euf {
                     n->mark1();
                     if (m.is_true(n->get_expr()) || m.is_false(n->get_expr()))
                       continue;
-                    justification j = n->m_lit_justification;
+                    justification &j = n->m_lit_justification;
                     SASSERT(j.is_external());
                     justifications.push_back(j.ext<T>());
                 }
@@ -871,7 +874,7 @@ namespace euf {
             if (n->m_target && m_display_justification)
                 n->m_justification.display(
                     out << "[j " << n->m_target->get_expr_id()
-                    << " m:" << n->m_lit_justification.is_marked() << " " <<
+                    << " m:" << ((n->m_justification.is_marked()) ? 1 : 0) << " " <<
                         " ",
                     m_display_justification)
                     << "] ";

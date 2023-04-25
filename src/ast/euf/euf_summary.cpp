@@ -18,7 +18,6 @@ Notes:
 
 --*/
 
-#include "ast/ast_smt2_pp.h" // TODO: remove
 #include "ast/euf/euf_summary.h"
 
 namespace euf {
@@ -26,7 +25,6 @@ namespace euf {
   expr_ref rewrite_args(expr * e, const expr_ref_vector &args) {
 
     ast_manager &m = args.get_manager();
-    // verbose_stream() << "RW: " << expr_ref(e, m) << " " << args << "\n";
 
     SASSERT(is_app(e));
     app * a = to_app(e);
@@ -78,14 +76,15 @@ namespace euf {
   void euf_summarizer::summarize_trans(enode *a, enode *b, expr_ref &a_sum,
                                        expr_ref &b_sum) {
     enode *lca = m_eg.find_lca(a, b);
-    verbose_stream() << "trans: " << m_eg.bpp(a) << " " << m_eg.bpp(b) << " "
-                     << m_eg.bpp(lca) << std::endl;
+    // verbose_stream() << "trans: " << m_eg.bpp(a) << " " << m_eg.bpp(b) << " "
+    //                  << m_eg.bpp(lca) << std::endl;
     expr_ref lhs(m);
     lhs = summarize_branch(a, lca, a_sum);
-    verbose_stream() << "br(a_sum): " << a_sum << " br(lhs): " << expr_ref(lhs,m) << std::endl;
+    // verbose_stream() << "br(a_sum): " << a_sum << " br(lhs): " << expr_ref(lhs,m) << std::endl;
     // partially summarized a--->lca, we do not know how b reaches lca
     expr_ref rhs(m);
     rhs = summarize_branch(b, lca, b_sum);
+
     // if lhs or rhs are null, the (possibly empty) summaries are closed for that branch
     // if this is the case, if one of them is not null, the summary needs to be closed at lca
     if (!lhs)
@@ -104,6 +103,8 @@ namespace euf {
     if (lhs != a->get_expr() && rhs != b->get_expr() && lhs != rhs) {
       m_sum.push_back(m.mk_eq(lhs, rhs));
     }
+    verbose_stream() << "sum-trans: a " << m_eg.bpp(a) << " -- " << a_sum << " b "
+                     << m_eg.bpp(b) << " -- " << b_sum << std::endl;
   }
 
   const euf_summarizer::congr_sum &euf_summarizer::summarize_congr(enode *c) {
