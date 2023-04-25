@@ -72,11 +72,19 @@ namespace euf {
                 lit.neg();
             return lit;
         }
-        if (auto* ext = expr2solver(e))
-            return ext->internalize(e, sign, root);
+
+        if (auto* ext = expr2solver(e)) {
+          return ext->internalize(e, sign, root);
+        }
         if (!visit_rec(m, e, sign, root)) 
             return sat::null_literal;
         SASSERT(get_enode(e));
+        // TODO: efficiency?
+        if (m.is_eq(e)) { // do not allow congruence propagation on equalities
+                          // with functor '='
+          n = get_enode(e);
+          n->set_cgc_enabled(false);
+        }
         if (m.is_bool(e))
             return literal(si.to_bool_var(e), sign);
         return sat::null_literal;

@@ -135,7 +135,6 @@ namespace euf {
         void add_th_var(theory_var v, theory_id id, region & r) { m_th_vars.add_var(v, id, r); }
         void replace_th_var(theory_var v, theory_id id) { m_th_vars.replace(v, id); }
         void del_th_var(theory_id id) { m_th_vars.del_var(id); }   
-        void set_cgc_enabled(bool m) { m_cgc_enabled = m; }
         void set_merge_tf(bool m) { m_merge_tf_enabled = m; }
         void set_value(lbool v) { m_value = v; }
         void set_justification(justification j) { m_justification = j; }
@@ -162,6 +161,7 @@ namespace euf {
         bool commutative() const { return m_commutative; }
         void mark_interpreted() { SASSERT(num_args() == 0); m_interpreted = true; }
         bool cgc_enabled() const { return m_cgc_enabled; }
+        void set_cgc_enabled(bool m) { m_cgc_enabled = m; }
         bool merge_tf() const { return m_merge_tf_enabled && (class_size() > 1 || num_parents() > 0 || num_args() > 0); }
 
         enode* get_arg(unsigned i) const { SASSERT(i < num_args()); return m_args[i]; }        
