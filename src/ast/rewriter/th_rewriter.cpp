@@ -38,7 +38,6 @@ Notes:
 #include "ast/ast_util.h"
 #include "ast/well_sorted.h"
 #include "ast/for_each_expr.h"
-#include "qe/mbp/mbp_arrays.h"
 namespace {
 struct th_rewriter_cfg : public default_rewriter_cfg {
     bool_rewriter       m_b_rw;

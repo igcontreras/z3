@@ -19,7 +19,7 @@ Revision History:
 
 #include "qe/mbp/mbp_arrays_tg.h"
 #include "qe/mbp/mbp_qel_util.h"
-#include "qe/mbp/mbp_arrays.h"
+#include "ast/array_decl_plugin.h"
 #include "util/obj_hashtable.h"
 #include "util/obj_pair_hashtable.h"
 

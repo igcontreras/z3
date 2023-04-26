@@ -24,7 +24,6 @@ Notes:
 #include "ast/rewriter/var_subst.h"
 #include "params/array_rewriter_params.hpp"
 #include "util/util.h"
-#include "qe/mbp/mbp_arrays.h"
 
 void array_rewriter::updt_params(params_ref const & _p) {
     array_rewriter_params p(_p);

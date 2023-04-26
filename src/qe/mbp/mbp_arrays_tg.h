@@ -21,7 +21,6 @@ Revision History:
 #pragma once
 
 #include "ast/ast.h"
-#include "qe/mbp/mbp_arrays.h"
 #include "qe/mbp/mbp_tg_plugins.h"
 #include "qe/mbp/mbp_qel_util.h"
 #include "qe/mbp/mbp_term_graph.h"
