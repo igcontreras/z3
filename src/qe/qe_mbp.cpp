@@ -79,6 +79,7 @@ class mbproj::impl {
     // parameters
     bool m_reduce_all_selects;
     bool m_dont_sub;
+    bool m_use_qel;
 
     void add_plugin(mbp::project_plugin* p) {
         family_id fid = p->get_family_id();
@@ -285,33 +286,48 @@ public:
         m_params.append(p);
         m_reduce_all_selects = m_params.get_bool("reduce_all_selects", false);
         m_dont_sub = m_params.get_bool("dont_sub", false);
+        m_use_qel = m_params.get_bool("use_qel", true);
     }
 
     void preprocess_solve(model& model, app_ref_vector& vars, expr_ref_vector& fmls) {
-        extract_literals(model, vars, fmls);
-        expr_ref e(m);
-        e = mk_and(fmls);
-        do_qel(vars, e);
-        fmls.reset();
-        flatten_and(e, fmls);
-        bool change = true;
-        while (change && !vars.empty()) {
-            change = false;
+        if (m_use_qel) {
+            extract_literals(model, vars, fmls);
+            expr_ref e(m);
             e = mk_and(fmls);
             do_qel(vars, e);
             fmls.reset();
             flatten_and(e, fmls);
-            for (auto* p : m_plugins) {
-                if (p && p->solve(model, vars, fmls)) {
-                    change = true;
+            bool change = true;
+            while (change && !vars.empty()) {
+                change = false;
+                e = mk_and(fmls);
+                do_qel(vars, e);
+                fmls.reset();
+                flatten_and(e, fmls);
+                for (auto* p : m_plugins) {
+                    if (p && p->solve(model, vars, fmls)) {
+                        change = true;
+                    }
+                }
+            }
+            //rewrite as_const_arr terms
+            expr_ref fml(m);
+            fml = mk_and(fmls);
+            rewrite_as_const_arr(fml, model, fml);
+            flatten_and(fml, fmls);
+        }
+        else {
+            extract_literals(model, vars, fmls);
+            bool change = true;
+            while (change && !vars.empty()) {
+                change = solve(model, vars, fmls);
+                for (auto* p : m_plugins) {
+                    if (p && p->solve(model, vars, fmls)) {
+                        change = true;
+                    }
                 }
             }
         }
-        //rewrite as_const_arr terms
-        expr_ref fml(m);
-        fml = mk_and(fmls);
-        rewrite_as_const_arr(fml, model, fml);
-        flatten_and(fml, fmls);
     }
 
     bool validate_model(model& model, expr_ref_vector const& fmls) {
@@ -415,7 +431,7 @@ public:
             << "Vars: " << vars << "\n";);
   }
 
-    void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {
+    void spacer_qel(app_ref_vector& vars, model& mdl, expr_ref& fml) {
         TRACE("qe", tout << "Before projection:\n" << fml << "\n" << "Vars: " << vars << "\n";);
 
         model_evaluator eval(mdl, m_params);
@@ -474,6 +490,96 @@ public:
         vars.append(other_vars);
     }
 
+    void spacer(app_ref_vector& vars, model& mdl, expr_ref& fml) {
+        if (m_use_qel) {
+            spacer_qel(vars, mdl, fml);
+        }
+        else {
+            spacer_qe_lite(vars, mdl, fml);
+        }
+    }
+
+    void spacer_qe_lite(app_ref_vector& vars, model& mdl, expr_ref& fml) {
+        TRACE("qe", tout << "Before projection:\n" << fml << "\n" << "Vars: " << vars << "\n";);
+
+        model_evaluator eval(mdl, m_params);
+        eval.set_model_completion(true);
+        app_ref_vector other_vars(m);
+        app_ref_vector array_vars(m);
+        array_util arr_u(m);
+        arith_util ari_u(m);
+
+        flatten_and(fml);
+
+        while (!vars.empty()) {
+
+            do_qe_lite(vars, fml);
+
+            do_qe_bool(mdl, vars, fml);
+
+            // sort out vars into bools, arith (int/real), and arrays
+            for (app* v : vars) {
+                if (arr_u.is_array(v)) {
+                    array_vars.push_back(v);
+                }
+                else {
+                    other_vars.push_back(v);
+                }
+            }
+
+            TRACE("qe", tout << "Array vars: " << array_vars << "\n";);
+
+            vars.reset();
+
+            // project arrays
+            mbp::array_project_plugin ap(m);
+            ap(mdl, array_vars, fml, vars, m_reduce_all_selects);
+            SASSERT(array_vars.empty());
+            m_rw(fml);
+            SASSERT(!m.is_false(fml));
+
+            TRACE("qe",
+                tout << "extended model:\n" << mdl;
+                tout << "Vars: " << vars << "\n";);
+        }
+
+        // project reals, ints and other variables.
+        if (!other_vars.empty()) {
+            TRACE("qe", tout << "Other vars: " << other_vars << "\n" << mdl;);
+
+            expr_ref_vector fmls(m);
+            flatten_and(fml, fmls);
+
+            (*this)(false, other_vars, mdl, fmls);
+            fml = mk_and(fmls);
+            m_rw(fml);
+
+            TRACE("qe",
+                tout << "Projected other vars:\n" << fml << "\n";
+            tout << "Remaining other vars:\n" << other_vars << "\n";);
+            SASSERT(!m.is_false(fml));
+        }
+
+        if (!other_vars.empty()) {
+            project_vars(mdl, other_vars, fml);
+            m_rw(fml);
+        }
+
+        // substitute any remaining other vars
+        if (!m_dont_sub && !other_vars.empty()) {
+            subst_vars(eval, other_vars, fml);
+            TRACE("qe", tout << "After substituting remaining other vars:\n" << fml << "\n";);
+            // an extra round of simplification because subst_vars is not simplifying
+            m_rw(fml);
+            other_vars.reset();
+        }
+
+        SASSERT(!eval.is_false(fml));
+
+        vars.reset();
+        vars.append(other_vars);
+    }
+
 };
 
 mbproj::mbproj(ast_manager& m, params_ref const& p) {
@@ -492,6 +598,7 @@ void mbproj::updt_params(params_ref const& p) {
 void mbproj::get_param_descrs(param_descrs& r) {
     r.insert("reduce_all_selects", CPK_BOOL, "(default: false) reduce selects");
     r.insert("dont_sub", CPK_BOOL, "(default: false) disable substitution of values for free variables");
+    r.insert("use_qel", CPK_BOOL, "(default: true) use egraph based qer");
 }
 
 void mbproj::operator()(bool force_elim, app_ref_vector& vars, model& mdl, expr_ref_vector& fmls) {
