@@ -1,4 +1,4 @@
-;; iuc (= b (f1 l)) (= (f g) (f h))
+;; iuc (= (f2 i g) (f2 j g)) (= b (f2 j h)) (not (= a b))
 
 ;; colorable two congruence with shared argument
 (declare-sort A)

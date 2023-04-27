@@ -1,4 +1,4 @@
-;; iuc (= a (f1 i))
+;; iuc (= b (f1 i))
 
 (declare-sort A)
 (declare-const a A)
