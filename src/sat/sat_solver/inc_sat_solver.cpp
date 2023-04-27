@@ -997,6 +997,7 @@ private:
                    "propagation\n"
                 << *euf_s;
 
+      g->reset();
       for (unsigned i = m_fmls_head; i < m_fmls.size(); ++i) {
         expr *fml = m_fmls.get(i);
         g->assert_expr(fml);
