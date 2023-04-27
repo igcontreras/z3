@@ -84,6 +84,11 @@ namespace euf {
                           // with functor '='
           n = get_enode(e);
           n->set_cgc_enabled(false);
+          if (n->get_arg(0)->get_root() == n->get_arg(1)->get_root()) {
+            lbool new_value = sign ? l_false : l_true;
+            n->set_value(new_value); // TODO: but this is not getting propagated
+            m_egraph.reinsert_equality(n);
+          }
         }
         if (m.is_bool(e))
             return literal(si.to_bool_var(e), sign);
