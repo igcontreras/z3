@@ -220,7 +220,9 @@ namespace euf {
         void reinsert_parents(enode* r1, enode* r2);
         void remove_parents(enode* r);
         void unmerge_justification(enode* n1);
+    public:
         void reinsert_equality(enode* p);
+    private:
         void update_children(enode* n);
         void push_lca(enode* a, enode* b);
         enode* find_lca(enode* a, enode* b);

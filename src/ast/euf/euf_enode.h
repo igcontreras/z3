@@ -136,7 +136,6 @@ namespace euf {
         void replace_th_var(theory_var v, theory_id id) { m_th_vars.replace(v, id); }
         void del_th_var(theory_id id) { m_th_vars.del_var(id); }   
         void set_merge_tf(bool m) { m_merge_tf_enabled = m; }
-        void set_value(lbool v) { m_value = v; }
         void set_justification(justification j) { m_justification = j; }
         void set_is_equality() { m_is_equality = true;  }
         void set_bool_var(sat::bool_var v) { m_bool_var = v; }
@@ -146,7 +145,8 @@ namespace euf {
             SASSERT(m_root == this); 
             SASSERT(class_size() == 1); 
         }
-
+      
+        void set_value(lbool v) { m_value = v; }
         enode* const* args() const { return m_args; }
         unsigned num_args() const { return m_num_args; }
         unsigned num_parents() const { return m_parents.size(); }
