@@ -293,10 +293,6 @@ public:
         if (m_use_qel) {
             extract_literals(model, vars, fmls);
             expr_ref e(m);
-            e = mk_and(fmls);
-            do_qel(vars, e);
-            fmls.reset();
-            flatten_and(e, fmls);
             bool change = true;
             while (change && !vars.empty()) {
                 change = false;
