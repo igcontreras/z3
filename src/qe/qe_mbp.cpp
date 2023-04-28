@@ -29,6 +29,7 @@ Revision History:
 #include "ast/rewriter/rewriter.h"
 #include "ast/rewriter/rewriter_def.h"
 #include "ast/scoped_proof.h"
+#include "util/gparams.h"
 #include "model/model_evaluator.h"
 #include "model/model_pp.h"
 #include "qe/lite/qe_lite.h"
@@ -286,7 +287,9 @@ public:
         m_params.append(p);
         m_reduce_all_selects = m_params.get_bool("reduce_all_selects", false);
         m_dont_sub = m_params.get_bool("dont_sub", false);
-        m_use_qel = m_params.get_bool("use_qel", true);
+        auto q = gparams::get_module("smt");
+        m_params.append(q);
+        m_use_qel = m_params.get_bool("qsat_use_qel", true);
     }
 
     void preprocess_solve(model& model, app_ref_vector& vars, expr_ref_vector& fmls) {

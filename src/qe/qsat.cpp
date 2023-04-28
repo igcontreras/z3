@@ -1260,12 +1260,7 @@ namespace qe {
             m_value(nullptr),
             m_was_sat(false),
             m_gt(m)
-        {
-             params_ref q = params_ref();
-             q.set_bool("use_qel", false);
-             //q.set_bool("use_qel", true);
-             m_mbp.updt_params(q);
-        }
+        {}
         
         ~qsat() override {
             clear();
