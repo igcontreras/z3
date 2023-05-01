@@ -336,7 +336,23 @@ public:
         return true;
     }
 
-    void operator()(bool force_elim, app_ref_vector& vars, model& model, expr_ref_vector& fmls) {
+        void operator()(bool force_elim, app_ref_vector& vars, model& model, expr_ref_vector& fmls) {
+            if (m_use_qel) {
+                bool dsub = m_dont_sub;
+                m_dont_sub = !force_elim;
+                expr_ref fml(m);
+                fml = mk_and(fmls);
+                spacer_qel(vars, model, fml);
+                fmls.reset();
+                flatten_and(fml, fmls);
+                m_dont_sub = dsub;
+            }
+            else {
+                mbp(force_elim, vars, model, fmls);
+            }
+        }
+
+    void mbp(bool force_elim, app_ref_vector& vars, model& model, expr_ref_vector& fmls) {
         SASSERT(validate_model(model, fmls));
         expr_ref val(m), tmp(m);
         app_ref var(m);
@@ -459,7 +475,7 @@ public:
             expr_ref_vector fmls(m);
             flatten_and(fml, fmls);
 
-            (*this)(false, other_vars, mdl, fmls);
+            mbp(false, other_vars, mdl, fmls);
             fml = mk_and(fmls);
             m_rw(fml);
 
