@@ -41,12 +41,13 @@ namespace spacer {
 
   void iuc_learner::compute_unsat_core(expr_ref_vector &unsat_core) {
 
-    // std::ofstream ofs;
-    // ofs.open("/tmp/proof.dot");
-    // m_pr.display_dot(ofs);
-    // ofs.close();
+    std::ofstream ofs;
+    ofs.open("/tmp/curr_proof.dot");
+    m_pr.display_dot(ofs);
+    ofs.close();
 
-    proof_visitor it(m_pr.get(), m); // proof pre visitor
+    ast_mark visited;
+    proof_visitor it(m_pr.get(), m, visited); // proof pre visitor
 
     while (it.hasNext()) {
         proof* curr = it.next();
@@ -72,7 +73,7 @@ namespace spacer {
         // an unsat core could not be obtained just by looking at this node, the
         // children have to be visited
         if(!is_closed(curr)) {
-          it.visit_parents();
+          it.visit_premises();
           // close because eventually the unsat core for the children will be
           // computed and the node does not need to be visited again
           set_closed(curr, true);

@@ -28,8 +28,17 @@ public:
     bool is_core_pure(expr* e) const;
 
     bool is_a_marked(proof* p) {return m_a_mark.is_marked(p);}
+    bool is_only_a_marked(proof *p) {
+        return is_a_marked(p) && !is_h_marked(p) && !is_b_marked(p);
+    }
     bool is_b_marked(proof* p) {return m_b_mark.is_marked(p);}
+    bool is_only_b_marked(proof * p) {
+      return is_b_marked(p) && !is_h_marked(p) && !is_a_marked(p);
+    }
     bool is_h_marked(proof* p) {return m_h_mark.is_marked(p);}
+    bool is_only_h_marked(proof *p) {
+        return is_h_marked(p) && !is_b_marked(p) && !is_a_marked(p);
+    }
 
     bool is_b_pure (proof *p) {
         return !is_h_marked (p) && !this->is_a_marked(p) && is_core_pure(m.get_fact (p));

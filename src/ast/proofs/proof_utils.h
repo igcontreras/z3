@@ -53,15 +53,17 @@ class proof_pre_order {
 
 class proof_visitor {
   public:
-    proof_visitor(proof *refutation, ast_manager &manager);
+    proof_visitor(proof *refutation, ast_manager &manager, ast_mark &visited);
+    proof_visitor(proof *refutation, ast_manager &manager,
+                  proof_visitor &pv);
     bool hasNext();
     proof *next();
-    void visit_parents(); // schedule the parents to be visited
+    void visit_premises(); // schedule premises to be visited
 
   private:
-    ptr_vector<proof> m_todo;
-    ast_mark m_visited; // the proof nodes we have already visited
     ast_manager &m;
+    ptr_vector<proof> m_todo;
+    ast_mark &m_visited; // proof nodes already visited, may be shared with other visitors
     proof * m_curr;
 };
 

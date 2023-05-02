@@ -31,6 +31,12 @@ Revision History:
 #include "muz/spacer/spacer_unsat_core_plugin.h"
 #include "muz/spacer/spacer_unsat_core_learner.h"
 #include "muz/spacer/spacer_iuc_proof.h"
+#include "util/lbool.h"
+#include "util/util.h"
+
+// for debugging
+#include <fstream>
+#include <iostream>
 
 static unsigned proof_dbg_cnt = 0;
 
@@ -736,75 +742,121 @@ namespace spacer {
       m_ctx.set_closed(step, true);
     }
 
-      bool replay_plugin::understands_step(proof * step) {
-        if (!m.is_false(m.get_fact(step))) { return false; }
-        if (m_ctx.is_a_marked(step)) return false;
+    /* ---------------------------------------------------------------------- */
+    /* -------------------- Replay plugin ----------------------------------- */
+    /* ---------------------------------------------------------------------- */
 
-        SASSERT(m_ctx.is_b(step) && m_ctx.is_h(step));
+  void replay_plugin::reset() {
+    m_b.reset();
+    m_a.reset();
+    m_h.reset();
+  }
 
-        m_h = nullptr;
-        m_b.reset();
+  // refutation proof
+  bool replay_plugin::understands_proof(proof *pf) {
+    return m.is_false(m.get_fact(pf));
+  }
 
-        // traverse the proof to find exactly hypothesis and B literals
-        proof_visitor pit(step, m);
+  void replay_plugin::store_step(proof *step, bool store_h) {
+      expr *conclusion = m.get_fact(step);
 
-        proof *curr = nullptr;
-        while (pit.hasNext()) {
-          curr = pit.next();
+      if (m_ctx.is_only_a(step)) {
+          if (step->get_decl_kind() == PR_ASSERTED) { // leaf
+              m_a.push_back(conclusion);
+          } else if (step->get_decl_kind() == PR_TH_LEMMA) { // lemma
+              m_a_lemmas.push_back(conclusion);
+          }
+      } else if (m_ctx.is_only_b(step)) {
+          if (step->get_decl_kind() == PR_ASSERTED) { // leaf
+              m_b.push_back(conclusion);
+          } else if (step->get_decl_kind() == PR_TH_LEMMA) { // lemma
+              m_b_lemmas.push_back(conclusion);
+          }
+      } else if (store_h && step->get_decl_kind() == PR_HYPOTHESIS) {
+          m_h.push_back(conclusion);
+          // alt: store first hypothesis and do not visit. does this guarantee
+          // propagation?
+      }
+      // else, step derived from more than 1 color
+  }
+
+
+  // Creates proof visitors with **shared** visited cache to visit refutation
+  // subproofs, this makes the function recursive. Visited cache & DAG prevents loops
+  void replay_plugin::extract_from_proof(proof_visitor &pit, bool store_hyp) {
+
+      // traverse the proof to find exactly hypothesis and B literals
+      proof *curr = nullptr;
+      while ((curr = pit.next()) != nullptr) {
+
+          store_step(curr, true);
 
           bool visit = true;
-
-          if (m_ctx.is_b(curr) && m_ctx.is_h(curr)) {
-            visit = true;
-          } else if (curr->get_decl_kind() == PR_HYPOTHESIS) {
-            if (m_h == nullptr) {
-              m_h = m.get_fact(curr);
+          // premises must be visited differently if this is a lemma because
+          // hypotheses must not be added
+          if (curr->get_decl_kind() == PR_TH_LEMMA) {
+              proof_visitor lemma_it(curr, m, pit);
+              extract_from_proof(lemma_it, false);
               visit = false;
-            } else {
-              return false; // more than one hypothesis
-            }
           }
-          // find B literals working around spacer_proxy!X: if the first parent
-          // is a boolean variable, it is a spacer_proxy variable
-          else if (m_ctx.is_b(curr) && m.get_num_parents(curr) > 1) {
-            app *fact = to_app(m.get_fact(to_app(curr->get_arg(0))));
-            if ((fact->get_num_parameters() == 0) && m.is_bool(fact)) {
-              m_b.push_back(m.get_fact(curr));
-              visit = false;
-            }
-          }
+          // else if (!m_ctx.is_a(curr) && // `is_a` includes hypothesis
+          //          !m_ctx.is_b(curr)) { // derived only by axioms, do not look (?)
+          //     visit = false;
+          // }
 
-          if(visit){
-            pit.visit_parents();
-          }
-        }
-
-        if(m_h && !m_b.empty())
-          return true;
-        return false;
+          if (visit) pit.visit_premises();
       }
+  }
 
-      void replay_plugin::compute_partial_core(proof *step) {
-        if (m_ctx.is_closed(step)) return;
+  void replay_plugin::compute_partial_core(proof *step) {
+      if (m_ctx.is_closed(step)) return;
 
-        if (!understands_step(step)) return;
-        // we assume that the lemma is not over B vocabulary because that is
-        // taken care of earlier by spacer_iuc_learner, for the other learner we
-        // can add a condition
+      if (!understands_proof(step)) return;
+      // we assume that the lemma is not over B vocabulary because that is
+      // taken care of earlier by spacer_iuc_learner, for the other learner we
+      // can add a condition
+      reset();
+      ast_mark visited;
+      proof_visitor pit(step, m, visited);
+      visited.reset();
+      extract_from_proof(pit, true);
 
-        // TODO: if interpolation could be done, close step
-        verbose_stream() << "Hyp: " << m_h << "\n";
-        verbose_stream() << "B:";
+      if (proof_dbg_cnt <= 30) {
+          std::ofstream myfile;
+          myfile.open("/tmp/proof" + std::to_string(proof_dbg_cnt) + ".smt2");
+          myfile << ";; B:\n";
+          for (auto l : m_b) myfile << " " << expr_ref(l, m) << "\n";
+          myfile << "\n\n";
+          myfile << ";; B lemmas:";
+          for (auto l : m_b_lemmas) myfile << " " << expr_ref(l, m) << "\n";
+          myfile << "\n\n";
+          myfile << ";; A:\n";
+          for (auto l : m_a) myfile << " " << expr_ref(l, m) << "\n";
+          myfile << "\n\n";
+          myfile << ";; A lemmas:\n";
+          for (auto l : m_a_lemmas) myfile << " " << expr_ref(l, m) << "\n";
+          myfile << "\n\n";
+          myfile << ";; Hyps:\n" << m_h << "\n";
+          myfile << "\n";
+          myfile.close();
 
-        for (auto l : m_b) verbose_stream() << " " << expr_ref(l,m);
-
-        verbose_stream() << "\n";
-
-        if (proof_dbg_cnt <= 5) {
           std::ofstream ofs;
-          ofs.open("/tmp/proof" + std::to_string(++proof_dbg_cnt) + ".dot");
+          ofs.open("/tmp/proof" + std::to_string(proof_dbg_cnt) + ".dot");
           m_ctx.get_proof().display_dot(ofs);
           ofs.close();
-        }
+
+          ++proof_dbg_cnt;
       }
- } // namespace spacer
+      if (m_b.size() == 0) {
+          m_ctx.add_lemma_to_core(m.mk_true());
+          m_ctx.set_closed(step, true);
+      }
+      if (m_b.size() == 1) {
+        m_ctx.set_closed(step, true);
+        m_ctx.add_lemma_to_core(m_b.back());
+      }
+      // TODO: here call our new solver!
+
+      //  m_b is an UC!
+      }
+} // namespace spacer

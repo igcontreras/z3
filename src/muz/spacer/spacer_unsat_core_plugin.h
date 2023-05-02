@@ -19,9 +19,7 @@ Revision History:
 
 #include "ast/ast.h"
 #include "util/min_cut.h"
-
-// to replay proofs
-#include "sat/smt/euf_solver.h"
+#include "ast/proofs/proof_utils.h" // ugly?
 
 namespace spacer {
 
@@ -112,15 +110,29 @@ namespace spacer {
     };
 
   class replay_plugin : public unsat_core_plugin {
+
   public:
     replay_plugin(unsat_core_learner &learner, ast_manager &m)
-        : unsat_core_plugin(learner), m_h(m), m_b(m) {};
-        void compute_partial_core(proof *step) override;
-  private:
-    expr_ref m_h; // hypothesis if `understands_step` is true
-    expr_ref_vector m_b; // B literals if `understands_step` is true
+        : unsat_core_plugin(learner), m_b(m), m_b_lemmas(m), m_a(m),
+          m_a_lemmas(m), m_h(m){};
+    void compute_partial_core(proof *step) override;
 
-    // looks for a lemma with only B and 1 hypothesis
-    bool understands_step(proof *pr); // this should be a plugin interface function
+  private:
+    // B literals (except for proxy)
+    expr_ref_vector m_b;
+    // B lemmas (in a language useful for spacer itps)
+    expr_ref_vector m_b_lemmas;
+    // A clauses
+    expr_ref_vector m_a;
+    // A lemmas (derived from A in any language)
+    expr_ref_vector m_a_lemmas;
+    // hypotheses (that make A a cube, not the ones used to derive lemmas)
+    expr_ref_vector m_h;
+
+    void reset();
+    void store_step(proof *pr, bool store_hyp);
+    // extract data from proof
+    void extract_from_proof(proof_visitor &pit, bool store_hyp);
+    bool understands_proof(proof *pf); // should be plugin interface function
   };
 }

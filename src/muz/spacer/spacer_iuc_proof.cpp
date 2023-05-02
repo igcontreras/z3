@@ -210,9 +210,9 @@ void iuc_proof::display_dot(std::ostream& out) {
         ids.insert(std::make_pair(curr->get_id(), last_id));
 
         std::string color = "white";
-        if (is_a_marked(curr) && !is_b_marked(curr) && !is_h_marked(curr))
+        if (is_only_a_marked(curr))
             color = "lightcoral";
-        else if (is_b_marked(curr) && !is_h_marked(curr) && !is_a_marked(curr))
+        else if (is_only_b_marked(curr))
             color = "cadetblue2";
         else if (is_a_marked(curr) && is_b_marked(curr) )
             color = "plum";

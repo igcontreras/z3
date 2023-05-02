@@ -78,7 +78,15 @@ proof_pre_order::proof_pre_order(proof* root, ast_manager& manager) : m(manager)
 }
 
 bool proof_pre_order::hasNext() {
-    return !m_todo.empty();
+  // all elements in the queue may be already visited
+  while (!m_todo.empty()) {
+    proof *curr = m_todo.back();
+    if (!m_visited.is_marked(curr))
+      return true;
+    else
+      m_todo.pop_back();
+  }
+  return false;
 }
 
 /*
@@ -103,47 +111,63 @@ proof* proof_pre_order::next() {
                     m_todo.push_back(premise);
                 }
             }
-
+            m_visited.mark(currentNode, true);
             return currentNode;
         }
     }
-    // we have already iterated through all inferences
+
     return nullptr;
 }
 
-
-proof_visitor::proof_visitor(proof* root, ast_manager& manager) : m(manager) {
-    m_todo.push_back(root);
+proof_visitor::proof_visitor(proof *root, ast_manager &manager,
+                             ast_mark &visited)
+    : m(manager), m_visited(visited) {
+  m_todo.push_back(root);
 }
 
-bool proof_visitor::hasNext() { return !m_todo.empty(); }
+proof_visitor::proof_visitor(proof *root, ast_manager &manager,
+                             proof_visitor &pv)
+    : m(manager), m_visited(pv.m_visited) {
+  m_todo.push_back(root);
+}
+
+bool proof_visitor::hasNext() {
+  // all elements in the queue may be already visited
+  while (!m_todo.empty()) {
+    proof *curr = m_todo.back();
+    if (!m_visited.is_marked(curr))
+      return true;
+    else
+      m_todo.pop_back();
+  }
+  return false;
+}
 
 /*
- * iterative pre-order depth-first search (DFS) through the proof DAG
+ * iterative pre-order depth-first search (DFS) through the proof DAG, visiting
+ * premises on demand
  */
 proof *proof_visitor::next() {
-    while (!m_todo.empty()) {
-        proof* curr = m_todo.back();
-        m_todo.pop_back();
-        // if we haven't already visited the current unit
-        if (!m_visited.is_marked(curr)) {
-          // add children to the queue and return current node
-          m_curr = curr;
-          return curr;
-        }
+  while (!m_todo.empty()) { 
+    proof* curr = m_todo.back();
+    m_todo.pop_back();
+    // if `hasNext`` is always called before next, the following condition
+    // should be an assertion
+    if (!m_visited.is_marked(curr)) {
+      m_curr = curr;
+      m_visited.mark(curr, true);
+      return curr;
     }
-    // we have already iterated through all inferences
-    return nullptr;
+  }
+  return nullptr;
 }
 
-void proof_visitor::visit_parents() {
+void proof_visitor::visit_premises() {
   for (unsigned i = 0; i < m.get_num_parents(m_curr); ++i) {
     SASSERT(m.is_proof(m_curr->get_arg(i)));
     proof *premise = to_app(m_curr->get_arg(i));
 
-    // if we haven't visited the current premise yet
     if (!m_visited.is_marked(premise)) {
-      // add it to the stack
       m_todo.push_back(premise);
     }
   }

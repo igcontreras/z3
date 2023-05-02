@@ -344,7 +344,8 @@ namespace spacer {
             unsat_core_plugin* plugin;
             // -- register iuc plugins
             // EUF plugin
-            learner.register_plugin(alloc(unsat_core_plugin_euf, learner, m));
+            // learner.register_plugin(alloc(unsat_core_plugin_euf, learner, m));
+            learner.register_plugin(alloc(replay_plugin, learner, m));
 
             switch (m_iuc_arith) {
             case 0:

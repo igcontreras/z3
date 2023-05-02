@@ -54,10 +54,17 @@ namespace spacer {
             // AG: this is not yet true in case of arithmetic eq_prop
             return m_pr.is_a_marked(pr) || is_h(pr);
         }
+        bool is_only_a(proof *pr) { return m_pr.is_only_a_marked(pr); }
         bool is_b(proof *pr) {return m_pr.is_b_marked(pr);}
+        bool is_only_b(proof *pr) {
+          return m_pr.is_only_b_marked(pr);
+        }
         bool is_h(proof *pr) {return m_pr.is_h_marked(pr);}
+        bool is_only_h(proof *pr) { return m_pr.is_only_h_marked(pr); }
+        
         bool is_b_pure(proof *pr) { return m_pr.is_b_pure(pr);}
         bool is_b_open(proof *p) {return m_pr.is_b_marked(p) && !is_closed (p);}
+        iuc_proof & get_proof() { return m_pr; }
 
         /*
          * register a plugin for computation of partial unsat cores

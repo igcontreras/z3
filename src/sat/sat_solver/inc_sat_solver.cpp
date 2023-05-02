@@ -955,7 +955,7 @@ private:
       if (m_fmls_head == m_fmls.size()) return l_true;
 
         lbool res;
-        
+
         if (m_is_cnf) {
             res = internalize_goal(m_fmls.size() - m_fmls_head, m_fmls.data() + m_fmls_head);
         }
@@ -972,6 +972,8 @@ private:
         m_internalized_converted = false;
         return res;
     }
+
+
     lbool internalize_formulas_ig() {
       SASSERT(m_fmls.size() >= 2);
       SASSERT(m_fmls_head != m_fmls.size());
