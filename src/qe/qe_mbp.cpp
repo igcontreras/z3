@@ -43,6 +43,35 @@ using namespace qe;
 
 // rewrite all occurrences of (as const arr c) to (as const arr v) where v = m_eval(c)
 namespace  {
+// rewrite select(store(a, i, k), j) into k if m \models i = j and select(a, j) if m \models i != j
+    struct rd_over_wr_rewriter : public default_rewriter_cfg {
+            ast_manager &m;
+            array_util m_arr;
+            model_evaluator m_eval;
+
+            rd_over_wr_rewriter(ast_manager& man, model& mdl): m(man), m_arr(m), m_eval(mdl) {
+                m_eval.set_model_completion(false);
+            }
+
+            br_status reduce_app(func_decl *f, unsigned num, expr *const *args,
+                                 expr_ref &result, proof_ref &result_pr) {
+                if (m_arr.is_select(f) && m_arr.is_store(args[0])) {
+                    expr_ref ind1(m), ind2(m);
+                    ind1 = m_eval(args[1]);
+                    ind2 = m_eval(to_app(args[0])->get_arg(1));
+                    if (ind1 == ind2) {
+                        result = to_app(args[0])->get_arg(2);
+                        return BR_DONE;
+                    }
+                    expr_ref_vector new_args(m);
+                    new_args.push_back(to_app(args[0])->get_arg(0));
+                    new_args.push_back(args[1]);
+                    result = m_arr.mk_select(new_args);
+                    return BR_REWRITE1;
+                }
+                return BR_FAILED;
+            }
+    };
     struct app_const_arr_rewriter : public default_rewriter_cfg {
             ast_manager &m;
             array_util m_arr;
@@ -68,6 +97,12 @@ namespace  {
 void rewrite_as_const_arr(expr* in, model& mdl, expr_ref& out) {
     app_const_arr_rewriter cfg(out.m(), mdl);
     rewriter_tpl<app_const_arr_rewriter> rw(out.m(), false, cfg);
+    rw(in, out);
+}
+
+void rewrite_read_over_write(expr* in, model& mdl, expr_ref& out) {
+    rd_over_wr_rewriter cfg(out.m(), mdl);
+    rewriter_tpl<rd_over_wr_rewriter> rw(out.m(), false, cfg);
     rw(in, out);
 }
 
@@ -439,7 +474,8 @@ public:
   void tg_project(app_ref_vector &vars, model &mdl, expr_ref &fml, bool reduce_all_selects) {
       flatten_and(fml);
       mbp::mbp_qel mbptg(m, m_params);
-      mbptg(vars, fml, mdl, reduce_all_selects);
+      mbptg(vars, fml, mdl);
+      if (reduce_all_selects) rewrite_read_over_write(fml, mdl, fml);
       m_rw(fml);
       TRACE("qe", tout << "After mbp_tg:\n"
             << fml << " models " << mdl.is_true(fml) << "\n"
@@ -636,3 +672,4 @@ opt::inf_eps mbproj::maximize(expr_ref_vector const& fmls, model& mdl, app* t, e
     return m_impl->maximize(fmls, mdl, t, ge, gt);
 }
 template class rewriter_tpl<app_const_arr_rewriter>;
+template class rewriter_tpl<rd_over_wr_rewriter>;
