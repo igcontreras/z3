@@ -115,8 +115,8 @@ public:
         std::for_each(m_plugins.begin(), m_plugins.end(), delete_proc<mbp_tg_plugin>());
     }
 
-  void operator()(app_ref_vector &vars, expr_ref &fml, model& mdl, bool reduce_all_selects = false) {
-    if (!reduce_all_selects && vars.empty())
+  void operator()(app_ref_vector &vars, expr_ref &fml, model& mdl) {
+    if (vars.empty())
       return;
 
     init(vars, fml, mdl);
@@ -138,19 +138,6 @@ public:
           for(auto b : m_tg.get_lits()) tout << expr_ref(b, m) << "\n";
           for(auto a : vars) tout << expr_ref(a, m) << " " ;);
 
-    // apply the read_over_write rule to all terms, including those without
-    // variables DOES not always remove the original read_over_write term but
-    // introduces equalities and disequalities where necessary
-    if (reduce_all_selects) {
-      TRACE("mbp_tg", tout << "Reducing read over writes\n";);
-      mbp_array_tg* p = reinterpret_cast<mbp_array_tg*>(get_plugin(m_array_util.get_family_id()));
-      SASSERT(p);
-      p->set_reduce_all_selects();
-      //resets m_vars_set
-      p->reset();
-      bool progress = true;
-      while(progress) progress = p->apply();
-    }
 
     // 1. Apply qe_lite to remove all c-ground variables
     // 2. Collect all core variables in the output (variables used as array indices/values)
@@ -179,7 +166,6 @@ public:
 
     std::function<bool(expr*)> non_core = [&] (expr* e) {
       if (is_app(e) && is_partial_eq(to_app(e))) return true;
-      if (reduce_all_selects && m_array_util.is_select(e) && m_array_util.is_store(to_app(e)->get_arg(0))) return true;
       if (m.is_ite(e)) return true;
       return red_vars.is_marked(e);
     };
@@ -200,7 +186,6 @@ public:
 
     std::function<bool(expr*)> substituted = [&] (expr* e) {
       if (is_app(e) && is_partial_eq(to_app(e))) return true;
-      if (reduce_all_selects && m_array_util.is_select(e) && m_array_util.is_store(to_app(e)->get_arg(0))) return true;
       if (m.is_ite(e)) return true;
       return red_vars.is_marked(e) || s_vars.is_marked(e);
     };
@@ -216,8 +201,8 @@ mbp_qel::mbp_qel(ast_manager &m, params_ref const &p) {
 
 mbp_qel::~mbp_qel() { dealloc(m_impl); }
 
-void mbp_qel::operator()(app_ref_vector &vars, expr_ref &fml, model& mdl, bool reduce_all_selects) {
-  (*m_impl)(vars, fml, mdl, reduce_all_selects);
+void mbp_qel::operator()(app_ref_vector &vars, expr_ref &fml, model& mdl) {
+  (*m_impl)(vars, fml, mdl);
 }
 
 }
