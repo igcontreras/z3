@@ -34,7 +34,6 @@ class mbp_array_tg: public mbp_tg_plugin {
         impl* m_impl;
     public:
         mbp_array_tg(ast_manager& man, mbp::term_graph& tg, model& mdl, obj_hashtable<app> &vars_set, expr_sparse_mark &seen);
-        void set_reduce_all_selects();
         void use_model() override;
         void reset();
         // iterate through all terms in m_tg and apply all array MBP rules once

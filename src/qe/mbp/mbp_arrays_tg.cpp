@@ -43,7 +43,6 @@ struct mbp_array_tg::impl {
     expr_sparse_mark &m_seen;
     obj_pair_hashtable<expr, expr> m_seenp;
 
-    bool m_reduce_all_selects;
     // apply rules that split on model
     bool m_use_mdl;
 
@@ -98,7 +97,6 @@ struct mbp_array_tg::impl {
 
     bool is_rd_wr(expr* t) {
         if (!m_array_util.is_select(t)) return false;
-        if (m_reduce_all_selects) return m_array_util.is_store(to_app(t)->get_arg(0));
         return has_stores(to_app(t)->get_arg(0));
     }
 
@@ -116,7 +114,7 @@ struct mbp_array_tg::impl {
     bool is_seen(expr* t1, expr* t2) { return m_seenp.contains(expr_pair(t1, t2)) || m_seenp.contains(expr_pair(t2, t1)); }
 
     impl(ast_manager& man, mbp::term_graph& tg, model& mdl, obj_hashtable<app> &vars_set, expr_sparse_mark &seen):
-        m(man), m_array_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_new_vars(m), m_seen(seen), m_reduce_all_selects(false), m_use_mdl(false), terms(m), rdTerms(m) {}
+        m(man), m_array_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_new_vars(m), m_seen(seen), m_use_mdl(false), terms(m), rdTerms(m) {}
 
     //create a peq where write terms are preferred  on the left hand side
     peq mk_wr_peq(expr* e1, expr* e2) {
@@ -261,7 +259,7 @@ struct mbp_array_tg::impl {
             term = terms.get(i);
             SASSERT(!m.is_distinct(term));
             if (m_seen.is_marked(term)) continue;
-            if (!m_reduce_all_selects && m_tg.is_cgr(term)) continue;
+            if (m_tg.is_cgr(term)) continue;
             TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
             if (is_implicit_peq(term)) {
                 // rewrite array eq as peq
@@ -353,7 +351,6 @@ struct mbp_array_tg::impl {
 
 };
 
-void mbp_array_tg::set_reduce_all_selects() { m_impl->m_reduce_all_selects = true; }
 void mbp_array_tg::use_model() { m_impl->m_use_mdl = true; }
 bool mbp_array_tg::apply() { return m_impl->apply(); }
 void mbp_array_tg::reset() { m_impl->m_seen.reset(); m_impl->m_vars_set.reset(); }
