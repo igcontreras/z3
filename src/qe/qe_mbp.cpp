@@ -48,8 +48,9 @@ namespace  {
             ast_manager &m;
             array_util m_arr;
             model_evaluator m_eval;
+            expr_ref_vector m_sc;
 
-            rd_over_wr_rewriter(ast_manager& man, model& mdl): m(man), m_arr(m), m_eval(mdl) {
+            rd_over_wr_rewriter(ast_manager& man, model& mdl): m(man), m_arr(m), m_eval(mdl), m_sc(m) {
                 m_eval.set_model_completion(false);
             }
 
@@ -61,8 +62,10 @@ namespace  {
                     ind2 = m_eval(to_app(args[0])->get_arg(1));
                     if (ind1 == ind2) {
                         result = to_app(args[0])->get_arg(2);
+                        m_sc.push_back(m.mk_eq(args[1], to_app(args[0])->get_arg(1)));
                         return BR_DONE;
                     }
+                    m_sc.push_back(m.mk_not(m.mk_eq(args[1], to_app(args[0])->get_arg(1))));
                     expr_ref_vector new_args(m);
                     new_args.push_back(to_app(args[0])->get_arg(0));
                     new_args.push_back(args[1]);
@@ -104,6 +107,12 @@ void rewrite_read_over_write(expr* in, model& mdl, expr_ref& out) {
     rd_over_wr_rewriter cfg(out.m(), mdl);
     rewriter_tpl<rd_over_wr_rewriter> rw(out.m(), false, cfg);
     rw(in, out);
+    if (cfg.m_sc.empty()) return;
+    expr_ref_vector sc(out.m());
+    SASSERT(out.m().is_and(out));
+    flatten_and(out, sc);
+    sc.append(cfg.m_sc);
+    out = mk_and(sc);
 }
 
 class mbproj::impl {
