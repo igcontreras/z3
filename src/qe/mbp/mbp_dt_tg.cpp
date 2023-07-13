@@ -72,6 +72,8 @@ struct mbp_dt_tg::impl {
     impl(ast_manager& man, mbp::term_graph& tg, model& mdl, obj_hashtable<app> &vars_set, expr_sparse_mark &seen):
             m(man), m_dt_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set), m_new_vars(m), m_seen(seen), terms(m), m_use_mdl(false) {}
 
+    // rewrite head(x) with y
+    //and x with list(y, z)
     void rm_select(expr* term) {
         SASSERT(is_app(term) && m_dt_util.is_accessor(to_app(term)->get_decl()) && is_var(to_app(term)->get_arg(0)));
         TRACE("mbp_tg", tout << "applying rm_select on " << expr_ref(term, m););
@@ -100,6 +102,8 @@ struct mbp_dt_tg::impl {
         m_tg.add_eq(v, new_cons);
     }
 
+    // rewrite cons(v, u) = x with v = head(x) and u = tail(x)
+    // where u or v contain variables
     void deconstruct_eq(expr* cons, expr* rhs) {
         TRACE("mbp_tg", tout << "applying deconstruct_eq on " << expr_ref(cons, m););
         ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
@@ -113,6 +117,8 @@ struct mbp_dt_tg::impl {
         m_tg.add_lit(is);
     }
 
+    // rewrite cons(v, u) != x into one of !cons(x) or v != head(x) or u != tail(x)
+    // where u or v contain variables
     void deconstruct_neq(expr* cons, expr* rhs) {
         TRACE("mbp_tg", tout << "applying deconstruct_neq on " << expr_ref(cons, m););
         ptr_vector<func_decl> const* accessors = m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
