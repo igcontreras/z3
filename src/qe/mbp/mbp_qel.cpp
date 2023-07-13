@@ -130,7 +130,7 @@ public:
     // Do complete mbp
     saturate(vars);
 
-    TRACE("mbp_tg", tout << "mbp tg " << m_tg.to_expr(false) << " and vars " << vars;);
+    TRACE("mbp_tg", tout << "mbp tg " << m_tg.get_lits() << " and vars " << vars;);
     TRACE("mbp_tg_verbose",
           obj_hashtable<app> vars_tmp;
           collect_uninterp_consts(mk_and(m_tg.get_lits()), vars_tmp);
