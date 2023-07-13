@@ -78,7 +78,9 @@ struct mbp_array_tg::impl {
         return has_var(to_app(t));
     }
 
-    //Assumes that has_store has already been called for subexpressions of e
+    //Returns true if e has a subterm store(v) where v is a variable to be
+    //eliminated. Assumes that has_store has already been called for
+    //subexpressions of e
     bool has_stores(expr* e) {
         if (m_has_stores.is_marked(e)) return true;
         if (!is_app(e)) return false;
@@ -97,7 +99,7 @@ struct mbp_array_tg::impl {
 
     bool is_rd_wr(expr* t) {
         if (!m_array_util.is_select(t)) return false;
-        return has_stores(to_app(t)->get_arg(0));
+        return m_array_util.is_store(to_app(t)->get_arg(0)) && has_stores(to_app(t)->get_arg(0));
     }
 
     bool is_implicit_peq(expr* e) {
@@ -130,6 +132,17 @@ struct mbp_array_tg::impl {
         return peq(n_lhs, n_rhs, indices, m);
     }
 
+    // rewrite          store(x, j, elem) \peq_{indices} y
+    // into either      j = i && x \peq_{indices} y        (for some i in indices)
+    // or               &&_{i \in indices} j \neq i &&
+    //                        x \peq_{indices, j} y &&
+    //                        select(y, j) = elem
+    // rewrite negation !(store(x, j, elem) \peq_{indices} y) into
+    // into either      j = i && !(x \peq_{indices} y)        (for some i in indices)
+    // or               &&_{i \in indices} j \neq i &&
+    //                        !(x \peq_{indices, j} y) &&
+    // or              &&_{i \in indices} j \neq i &&
+    //                        !(select(y, j) = elem)
     void elimwreq(peq p, bool is_neg) {
         SASSERT(is_arr_write(p.lhs()));
         TRACE("mbp_tg", tout << "applying elimwreq on " << expr_ref(p.mk_peq(), m););
@@ -188,6 +201,7 @@ struct mbp_array_tg::impl {
         }
     }
 
+    //add equality v = rd where v is a fresh variable
     void add_rdVar(expr* rd) {
         //do not assign new variable if rd is already equal to a value
         if (m_tg.has_val_in_class(rd)) return;
@@ -199,6 +213,8 @@ struct mbp_array_tg::impl {
         m_mdl.register_decl(u->get_decl(), m_mdl(rd));
     }
 
+    //given a \peq_{indices} t, where a is a variable, merge equivalence class
+    //of a with store(t, indices, elems) where elems are fresh constants
     void elimeq(peq p) {
         TRACE("mbp_tg", tout << "applying elimeq on " << expr_ref(p.mk_peq(), m););
         app_ref_vector aux_consts(m);
@@ -224,6 +240,7 @@ struct mbp_array_tg::impl {
         TRACE("mbp_tg", tout << "added lit  " << eq;);
     }
 
+    // rewrite select(store(a, i, k), j) into either select(a, j) or k
     void elimrdwr(expr* term) {
         SASSERT(is_rd_wr(term));
         TRACE("mbp_tg", tout << "applying elimrdwr on " << expr_ref(term, m););
