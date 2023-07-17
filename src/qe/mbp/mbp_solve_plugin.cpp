@@ -252,7 +252,7 @@ namespace mbp {
       bool try_int_mul_solve(expr *atom, bool is_pos, expr_ref &res) {
 
           if (!is_pos)
-            return false; // negation of division is not a cube for integers
+            return false; // negation of multiplication is not a cube for integers
 
           // we want k*y == x -----> y = x div k && x mod k == 0
           expr *lhs = nullptr, *rhs = nullptr;
@@ -282,7 +282,7 @@ namespace mbp {
             }
           }
 
-          // `first` is a constant different from 0
+          // `first` is a value, different from 0
 
           res = m.mk_and(m.mk_eq(second, a.mk_idiv(lhs, first)),
                          m.mk_eq(a.mk_int(0), a.mk_mod(lhs, first)));
