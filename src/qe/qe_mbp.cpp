@@ -41,7 +41,6 @@ Revision History:
 
 using namespace qe;
 
-// rewrite all occurrences of (as const arr c) to (as const arr v) where v = m_eval(c)
 namespace  {
 // rewrite select(store(a, i, k), j) into k if m \models i = j and select(a, j) if m \models i != j
     struct rd_over_wr_rewriter : public default_rewriter_cfg {
@@ -75,6 +74,7 @@ namespace  {
                 return BR_FAILED;
             }
     };
+// rewrite all occurrences of (as const arr c) to (as const arr v) where v = m_eval(c)
     struct app_const_arr_rewriter : public default_rewriter_cfg {
             ast_manager &m;
             array_util m_arr;
