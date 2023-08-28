@@ -1062,6 +1062,22 @@ expr_ref term_graph::to_expr(bool repick_repr) {
     return mk_and(lits);
 }
 
+  // assumes that representatives have already been picked
+void term_graph::cgr_to_lits(expr_ref_vector &lits) {
+  std::function<bool(expr *)> non_core = [&](expr *e) {
+    return !is_cgr(e);
+  };
+  return to_lits_qe_lite(lits,&non_core);
+}
+
+expr_ref term_graph::cgr_to_expr() {
+  compute_cground();
+  pick_repr();
+  expr_ref_vector lits(m);
+  cgr_to_lits(lits);
+  return mk_and(lits);
+}
+
 void term_graph::reset() {
     m_term2app.reset();
     m_pinned.reset();
@@ -1579,6 +1595,171 @@ class term_graph::projector {
     }
 };
 
+    class term_graph::cover {
+
+      term_graph &m_tg;
+      ast_manager &m;
+
+      model_ref m_model;
+      expr_ref_vector m_pinned; // TODO: not sure if this is necessary
+
+      vector<std::pair<term *, term *>> m_may_be_splits;
+
+      static bool are_related(const term &t1, const term &t2) {
+        return (&t1.get_root() == &t2.get_root()) || term::are_deq(t1, t2);
+      }
+
+      static bool are_equal(const term &t1, const term &t2) {
+        return &t1.get_root() == &t2.get_root();
+      }
+
+      static bool have_same_top_operand(const expr *e1, const expr *e2) {
+        const app *a1 = to_app(e1);
+        const app *a2 = to_app(e2);
+        return (a1->get_decl() == a2->get_decl()) &&
+               (a1->get_num_parameters() == a2->get_num_parameters());
+      }
+
+      static bool is_ground_or_const(const term &t) {
+        return t.is_cgr() || to_app(t.get_expr())->get_num_args() == 0;
+      }
+
+      // -- Checks if two compatible terms (e.g. f(x,y) f(x,z)) form a split
+      // point. Returns a pair of booleans. The first boolean is true if `t1`
+      // and `t2` form a split. If so, `store_args` contains the arguments that
+      // are not currently equal in the term graph. The second boolean is true
+      // if `t1` and `t2` could form a split after a merge.
+      template <bool store_args>
+      std::pair<bool,bool> is_split(const term &t1, const term &t2,
+                                vector<std::pair<term *, term *>> &diff_args) {
+        bool is_split = true;
+        bool may_be_split = true;
+
+        auto ch1 = term::children(t1);
+        auto ch2 = term::children(t2);
+
+        for (auto it1 = ch1.begin(), it2 = ch2.begin(); it1 != ch1.end();
+             it1++, it2++) {
+          if (&(*it1)->get_root() == &(*it2)->get_root()) {
+            continue;
+          } else if (term::are_deq(**it1, **it2)) {
+            may_be_split = false;
+            is_split = false;
+          } else if ((*it1)->is_cgr() && (*it2)->is_cgr()) {
+            if (store_args) {
+              diff_args.push_back({*it1, *it2});
+            }
+          } else {
+            is_split = false;
+            break;
+          }
+        }
+
+        if (store_args && is_split == false)
+          diff_args.reset();
+
+        return {is_split,may_be_split};
+      }
+
+    public:
+      cover(term_graph &tg) : m_tg(tg), m(m_tg.m), m_pinned(m) {}
+
+      void set_model(model &mdl) { m_model = &mdl; }
+
+      void mb_cover() {
+        SASSERT(m_model);
+
+        if (m_tg.m_terms.size() < 2)
+          return;
+
+        m_tg.compute_cground();
+        // get equalities from the model  // TODO: change partition to return
+        // terms?
+        vector<expr_ref_vector> partitions = m_tg.get_partition(*m_model);
+
+        vector<std::pair<term *, term *>> splits; // potential splits
+        vector<std::pair<term *, term *>> diff_args;
+
+        // first include equalities if relevant
+        for (auto &part : partitions) {
+          term *t1, *t2;
+          if (part.size() == 1)
+            continue;
+          for (auto it = part.begin(); it != part.end() - 1; ++it) {
+            t1 = m_tg.get_term(*it);
+            if (is_ground_or_const(*t1))
+              continue;
+
+            for (auto it2 = it + 1; it2 != part.end(); ++it2) {
+              t2 = m_tg.get_term(*it2);
+              if (is_ground_or_const(*t2))
+                continue;
+
+              if (have_same_top_operand(*it, *it2) && !are_related(*t1, *t2)) {
+                auto p = is_split<false>(*t1, *t2,diff_args);
+                if (p.first) { // is split
+                  m_tg.merge(*t1, *t2);
+                  m_tg.merge_flush();
+                  // TODO: cc now or later? if cc more terms become compatible but
+                  // there is a cost
+                }
+                else if(p.second) { // may be split
+                  splits.push_back({t1, t2});
+                }
+              }
+            }
+          }
+        }
+
+        bool merged = true;
+        while (merged && !splits.empty()) {
+          merged = false;
+          for (int i = 0 ; i < splits.size() ; i++) {
+            auto p = splits[i];
+            if (is_split<false>(*p.first, *p.second, diff_args).first) { // is split
+              m_tg.merge(*p.first, *p.second);
+              merged = true;
+              splits[i] = splits.back();
+              splits.pop_back();
+              i--;
+            }
+          }
+          m_tg.merge_flush(); // TODO: cc after every merge?
+        }
+
+        // now add disequalities
+        for (auto it = m_tg.m_terms.begin(); it != m_tg.m_terms.end() - 1; it++) {
+          if (is_ground_or_const(**it))
+            continue;
+
+          for (auto it2 = it + 1; it2 != m_tg.m_terms.end(); it2++) {
+            if (is_ground_or_const(**it2))
+              continue;
+            if (have_same_top_operand((*it)->get_expr(), (*it2)->get_expr()) &&
+                !are_equal(**it, **it2) && is_split<true>(**it, **it2, diff_args).first /* os split */) {
+              // make not equal one pair of terms of `diff_args` that is
+              // consistent with the model
+              for (auto p : diff_args) {
+                expr_ref p1(m), p2(m);
+                m_model->eval_expr(p.first->get_expr(), p1);
+                m_model->eval_expr(p.second->get_expr(), p2);
+                SASSERT(p1);
+                SASSERT(p2);
+                if (m.are_distinct(p1, p2)) {
+                  m_tg.add_deq(p.first->get_expr(), p.second->get_expr());
+                  // making not equal the first distinct argument, could be changed
+                  break;
+                }
+              }
+              diff_args.reset();
+            }
+          }
+        }
+      }
+    };
+
+
+
 // produce a quantifier reduction of the formula stored in the term graph
 //  removes from `vars` the variables that have a ground representative
 //  modifies `vars` to keep the variables that could not be eliminated
@@ -1645,6 +1826,16 @@ expr_ref_vector term_graph::solve() {
     m_is_var.reset_solved();
     term_graph::projector p(*this);
     return p.solve();
+}
+
+expr_ref term_graph::mb_cover(model &mdl) {
+  term_graph::cover c(*this);
+  c.set_model(mdl);
+  c.mb_cover();
+  pick_repr();
+  expr_ref_vector lits(m);
+  cgr_to_lits(lits);
+  return mk_and(lits);
 }
 
 expr_ref_vector term_graph::get_ackerman_disequalities() {

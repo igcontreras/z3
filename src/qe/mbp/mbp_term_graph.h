@@ -40,6 +40,7 @@ class term;
 
 class term_graph {
     class projector;
+    class cover;
     friend struct is_ground_ns::proc;
     friend struct is_ground_ns::found;
 
@@ -88,6 +89,7 @@ class term_graph {
     u_map<term*>            m_app2term;
     ast_ref_vector          m_pinned;
     projector *             m_projector = nullptr;
+    cover *                 m_cover = nullptr;
     bool                    m_explicit_eq = false;
     bool                    m_repick_repr = false;
     u_map<expr *>           m_term2app; // any representative change invalidates this cache
@@ -127,6 +129,7 @@ class term_graph {
     expr *mk_pure(term &t);
     expr_ref mk_app(expr *a);
     void mk_equalities(term &t, expr_ref_vector &out);
+    void mk_cgr_equalities(term &t, expr_ref_vector &out);
     void mk_all_equalities(term &t, expr_ref_vector &out);
     void mk_qe_lite_equalities(term &t, expr_ref_vector &out,
                                check_pred &not_in_core);
@@ -167,7 +170,9 @@ public:
                  bool repick_repr = true);
     void to_lits_qe_lite(expr_ref_vector &lits,
                          std::function<bool(expr *)> *non_core = nullptr);
+    void cgr_to_lits(expr_ref_vector &lits);
     expr_ref to_expr(bool repick_repr = true);
+    expr_ref cgr_to_expr();
 
     /**
      * Return literals obtained by projecting added literals
@@ -177,6 +182,8 @@ public:
     expr_ref_vector project();
     expr_ref_vector solve();
     expr_ref_vector project(model &mdl);
+
+    expr_ref mb_cover(model &mdl);
 
     /**
      * Return disequalities to ensure that disequalities between

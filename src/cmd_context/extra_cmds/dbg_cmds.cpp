@@ -760,6 +760,86 @@ class qe_lite_cmd : public cmd {
     }
 };
 
+class mb_cover_cmd : public cmd {
+    unsigned              m_arg_index;
+    ptr_vector<expr>      m_lits;
+    ptr_vector<func_decl> m_vars;
+public:
+  mb_cover_cmd() : cmd("mb-cover") {};
+  char const *get_usage() const override { return "(exprs) (vars)"; }
+  char const *get_descr(cmd_context &ctx) const override {
+    return "Model-based cover on e-graphs"; }
+    unsigned get_arity() const override { return 2; }
+    cmd_arg_kind next_arg_kind(cmd_context& ctx) const override {
+        if (m_arg_index == 0) return CPK_EXPR_LIST;
+        return CPK_FUNC_DECL_LIST;
+    }
+    void set_next_arg(cmd_context& ctx, unsigned num, expr * const* args) override {
+        m_lits.append(num, args);
+        m_arg_index = 1;
+    }
+    void set_next_arg(cmd_context & ctx, unsigned num, func_decl * const * ts) override {
+        m_vars.append(num, ts);
+    }
+    void prepare(cmd_context & ctx) override { m_arg_index = 0; m_lits.reset(); m_vars.reset(); }
+    void execute(cmd_context & ctx) override {
+      ast_manager &m = ctx.m();
+      func_decl_ref_vector vars(m);
+      expr_ref_vector lits(m);
+
+      for (func_decl *v : m_vars) vars.push_back(v);
+      for (expr *e : m_lits) lits.push_back(e);
+
+      mbp::term_graph tg(m);
+      tg.set_vars(vars, true /*exclude*/);
+      // (exclude = true): these are the variables to eliminate
+      tg.add_lits(lits);
+
+      ctx.regular_stream() << "------------------------------ " << std::endl;
+      ctx.regular_stream() << "Orig tg: " << tg.to_expr() << std::endl;
+      ctx.regular_stream() << "To elim: ";
+      for (func_decl *v : m_vars) {
+        ctx.regular_stream() << v->get_name() << " ";
+      }
+      ctx.regular_stream() << std::endl;
+
+      ctx.regular_stream() << "Ground terms before decisions: "
+                           << tg.cgr_to_expr() << std::endl;
+
+      solver_factory &sf = ctx.get_solver_factory();
+      params_ref pa;
+      solver_ref s = sf(m, pa, false, true, true, symbol::null);
+
+      // TODO: copy term graph before cover?
+      expr_ref_vector fml(lits);
+      expr_ref_vector cover(m);
+      s->assert_expr(fml);
+
+      while(true) {
+        lbool r = s->check_sat();
+        if (r != l_true) {
+          break;
+        }
+        ctx.regular_stream() << "-------------" << std::endl;
+        model_ref mdl;
+        s->get_model(mdl);
+        // ctx.regular_stream() << "Model: " << *mdl << "\n";
+
+        mbp::term_graph tg2(m);
+        tg2.set_vars(vars, true);
+        tg2.add_lits(fml);
+        expr_ref mbc = tg2.mb_cover(*mdl);
+        ctx.regular_stream() << "MB Cover: " << mbc << std::endl;
+
+        s->assert_expr(m.mk_not(mbc)); // block this disjunct
+
+        // ctx.regular_stream() << "Graph after decisions: ";
+        // ctx.regular_stream() << tg2.to_expr() << std::endl;
+      }
+    }
+};
+
+
 void install_dbg_cmds(cmd_context &ctx) {
     ctx.insert(alloc(print_dimacs_cmd));
     ctx.insert(alloc(get_quantifier_body_cmd));
@@ -791,4 +871,5 @@ void install_dbg_cmds(cmd_context &ctx) {
     ctx.insert(alloc(eufi_cmd));
     ctx.insert(alloc(qel_cmd));
     ctx.insert(alloc(qe_lite_cmd));
+    ctx.insert(alloc(mb_cover_cmd));
 }
