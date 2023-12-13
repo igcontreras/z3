@@ -72,13 +72,15 @@ struct mbp_array_tg::impl {
     }
 
     bool is_arr_write(expr *t) {
-        if (!m_array_util.is_store(t)) return false;
-        return has_var(to_app(t));
+        return m_array_util.is_store1(t) && has_var(to_app(t));
+    }
+
+    bool is_arr_write(expr *t, expr*& a, expr*& i, expr*& v) {
+        return m_array_util.is_store1(t, a, i, v) && has_var(to_app(t));
     }
 
     // Returns true if e has a subterm store(v) where v is a variable to be
-    // eliminated. Assumes that has_store has already been called for
-    // subexpressions of e
+    // eliminated. Recurses on subexpressions of ee
     bool has_stores(expr *e) {
         if (m_has_stores.is_marked(e)) return true;
         if (!is_app(e)) return false;
@@ -86,8 +88,13 @@ struct mbp_array_tg::impl {
             m_has_stores.mark(e, true);
             return true;
         }
-        for (auto c : *(to_app(e))) {
-            if (m_has_stores.is_marked(c)) {
+        if (any_of(*(to_app(e)), [&](expr* c) { return m_has_stores.is_marked(c); })) {
+            m_has_stores.mark(e, true);
+            return true;
+        }
+        //recurse
+        for(auto c : *(to_app(e))) {
+            if (has_stores(c)) {
                 m_has_stores.mark(e, true);
                 return true;
             }
@@ -95,20 +102,48 @@ struct mbp_array_tg::impl {
         return false;
     }
 
+    //
+    // the code that uses this assumes that select takes only two arguments.
+    // Note that select may take more than two arguments in general.
+    //
     bool is_rd_wr(expr *t) {
-        if (!m_array_util.is_select(t)) return false;
-        return m_array_util.is_store(to_app(t)->get_arg(0)) &&
-               has_stores(to_app(t)->get_arg(0));
+        expr* a, *idx;
+        return m_array_util.is_select1(t, a, idx) &&
+            m_array_util.is_store(a) &&
+            has_stores(a);        
+    }
+
+    bool is_rd_wr(expr* t, expr*& wr_ind, expr*& rd_ind, expr*& b, expr*& v) {
+        if (!is_rd_wr(t))
+            return false;
+        expr* a;
+        VERIFY(m_array_util.is_select1(t, a, rd_ind));
+        VERIFY(m_array_util.is_store1(a, b, wr_ind, v));
+        return true;
     }
 
     bool is_implicit_peq(expr *e) {
-        return m.is_eq(e) &&
-               is_implicit_peq(to_app(e)->get_arg(0), to_app(e)->get_arg(1));
+        expr* a, *b;
+        return is_implicit_peq(e, a, b);              
+    }
+
+    bool is_implicit_peq(expr *e, expr*& a, expr*& b) {
+        return m.is_eq(e, a, b) && is_implicit_peq(a, b);        
     }
 
     bool is_implicit_peq(expr *lhs, expr *rhs) {
         return m_array_util.is_array(lhs) && m_array_util.is_array(rhs) &&
                (has_var(lhs) || has_var(rhs));
+    }
+    
+    bool is_neg_peq(expr *e, expr*& a, expr*& b) {
+        expr* ne;
+        return m.is_not(e, ne) && is_implicit_peq(ne, a, b);
+    }
+
+    bool is_neg_peq(expr *e) {
+        expr* ne;
+        return m.is_not(e, ne) && is_implicit_peq(ne);
     }
 
     void mark_seen(expr *t) { m_seen.mark(t); }
@@ -133,7 +168,8 @@ struct mbp_array_tg::impl {
     // create a peq where write terms are preferred on the left hand side
     peq mk_wr_peq(expr *e1, expr *e2, vector<expr_ref_vector> &indices) {
         expr *n_lhs = e1, *n_rhs = e2;
-        if (is_wr_on_rhs(e1, e2)) std::swap(n_lhs, n_rhs);
+        if (is_wr_on_rhs(e1, e2))
+            std::swap(n_lhs, n_rhs);
         return peq(n_lhs, n_rhs, indices, m);
     }
 
@@ -149,12 +185,11 @@ struct mbp_array_tg::impl {
     // or              &&_{i \in indices} j \neq i &&
     //                        !(select(y, j) = elem)
     void elimwreq(peq p, bool is_neg) {
-        SASSERT(is_arr_write(p.lhs()));
+        expr* a, *j, *elem;
+        VERIFY(is_arr_write(p.lhs(), a, j, elem));
         TRACE("mbp_tg",
-              tout << "applying elimwreq on " << expr_ref(p.mk_peq(), m););
+              tout << "applying elimwreq on " << expr_ref(p.mk_peq(), m) << " is neg: " << is_neg;);
         vector<expr_ref_vector> indices;
-        expr *j = to_app(p.lhs())->get_arg(1);
-        expr *elem = to_app(p.lhs())->get_arg(2);
         bool in = false;
         p.get_diff_indices(indices);
         expr_ref eq_index(m);
@@ -173,34 +208,32 @@ struct mbp_array_tg::impl {
         if (in) {
             SASSERT(m_mdl.are_equal(j, eq_index));
             peq p_new =
-                mk_wr_peq(to_app(p.lhs())->get_arg(0), p.rhs(), indices);
+                mk_wr_peq(a, p.rhs(), indices);
             m_tg.add_eq(j, eq_index);
             expr_ref p_new_expr(m);
             p_new_expr = is_neg ? m.mk_not(p_new.mk_peq()) : p_new.mk_peq();
             m_tg.add_lit(p_new_expr);
-            m_tg.add_eq(p_new_expr, p.mk_peq());
+            m_tg.add_eq(p_new.mk_peq(), p.mk_peq());
             return;
         }
         for (expr *d : deq) { m_tg.add_deq(j, d); }
         expr_ref_vector setOne(m);
         setOne.push_back(j);
         indices.push_back(setOne);
-        peq p_new = mk_wr_peq(to_app(p.lhs())->get_arg(0), p.rhs(), indices);
-        expr *args[2] = {p.rhs(), j};
-        expr_ref rd(m_array_util.mk_select(2, args), m);
+        peq p_new = mk_wr_peq(a, p.rhs(), indices);
+        expr_ref rd(m_array_util.mk_select(p.rhs(), j), m);
         if (!is_neg) {
             m_tg.add_lit(p_new.mk_peq());
             m_tg.add_eq(rd, elem);
             m_tg.add_eq(p.mk_peq(), p_new.mk_peq());
         } else {
-            SASSERT(m_mdl.is_false(p_new.mk_peq()) ||
-                    !m_mdl.are_equal(rd, elem));
-            if (m_mdl.is_false(p_new.mk_peq())) {
+            expr_ref rd_eq(m.mk_eq(rd, elem), m);
+            if (m_mdl.is_false(rd_eq)) { m_tg.add_deq(rd, elem); }
+            else {
                 expr_ref npeq(mk_not(p_new.mk_peq()), m);
                 m_tg.add_lit(npeq);
                 m_tg.add_eq(p.mk_peq(), p_new.mk_peq());
             }
-            if (!m_mdl.are_equal(rd, elem)) { m_tg.add_deq(rd, elem); }
         }
     }
 
@@ -234,8 +267,7 @@ struct mbp_array_tg::impl {
             m_tg.add_var(a);
             auto const &indx = std::next(itr, i);
             SASSERT(indx->size() == 1);
-            expr *args[2] = {to_app(p.lhs()), to_app(indx->get(0))};
-            sel = m_array_util.mk_select(2, args);
+            sel = m_array_util.mk_select(p.lhs(), indx->get(0));
             m_mdl.register_decl(a->get_decl(), m_mdl(sel));
             i++;
         }
@@ -246,21 +278,16 @@ struct mbp_array_tg::impl {
 
     // rewrite select(store(a, i, k), j) into either select(a, j) or k
     void elimrdwr(expr *term) {
-        SASSERT(is_rd_wr(term));
         TRACE("mbp_tg", tout << "applying elimrdwr on " << expr_ref(term, m););
-        expr *wr_ind = to_app(to_app(term)->get_arg(0))->get_arg(1);
-        expr *rd_ind = to_app(term)->get_arg(1);
-        expr *e;
-        if (m_mdl.are_equal(wr_ind, rd_ind)) {
+        expr* wr_ind, *rd_ind, *b, *v;
+        VERIFY(is_rd_wr(term, wr_ind, rd_ind, b, v));
+        if (m_mdl.are_equal(wr_ind, rd_ind)) 
             m_tg.add_eq(wr_ind, rd_ind);
-            e = to_app(to_app(term)->get_arg(0))->get_arg(2);
-        } else {
+        else {
             m_tg.add_deq(wr_ind, rd_ind);
-            expr *args[2] = {to_app(to_app(term)->get_arg(0))->get_arg(0),
-                             to_app(term)->get_arg(1)};
-            e = m_array_util.mk_select(2, args);
+            v = m_array_util.mk_select(b, rd_ind);
         }
-        m_tg.add_eq(term, e);
+        m_tg.add_eq(term, v);
     }
 
     // iterate through all terms in m_tg and apply all array MBP rules once
@@ -278,16 +305,20 @@ struct mbp_array_tg::impl {
         m_tg.get_terms(terms, false);
         for (unsigned i = 0; i < terms.size(); i++) {
             term = terms.get(i);
-            if (m_seen.is_marked(term)) continue;
-            if (m_tg.is_cgr(term)) continue;
+            if (m_seen.is_marked(term))
+                continue;
+            if (m_tg.is_cgr(term))
+                continue;
             TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
-            if (is_implicit_peq(term)) {
+            expr* a, *b;
+            if (is_implicit_peq(term, a, b) || is_neg_peq(term, a, b)) {
                 // rewrite array eq as peq
                 mark_seen(term);
                 progress = true;
-                e = mk_wr_peq(to_app(term)->get_arg(0),
-                              to_app(term)->get_arg(1))
-                        .mk_peq();
+                nt = term;
+                bool is_not = m.is_not(term, nt);
+                e = mk_wr_peq(a, b).mk_peq();
+                e = is_not ? m.mk_not(e) : e.get();
                 m_tg.add_lit(e);
                 m_tg.add_eq(term, e);
                 continue;
@@ -303,9 +334,10 @@ struct mbp_array_tg::impl {
                     elimwreq(p, is_neg);
                     continue;
                 }
-                if (!m_array_util.is_store(p.lhs()) && has_var(p.lhs())) {
+                if (!m_array_util.is_store(p.lhs()) && has_var(p.lhs()) && !is_neg) {
                     // TODO: don't apply this rule if vars in p.lhs() also
                     // appear in p.rhs()
+
                     mark_seen(p.lhs());
                     mark_seen(nt);
                     mark_seen(term);
@@ -314,7 +346,7 @@ struct mbp_array_tg::impl {
                     continue;
                 }
                 // eliminate eq when the variable is on the rhs
-                if (!m_array_util.is_store(p.rhs()) && has_var(p.rhs())) {
+                if (!m_array_util.is_store(p.rhs()) && has_var(p.rhs()) && !is_neg) {
                     mark_seen(p.rhs());
                     p.get_diff_indices(indices);
                     peq p_new = mk_wr_peq(p.rhs(), p.lhs(), indices);
@@ -325,10 +357,10 @@ struct mbp_array_tg::impl {
                     continue;
                 }
             }
-            if (m_use_mdl && is_rd_wr(term)) {
+            if (m_use_mdl && is_rd_wr(nt)) {
                 mark_seen(term);
                 progress = true;
-                elimrdwr(term);
+                elimrdwr(nt);
                 continue;
             }
         }

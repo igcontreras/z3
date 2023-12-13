@@ -233,7 +233,6 @@ namespace arith {
 
         // non-linear arithmetic
         scoped_ptr<nla::solver>  m_nla;
-        scoped_ptr<scoped_anum>  m_a1, m_a2;
 
         // integer arithmetic
         scoped_ptr<lp::int_solver>   m_lia;
@@ -243,13 +242,12 @@ namespace arith {
         resource_limit               m_resource_limit;
         lp_bounds                    m_new_bounds;
         symbol                       m_farkas;
+        std_vector<lp::implied_bound> m_implied_bounds;
         lp::lp_bound_propagator<solver> m_bp;
         mutable vector<std::pair<lp::tv, rational>> m_todo_terms;
 
         // lemmas
         lp::explanation     m_explanation;
-        vector<nla::lemma>  m_nla_lemma_vector;
-        vector<nla::ineq>   m_nla_literals;
         literal_vector      m_core, m_core2;
         vector<rational>    m_coeffs;
         svector<enode_pair> m_eqs;
@@ -294,10 +292,11 @@ namespace arith {
         theory_var internalize_linearized_def(expr* term, scoped_internalize_state& st);
         void init_left_side(scoped_internalize_state& st);
         bool internalize_term(expr* term);
-        bool internalize_atom(expr* atom);
+        bool internalize_atom(expr* atom);        
         bool is_unit_var(scoped_internalize_state& st);
         bool is_one(scoped_internalize_state& st);
         bool is_zero(scoped_internalize_state& st);
+        expr* mk_sub(expr* a, expr* b);
         enode* mk_enode(expr* e);
 
         lpvar register_theory_var_in_lar_solver(theory_var v);
@@ -356,7 +355,7 @@ namespace arith {
         literal is_bound_implied(lp::lconstraint_kind k, rational const& value, api_bound const& b) const;
         void assert_bound(bool is_true, api_bound& b);
         void mk_eq_axiom(bool is_eq, euf::th_eq const& eq);
-        void mk_diseq_axiom(euf::th_eq const& eq);
+        void mk_diseq_axiom(theory_var v1, theory_var v2);
         void assert_idiv_mod_axioms(theory_var u, theory_var v, theory_var w, rational const& r);
         api_bound* mk_var_bound(sat::literal lit, theory_var v, lp_api::bound_kind bk, rational const& bound);
         lp::lconstraint_kind bound2constraint_kind(bool is_int, lp_api::bound_kind bk, bool is_true);
@@ -403,11 +402,15 @@ namespace arith {
         bool delayed_assume_eqs();
         bool is_eq(theory_var v1, theory_var v2);
         bool use_nra_model();
+        bool include_func_interp(enode* n) const;
 
         lbool make_feasible();
         bool  check_delayed_eqs();
         lbool check_lia();
         lbool check_nla();
+        void add_lemmas();
+        void propagate_nla();
+        void add_equality(lpvar v, rational const& k, lp::explanation const& exp);
         bool is_infeasible() const;
 
         nlsat::anum const& nl_value(theory_var v, scoped_anum& r) const;
@@ -464,7 +467,6 @@ namespace arith {
         void set_evidence(lp::constraint_index idx);
         void assign(literal lit, literal_vector const& core, svector<enode_pair> const& eqs, euf::th_proof_hint const* pma);
 
-        void assume_literals();
         sat::literal mk_ineq_literal(nla::ineq const& ineq);
         void false_case_of_check_nla(const nla::lemma& l);        
         void dbg_finalize_model(model& mdl);

@@ -28,6 +28,7 @@ Author:
 #include "sat/smt/fpa_solver.h"
 #include "sat/smt/dt_solver.h"
 #include "sat/smt/recfun_solver.h"
+#include "sat/smt/specrel_solver.h"
 
 namespace euf {
 
@@ -130,6 +131,7 @@ namespace euf {
         arith_util arith(m);
         datatype_util dt(m);
         recfun::util rf(m);
+        special_relations_util sp(m);
         if (pb.get_family_id() == fid)
             ext = alloc(pb::solver, *this, fid);
         else if (bvu.get_family_id() == fid)
@@ -144,6 +146,8 @@ namespace euf {
             ext = alloc(dt::solver, *this, fid);
         else if (rf.get_family_id() == fid)
             ext = alloc(recfun::solver, *this);
+        else if (sp.get_family_id() == fid)
+            ext = alloc(specrel::solver, *this, fid);
         
         if (ext) 
             add_solver(ext);        
@@ -431,6 +435,9 @@ namespace euf {
     }
 
 
+    bool solver::can_propagate() {
+        return m_egraph.can_propagate();
+    }
 
     bool solver::unit_propagate() {
         bool propagated = false;
@@ -473,6 +480,7 @@ namespace euf {
         SASSERT(m.is_bool(e));
         size_t cnstr;
         literal lit;
+
         if (!ante) {
             VERIFY(m.is_eq(e, a, b));
             cnstr = eq_constraint().to_index();
@@ -490,7 +498,7 @@ namespace euf {
             if (val == l_undef) {
                 SASSERT(m.is_value(ante->get_expr()));
                 val = m.is_true(ante->get_expr()) ? l_true : l_false;
-            }
+            }           
             auto& c = lit_constraint(ante);
             cnstr = c.to_index();
             lit = literal(v, val == l_false);
@@ -1008,8 +1016,10 @@ namespace euf {
                 return out << "euf conflict";
             case constraint::kind_t::eq:
                 return out << "euf equality propagation";
-            case constraint::kind_t::lit:
-                return out << "euf literal propagation " << m_egraph.bpp(c.node()) ;                
+            case constraint::kind_t::lit: {
+                euf::enode* n = c.node();
+                return out << "euf literal propagation " << (sat::literal(n->bool_var(), n->value() == l_false)) << " " << m_egraph.bpp(n);
+            } 
             default:
                 UNREACHABLE();
                 return out;
@@ -1057,8 +1067,8 @@ namespace euf {
             SASSERT(true_lit != sat::null_literal); 
             return (void*)(r->to_ptr(true_lit)); 
         };
-        r->m_egraph.copy_from(m_egraph, copy_justification);        
         r->set_solver(s);
+        r->m_egraph.copy_from(m_egraph, copy_justification);        
         for (euf::enode* n : r->m_egraph.nodes()) {
             auto b = n->bool_var();
             if (b != sat::null_bool_var) {

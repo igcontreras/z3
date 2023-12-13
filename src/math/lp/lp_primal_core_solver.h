@@ -231,7 +231,7 @@ namespace lp {
             return rc.var();
         }
 
-    bool try_jump_to_another_bound_on_entering(unsigned entering, const X &theta, X &t, bool &unlimited);
+    bool try_jump_to_another_bound_on_entering(unsigned entering, X &t);
 
     bool try_jump_to_another_bound_on_entering_unlimited(unsigned entering, X &t);
 
@@ -394,9 +394,10 @@ namespace lp {
         const X &new_val_for_leaving = get_val_for_leaving(leaving);
         X theta = (this->m_x[leaving] - new_val_for_leaving) / a_ent;
         this->m_x[leaving] = new_val_for_leaving;
-        // this will remove the leaving from the heap
-        TRACE("lar_solver_inf_heap", tout << "leaving = " << leaving
+        TRACE("lar_solver_feas", tout << "entering = " << entering << ", leaving = " << leaving << ", new_val_for_leaving = " << new_val_for_leaving << ", theta = " << theta << "\n";);
+        TRACE("lar_solver_feas", tout << "leaving = " << leaving
                                  << " removed from inf_heap()\n";);
+        // this will remove the leaving from the heap
         this->inf_heap().erase_min();
         advance_on_entering_and_leaving_tableau_rows(entering, leaving, theta);
         if (this->current_x_is_feasible())
@@ -591,7 +592,7 @@ namespace lp {
             theta = zero_of_type<X>();
         }
     }
-
+    bool correctly_moved_to_bounds(lpvar) const;
     bool column_is_benefitial_for_entering_basis(unsigned j) const;
     void init_infeasibility_costs();
     void print_column(unsigned j, std::ostream &out);

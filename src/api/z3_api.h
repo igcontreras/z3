@@ -2083,6 +2083,16 @@ extern "C" {
                                             );
 
     /**
+       \brief Retrieve the number of fields of a constructor
+
+       \param c logical context.
+       \param constr constructor.
+
+       def_API('Z3_constructor_num_fields', UINT, (_in(CONTEXT), _in(CONSTRUCTOR)))
+    */
+    unsigned Z3_API Z3_constructor_num_fields(Z3_context c, Z3_constructor constr);
+
+    /**
        \brief Reclaim memory allocated to constructor.
 
        \param c logical context.
@@ -5197,6 +5207,24 @@ extern "C" {
     unsigned Z3_API Z3_get_quantifier_weight(Z3_context c, Z3_ast a);
 
     /**
+       \brief Obtain skolem id of quantifier.
+
+       \pre Z3_get_ast_kind(a) == Z3_QUANTIFIER_AST
+
+       def_API('Z3_get_quantifier_skolem_id', SYMBOL, (_in(CONTEXT), _in(AST)))
+    */
+    Z3_symbol Z3_API Z3_get_quantifier_skolem_id(Z3_context c, Z3_ast a);
+
+    /**
+       \brief Obtain id of quantifier.
+
+       \pre Z3_get_ast_kind(a) == Z3_QUANTIFIER_AST
+
+       def_API('Z3_get_quantifier_id', SYMBOL, (_in(CONTEXT), _in(AST)))
+    */
+    Z3_symbol Z3_API Z3_get_quantifier_id(Z3_context c, Z3_ast a);
+
+    /**
        \brief Return number of patterns used in quantifier.
 
        \pre Z3_get_ast_kind(a) == Z3_QUANTIFIER_AST
@@ -5594,14 +5622,14 @@ extern "C" {
     void Z3_API Z3_add_const_interp(Z3_context c, Z3_model m, Z3_func_decl f, Z3_ast a);
 
     /**
-       \brief Increment the reference counter of the given Z3_func_interp object.
+       \brief Increment the reference counter of the given \c Z3_func_interp object.
 
        def_API('Z3_func_interp_inc_ref', VOID, (_in(CONTEXT), _in(FUNC_INTERP)))
     */
     void Z3_API Z3_func_interp_inc_ref(Z3_context c, Z3_func_interp f);
 
     /**
-       \brief Decrement the reference counter of the given Z3_func_interp object.
+       \brief Decrement the reference counter of the given \c Z3_func_interp object.
 
        def_API('Z3_func_interp_dec_ref', VOID, (_in(CONTEXT), _in(FUNC_INTERP)))
     */

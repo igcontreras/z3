@@ -1,7 +1,7 @@
 variables:
   Major: '4'
   Minor: '12'
-  Patch: '3'
+  Patch: '5'
   AssemblyVersion: $(Major).$(Minor).$(Patch).$(Build.BuildId)
   NightlyVersion: $(AssemblyVersion)-$(Build.DefinitionName)
 
@@ -85,6 +85,7 @@ stages:
     pool:
       vmImage: "ubuntu-latest"
     steps:
+    - script: pip3 install importlib-resources
     - script: sudo apt-get install ocaml opam libgmp-dev
     - script: opam init -y
     - script: eval `opam config env`; opam install zarith ocamlfind -y
@@ -103,8 +104,8 @@ stages:
         set -e
         eval `opam config env` 
         cd doc
-        python mk_api_doc.py --mld --z3py-package-path=../build/python/z3
-        python mk_params_doc.py 
+        python3 mk_api_doc.py --mld --z3py-package-path=../build/python/z3
+        python3 mk_params_doc.py 
         mkdir api/html/ml
         ocamldoc -html -d api/html/ml -sort -hide Z3 -I $( ocamlfind query zarith ) -I ../build/api/ml ../build/api/ml/z3enums.mli ../build/api/ml/z3.mli
         cd ..

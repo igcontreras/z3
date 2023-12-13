@@ -19,6 +19,7 @@ Revision History:
 --*/
 #pragma once
 #include <set>
+#include <list>
 #include "util/vector.h"
 #include <string>
 #include "math/lp/lp_utils.h"
@@ -88,7 +89,7 @@ public:
     const vector<column_type> & m_column_types;
     const vector<X> &     m_lower_bounds;
     const vector<X> &     m_upper_bounds; 
-    unsigned              m_basis_sort_counter;
+    unsigned              m_nbasis_sort_counter;
     vector<unsigned>      m_trace_of_basis_change_vector; // the even positions are entering, the odd positions are leaving
     bool                  m_tracing_basis_changes;
     // these rows are changed by adding to them a multiple of the pivot row
@@ -164,10 +165,6 @@ public:
     }
 
     void print_statistics(char const* str, X cost, std::ostream & message_stream);
-
-    bool print_statistics_with_iterations_and_check_that_the_time_is_over(std::ostream & message_stream);
-
-    bool print_statistics_with_iterations_and_nonzeroes_and_cost_and_check_that_the_time_is_over(char const* str, std::ostream & message_stream);
 
     bool print_statistics_with_cost_and_check_that_the_time_is_over(X cost, std::ostream & message_stream);
 
@@ -277,7 +274,7 @@ public:
     bool non_basis_has_no_doubles() const;
 
     bool basis_is_correctly_represented_in_heading() const ;
-    bool non_basis_is_correctly_represented_in_heading() const ;
+    bool non_basis_is_correctly_represented_in_heading(std::list<unsigned>*) const ;
 
     bool basis_heading_is_correct() const;
 
@@ -416,6 +413,7 @@ public:
                 TRACE("lp_core", tout << "inf col "; print_column_info(j, tout) << "\n";);
                 return false;
             }
+        
         return true;
     }
 
@@ -540,9 +538,9 @@ public:
     }
 
     void add_delta_to_x_and_track_feasibility(unsigned j, const X & del) {
-        TRACE("lar_solver_feas_bug", tout << "del = " << del << ", was x[" << j << "] = " << m_x[j] << "\n";);
+        TRACE("lar_solver_feas", tout << "del = " << del << ", was x[" << j << "] = " << m_x[j] << "\n";);
         m_x[j] += del;
-        TRACE("lar_solver_feas_bug", tout << "became x[" << j << "] = " << m_x[j] << "\n";);
+        TRACE("lar_solver_feas", tout << "became x[" << j << "] = " << m_x[j] << "\n";);
         track_column_feasibility(j);
     }
 
@@ -564,6 +562,7 @@ public:
     }
     void insert_column_into_inf_heap(unsigned j) {        
 		if (!m_inf_heap.contains(j)) {
+            m_inf_heap.reserve(j+1);
 	        m_inf_heap.insert(j);
             TRACE("lar_solver_inf_heap", tout << "insert into inf_heap j = " << j << "\n";);
         }
@@ -571,7 +570,7 @@ public:
     }
     void remove_column_from_inf_heap(unsigned j) {
 		if (m_inf_heap.contains(j)) {
-            TRACE("lar_solver_inf_heap", tout << "insert into heap j = " << j << "\n";);
+            TRACE("lar_solver_inf_heap", tout << "erase from heap j = " << j << "\n";);
         	m_inf_heap.erase(j);
         }
         lp_assert(column_is_feasible(j));

@@ -1571,6 +1571,14 @@ class BoolRef(ExprRef):
     def sort(self):
         return BoolSortRef(Z3_get_sort(self.ctx_ref(), self.as_ast()), self.ctx)
 
+    def __add__(self, other):
+        if isinstance(other, BoolRef):
+            other = If(other, 1, 0)
+        return If(self, 1, 0) + other
+
+    def __radd__(self, other):
+        return self + other
+ 
     def __rmul__(self, other):
         return self * other
 
@@ -1584,6 +1592,20 @@ class BoolRef(ExprRef):
         if isinstance(other, BoolRef):
             other = If(other, 1, 0)
         return If(self, other, 0)
+        
+    def __and__(self, other):
+        return And(self, other)
+    
+    def __or__(self, other):
+        return Or(self, other)
+
+    def __xor__(self, other):
+        return Xor(self, other)
+    
+    def __invert__(self):
+        return Not(self)
+    
+    
 
     
 def is_bool(a):
@@ -2080,6 +2102,16 @@ class QuantifierRef(BoolRef):
         10
         """
         return int(Z3_get_quantifier_weight(self.ctx_ref(), self.ast))
+
+    def skolem_id(self):
+        """Return the skolem id of `self`.
+        """
+        return _symbol2py(self.ctx, Z3_get_quantifier_skolem_id(self.ctx_ref(), self.ast))
+
+    def qid(self):
+        """Return the quantifier id of `self`.
+        """
+        return _symbol2py(self.ctx, Z3_get_quantifier_id(self.ctx_ref(), self.ast))
 
     def num_patterns(self):
         """Return the number of patterns (i.e., quantifier instantiation hints) in `self`.
@@ -6931,6 +6963,13 @@ class Solver(Z3PPObject):
         if self.solver is not None and self.ctx.ref() is not None and Z3_solver_dec_ref is not None:
             Z3_solver_dec_ref(self.ctx.ref(), self.solver)
 
+    def __enter__(self):
+        self.push()
+        return self
+
+    def __exit__(self, *exc_info):
+        self.pop()
+
     def set(self, *args, **keys):
         """Set a configuration option.
         The method `help()` return a string containing all available options.
@@ -8015,7 +8054,7 @@ class Optimize(Z3PPObject):
         Z3_optimize_pop(self.ctx.ref(), self.optimize)
 
     def check(self, *assumptions):
-        """Check satisfiability while optimizing objective functions."""
+        """Check consistency and produce optimal values."""
         assumptions = _get_args(assumptions)
         num = len(assumptions)
         _assumptions = (Ast * num)()

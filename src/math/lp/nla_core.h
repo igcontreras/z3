@@ -44,7 +44,6 @@ bool try_insert(const A& elem, B& collection) {
     return true;
 }
 
-
 class core {
     friend struct common;
     friend class new_lemma;
@@ -59,21 +58,10 @@ class core {
     friend class solver;
     friend class monomial_bounds;
     friend class nra::solver;
+    friend class divisions;
 
-    struct stats {
-        unsigned m_nla_explanations;
-        unsigned m_nla_lemmas;
-        unsigned m_nra_calls;
-        unsigned m_bounds_improvements;
-        stats() { reset(); }
-        void reset() {
-            memset(this, 0, sizeof(*this));
-        }
-    };
-
-    stats    m_stats;
-    unsigned m_nlsat_delay = 50;
-    unsigned m_nlsat_fails = 0;
+    unsigned m_nlsat_delay = 0;
+    unsigned m_nlsat_delay_bound = 0;
 
     bool should_run_bounded_nlsat();
     lbool bounded_nlsat();
@@ -84,9 +72,12 @@ class core {
     reslimit&                m_reslim;
     smt_params_helper        m_params;
     std::function<bool(lpvar)> m_relevant;
-    vector<lemma> *          m_lemma_vec;
-    vector<ineq> *           m_literal_vec = nullptr;
-    indexed_uint_set                m_to_refine;
+    vector<lemma>            m_lemmas;
+    vector<ineq>             m_literals;
+    vector<lp::equality>       m_equalities;
+    vector<lp::fixed_equality> m_fixed_equalities;
+    indexed_uint_set         m_to_refine;
+    indexed_uint_set         m_monics_with_changed_bounds;
     tangents                 m_tangents;
     basics                   m_basics;
     order                    m_order;
@@ -95,7 +86,8 @@ class core {
     divisions                m_divisions;
     intervals                m_intervals; 
     monomial_bounds          m_monomial_bounds;
-    
+    unsigned                 m_conflicts;
+    bool                     m_check_feasible = false;
     horner                   m_horner;
     grobner                  m_grobner;
     emonics                  m_emons;
@@ -112,13 +104,11 @@ class core {
 
     void check_weighted(unsigned sz, std::pair<unsigned, std::function<void(void)>>* checks);
     void add_bounds();
-    // try to improve bounds for variables in monomials.
-    bool improve_bounds();
 
 public:    
     // constructor
     core(lp::lar_solver& s, params_ref const& p, reslimit&);
-
+    const auto& monics_with_changed_bounds() const { return m_monics_with_changed_bounds; }
     void insert_to_refine(lpvar j);
     void erase_from_to_refine(lpvar j);
     
@@ -136,6 +126,8 @@ public:
     reslimit& reslim() { return m_reslim; }  
     emonics& emons() { return m_emons; }
     const emonics& emons() const { return m_emons; }
+    monic& emon(unsigned i) { return m_emons[i]; }
+    monic const& emon(unsigned i) const { return m_emons[i]; }
 
     bool has_relevant_monomial() const;
 
@@ -176,8 +168,8 @@ public:
         return params().arith_nl_horner() && lp_settings().stats().m_nla_calls % params().arith_nl_horner_frequency() == 0; 
     }
 
-    bool need_run_grobner() const { 
-        return params().arith_nl_grobner() && lp_settings().stats().m_nla_calls % params().arith_nl_grobner_frequency() == 0; 
+    bool need_run_grobner() const {
+        return params().arith_nl_grobner();         
     }
 
     void set_active_vars_weights(nex_creator&);
@@ -385,13 +377,17 @@ public:
 
     bool  conflict_found() const;
     
-    lbool check(vector<ineq>& ineqs, vector<lemma>& l_vec);
-    lbool check_power(lpvar r, lpvar x, lpvar y, vector<lemma>& l_vec);
-    void check_bounded_divisions(vector<lemma>&);
+    lbool check();
+    lbool check_power(lpvar r, lpvar x, lpvar y);
+    void check_bounded_divisions();
 
     bool  no_lemmas_hold() const;
+
+    void propagate();
+
+    void simplify();
     
-    lbool  test_check(vector<lemma>& l);
+    lbool  test_check();
     lpvar map_to_root(lpvar) const;
     std::ostream& print_terms(std::ostream&) const;
     std::ostream& print_term(const lp::lar_term&, std::ostream&) const;
@@ -424,7 +420,14 @@ public:
     bool has_real(const monic& m) const;
     void set_use_nra_model(bool m);
     bool use_nra_model() const { return m_use_nra_model; }
-    void collect_statistics(::statistics&);
+    vector<nla::lemma> const& lemmas() const { return m_lemmas; }
+    vector<nla::ineq> const& literals() const { return m_literals; }
+    vector<lp::equality> const& equalities() const { return m_equalities; }
+    vector<lp::fixed_equality> const& fixed_equalities() const { return m_fixed_equalities; }
+    bool check_feasible() const { return m_check_feasible; }
+
+    void add_fixed_equality(lp::lpvar v, rational const& k, lp::explanation const& e) { m_fixed_equalities.push_back({v, k, e}); }
+    void add_equality(lp::lpvar i, lp::lpvar j, lp::explanation const& e) { m_equalities.push_back({i, j, e}); }
 private:
     void restore_patched_values();
     void constrain_nl_in_tableau();
@@ -432,6 +435,8 @@ private:
     void restore_tableau();
     void save_tableau();
     bool integrality_holds();
+
+
 };  // end of core
 
 struct pp_mon {

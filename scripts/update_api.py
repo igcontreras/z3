@@ -1,4 +1,4 @@
-#  - !/usr/bin/env python
+#!/usr/bin/env python
 ############################################
 # Copyright (c) 2012 Microsoft Corporation
 #
@@ -1827,17 +1827,28 @@ def write_core_py_preamble(core_py):
   core_py.write(
 """
 # Automatically generated file
+import atexit
 import sys, os
+import contextlib
 import ctypes
-import pkg_resources
+if sys.version_info >= (3, 9):
+    import importlib.resources as importlib_resources
+else:
+    import importlib_resources
 from .z3types import *
 from .z3consts import *
 
+_file_manager = contextlib.ExitStack()
+atexit.register(_file_manager.close)
 _ext = 'dll' if sys.platform in ('win32', 'cygwin') else 'dylib' if sys.platform == 'darwin' else 'so'
 _lib = None
+_z3_lib_resource = importlib_resources.files('z3').joinpath('lib')
+_z3_lib_resource_path = _file_manager.enter_context(
+    importlib_resources.as_file(_z3_lib_resource)
+)
 _default_dirs = ['.',
                  os.path.dirname(os.path.abspath(__file__)),
-                 pkg_resources.resource_filename('z3', 'lib'),
+                 _z3_lib_resource_path,
                  os.path.join(sys.prefix, 'lib'),
                  None]
 _all_dirs = []
@@ -1887,10 +1898,10 @@ if _lib is None:
   print("  - to the custom Z3_LIB_DIRS Python-builtin before importing the z3 module, e.g. via")
   if sys.version < '3':
     print("    import __builtin__")
-    print("    __builtin__.Z3_LIB_DIRS = [ '/path/to/libz3.%s' ] " % _ext)
+    print("    __builtin__.Z3_LIB_DIRS = [ '/path/to/z3/lib/dir' ] # directory containing libz3.%s" % _ext)
   else:
     print("    import builtins")
-    print("    builtins.Z3_LIB_DIRS = [ '/path/to/libz3.%s' ] " % _ext)
+    print("    builtins.Z3_LIB_DIRS = [ '/path/to/z3/lib/dir' ] # directory containing libz3.%s" % _ext)
   print(_failures)
   raise Z3Exception("libz3.%s not found." % _ext)
 

@@ -26,7 +26,7 @@ namespace arith {
         m_model_eqs(DEFAULT_HASHTABLE_INITIAL_CAPACITY, var_value_hash(*this), var_value_eq(*this)),
         m_local_search(*this),
         m_resource_limit(*this),
-        m_bp(*this),
+        m_bp(*this, m_implied_bounds),
         a(m),
         m_bound_terms(m),
         m_bound_predicate(m)
@@ -53,21 +53,25 @@ namespace arith {
 
     euf::th_solver* solver::clone(euf::solver& dst_ctx) {
         arith::solver* result = alloc(arith::solver, dst_ctx, get_id());
+        unsigned_vector var2var;
+        for (unsigned i = 0; i < result->get_num_vars(); ++i) 
+            var2var.push_back(i);
+        
         for (unsigned i = result->get_num_vars(); i < get_num_vars(); ++i) 
-            result->mk_evar(ctx.copy(dst_ctx, var2enode(i))->get_expr());        
+            var2var.push_back(result->mk_evar(ctx.copy(dst_ctx, var2enode(i))->get_expr()));
 
-        unsigned v = 0;
-        result->m_bounds.resize(m_bounds.size());
-        for (auto const& bounds : m_bounds) {            
-            for (auto* b : bounds) {
-                auto* b2 = result->mk_var_bound(b->get_lit(), v, b->get_bound_kind(), b->get_value());
-                result->m_bounds[v].push_back(b2);
-                result->m_bounds_trail.push_back(v);
-                result->updt_unassigned_bounds(v, +1);
+        result->m_bounds.resize(get_num_vars());
+        unsigned nv = std::min(m_bounds.size(), get_num_vars());
+        for (unsigned v = 0; v < nv; ++v) {
+            auto w = var2var[v];
+            for (auto* b : m_bounds[v]) {
+                auto* b2 = result->mk_var_bound(b->get_lit(), w, b->get_bound_kind(), b->get_value());
+                result->m_bounds[w].push_back(b2);
+                result->m_bounds_trail.push_back(w);
+                result->updt_unassigned_bounds(w, +1);
                 result->m_bool_var2bound.insert(b->get_lit().var(), b2);
                 result->m_new_bounds.push_back(b2);
             }
-            ++v;
         }
 
         // clone rows into m_solver, m_nla, m_lia
@@ -83,6 +87,7 @@ namespace arith {
 
         m_new_eq = false;
         flush_bound_axioms();
+        propagate_nla();
 
         unsigned qhead = m_asserted_qhead;
         while (m_asserted_qhead < m_asserted.size() && !s().inconsistent() && m.inc()) {
@@ -301,11 +306,31 @@ namespace arith {
         m_explanation.add_pair(j, v);
     }
 
+    void solver::add_equality(lpvar j, rational const& k, lp::explanation const& exp) {
+        TRACE("arith", tout << "equality " << j << " " << k << "\n");
+        theory_var v;
+        if (k == 1)
+            v = m_one_var;
+        else if (k == 0)
+            v = m_zero_var;
+        else if (!m_value2var.find(k, v))
+            return;
+        theory_var w = lp().local_to_external(j);
+        if (w < 0)
+            return;
+        lpvar i = register_theory_var_in_lar_solver(v);
+        add_eq(i, j, exp, true);
+    }
+
     bool solver::add_eq(lpvar u, lpvar v, lp::explanation const& e, bool is_fixed) {
         if (s().inconsistent())
             return false;
         theory_var uv = lp().local_to_external(u); // variables that are returned should have external representations
         theory_var vv = lp().local_to_external(v); // so maybe better to have them already transformed to external form
+        if (uv == euf::null_theory_var)
+            return false;
+        if (vv == euf::null_theory_var)
+            return false;
         if (is_equal(uv, vv))
             return false;
         enode* n1 = var2enode(uv);
@@ -602,16 +627,16 @@ namespace arith {
             value = n->get_root()->get_expr();
         }
         else if (use_nra_model() && lp().external_to_local(v) != lp::null_lpvar) {
-            anum const& an = nl_value(v, *m_a1);
+            anum const& an = nl_value(v, m_nla->tmp1());
             if (a.is_int(o) && !m_nla->am().is_int(an))
                 value = a.mk_numeral(rational::zero(), a.is_int(o));       
             else
-                value = a.mk_numeral(m_nla->am(), nl_value(v, *m_a1), a.is_int(o));
+                value = a.mk_numeral(m_nla->am(), nl_value(v, m_nla->tmp1()), a.is_int(o));
         }
         else if (v != euf::null_theory_var) {
             rational r = get_value(v);
             TRACE("arith", tout << mk_pp(o, m) << " v" << v << " := " << r << "\n";);
-            SASSERT("integer variables should have integer values: " && (ctx.get_config().m_arith_ignore_int || !a.is_int(o) || r.is_int() || m.limit().is_canceled()));
+            SASSERT("integer variables should have integer values: " && (ctx.get_config().m_arith_ignore_int || !a.is_int(o) || r.is_int() || m_not_handled != nullptr || m.limit().is_canceled()));
             if (a.is_int(o) && !r.is_int()) 
                 r = floor(r);
             value = a.mk_numeral(r, o->get_sort());
@@ -878,7 +903,15 @@ namespace arith {
             lp().random_update(vars.size(), vars.data());
     }
 
+    bool solver::include_func_interp(enode* n) const {
+        func_decl* d = n->get_decl();
+        return d && include_func_interp(d);
+    }
+
     bool solver::assume_eqs() {
+        if (delayed_assume_eqs())
+            return true;
+
         TRACE("arith", display(tout););
         random_update();
         m_model_eqs.reset();
@@ -927,26 +960,26 @@ namespace arith {
                 continue;
             literal eq = eq_internalize(n1, n2);
             ctx.mark_relevant(eq);
-            if (s().value(eq) != l_true)
+            switch (s().value(eq)) {
+            case l_true:
+                break;
+            case l_undef:
                 return true;
+            case l_false:
+                mk_diseq_axiom(v1, v2);
+                return true;
+            }
         }
         return false;
     }
 
     bool solver::use_nra_model() {
-        if (m_nla && m_nla->use_nra_model()) {
-            if (!m_a1) {
-                m_a1 = alloc(scoped_anum, m_nla->am());
-                m_a2 = alloc(scoped_anum, m_nla->am());
-            }
-            return true;
-        }
-        return false;
+        return m_nla && m_nla->use_nra_model();
     }
 
     bool solver::is_eq(theory_var v1, theory_var v2) {
         if (use_nra_model()) {
-            return m_nla->am().eq(nl_value(v1, *m_a1), nl_value(v2, *m_a2));
+            return m_nla->am().eq(nl_value(v1, m_nla->tmp1()), nl_value(v2, m_nla->tmp2()));
         }
         else {
             return get_ivalue(v1) == get_ivalue(v2);
@@ -979,9 +1012,6 @@ namespace arith {
 
         TRACE("arith", ctx.display(tout););
 
-        if (!check_delayed_eqs()) 
-            return sat::check_result::CR_CONTINUE;
-
         switch (check_lia()) {
         case l_true:
             break;
@@ -1004,17 +1034,14 @@ namespace arith {
             st = sat::check_result::CR_GIVEUP;
             break;
         }
-
-        if (delayed_assume_eqs()) {
-            ++m_stats.m_assume_eqs;
-            return sat::check_result::CR_CONTINUE;
-        }
+            
         if (assume_eqs()) {
             ++m_stats.m_assume_eqs;
             return sat::check_result::CR_CONTINUE;
         }
         if (!check_delayed_eqs()) 
             return sat::check_result::CR_CONTINUE;
+
         if (ctx.get_config().m_arith_ignore_int && int_undef)
             return sat::check_result::CR_GIVEUP;
         if (m_not_handled != nullptr) {
@@ -1028,7 +1055,10 @@ namespace arith {
         SASSERT(m_nla);
         SASSERT(m_nla->use_nra_model());
         auto t = get_tv(v);
-        if (t.is_term()) {
+        if (!t.is_term()) {
+            m_nla->am().set(r, m_nla->am_value(t.id()));
+        }
+        else {
             m_todo_terms.push_back(std::make_pair(t, rational::one()));
             TRACE("nl_value", tout << "v" << v << " " << t.to_string() << "\n";);
             TRACE("nl_value", tout << "v" << v << " := w" << t.to_string() << "\n";
@@ -1058,11 +1088,8 @@ namespace arith {
                     }
                 }
             }
-            return r;
         }
-        else {
-            return m_nla->am_value(t.id());
-        }
+        return r;
     }
 
     lbool solver::make_feasible() {
@@ -1096,7 +1123,7 @@ namespace arith {
             if (p.second)
                 new_eq_eh(e);
             else if (is_eq(e.v1(), e.v2())) {
-                mk_diseq_axiom(e);
+                mk_diseq_axiom(e.v1(), e.v2());
                 found_diseq = true;
                 break;
             }
@@ -1414,14 +1441,6 @@ namespace arith {
             core.push_back(~mk_ineq_literal(ineq));
         set_conflict_or_lemma(hint_type::nla_h, core, false);
     }
-
-    void solver::assume_literals() {
-        for (auto const& ineq : m_nla_literals) {
-            auto lit = mk_ineq_literal(ineq);
-            ctx.mark_relevant(lit);
-            s().set_phase(lit);
-        }
-    }
     
     sat::literal solver::mk_ineq_literal(nla::ineq const& ineq) {
         bool is_lower = true, sign = true, is_eq = false;
@@ -1434,7 +1453,6 @@ namespace arith {
         case lp::NE: is_eq = true;     sign = true;  break;
         default: UNREACHABLE();
         }
-        TRACE("arith", tout << "is_lower: " << is_lower << " sign " << sign << "\n";);
         // TBD utility: lp::lar_term term = mk_term(ineq.m_poly);
         // then term is used instead of ineq.m_term
         sat::literal lit;
@@ -1443,6 +1461,7 @@ namespace arith {
         else 
             lit = ctx.expr2literal(mk_bound(ineq.term(), ineq.rs(), is_lower));
 
+        TRACE("arith", tout << "is_lower: " << is_lower << " sign " << sign << " " << ctx.literal2expr(lit) << "\n";);
         return sign ? ~lit : lit;                                            
     }
 
@@ -1458,22 +1477,56 @@ namespace arith {
         if (!m_nla->need_check())
             return l_true;
 
-        m_a1 = nullptr; m_a2 = nullptr;
-        lbool r = m_nla->check(m_nla_literals, m_nla_lemma_vector);
+        lbool r = m_nla->check();
         switch (r) {
         case l_false:
-            assume_literals();
-            for (const nla::lemma& l : m_nla_lemma_vector)
-                false_case_of_check_nla(l);
+            add_lemmas();
             break;
         case l_true:
-            if (assume_eqs())
-                return l_false;
             break;
         case l_undef:
             break;
         }
         return r;
+    }
+
+    void solver::add_lemmas() {
+        if (m_nla->check_feasible()) {
+            auto is_sat = make_feasible();
+            if (l_false == is_sat) {
+                get_infeasibility_explanation_and_set_conflict();
+                return;
+            }
+        }
+        for (auto const& ineq : m_nla->literals()) {
+            auto lit = mk_ineq_literal(ineq);
+            ctx.mark_relevant(lit);
+            s().set_phase(lit);
+            // force trichotomy axiom for equality literals
+            if (ineq.cmp() == lp::EQ) {
+                nla::lemma l;
+                l.push_back(ineq);
+                l.push_back(nla::ineq(lp::LT, ineq.term(), ineq.rs()));
+                l.push_back(nla::ineq(lp::GT, ineq.term(), ineq.rs()));
+                false_case_of_check_nla(l);
+            }
+        }
+        for (const nla::lemma& l : m_nla->lemmas())
+            false_case_of_check_nla(l);
+        if (!propagate_eqs()) 
+            return;
+        for (auto const& [v,k,e] : m_nla->fixed_equalities())
+            add_equality(v, k, e);
+        for (auto const& [i,j,e] : m_nla->equalities())
+            add_eq(i,j,e,false);
+    }
+
+    void solver::propagate_nla() {
+        if (m_nla) {
+            m_nla->propagate();
+            add_lemmas();
+            lp().collect_more_rows_for_lp_propagation();
+        }
     }
 
     void solver::get_antecedents(literal l, sat::ext_justification_idx idx, literal_vector& r, bool probing) {
